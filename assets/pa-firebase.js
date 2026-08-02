@@ -28,12 +28,12 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 // every read and write. Every Firebase web app ships these values.
 // ==========================================================================
 export const firebaseConfig = {
-  apiKey:            'REPLACE_ME',
-  authDomain:        'REPLACE_ME.firebaseapp.com',
-  projectId:         'REPLACE_ME',
-  storageBucket:     'REPLACE_ME.firebasestorage.app',
-  messagingSenderId: 'REPLACE_ME',
-  appId:             'REPLACE_ME'
+  apiKey:            'AIzaSyA8lHpm2LTC7zP0hPoMrnxaMNz4bx15JgI',
+  authDomain:        'paddle-app-3e565.firebaseapp.com',
+  projectId:         'paddle-app-3e565',
+  storageBucket:     'paddle-app-3e565.firebasestorage.app',
+  messagingSenderId: '564800408224',
+  appId:             '1:564800408224:web:550e2cdf077855bff797c5'
 };
 
 /** True once real values are pasted in above. */
