@@ -1,0 +1,125 @@
+rules_version = '2';
+
+// Paddle App — Firestore security rules.
+//
+// The web API key in assets/pa-firebase.js is public by design; it identifies
+// the project and authorizes nothing. THIS FILE is the entire security
+// perimeter. Every read and write below is evaluated server-side against a
+// verified ID token, so a scraped key gets an attacker exactly nothing beyond
+// their own documents.
+//
+// Deploy:  firebase deploy --only firestore:rules
+// Or paste into Firebase console -> Firestore -> Rules -> Publish.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- helpers ----------------------------------------------------------
+
+    function signedIn()   { return request.auth != null; }
+    function isOwner(uid) { return signedIn() && request.auth.uid == uid; }
+
+    // Admin is granted by hand-creating admins/{uid} in the Firebase console.
+    // Custom claims would be cheaper (they ride in the ID token, no read
+    // billed) but setting them needs the Admin SDK, which needs a backend or a
+    // Cloud Function on the Blaze plan. This project is a static host with
+    // neither, so the collection wins. The token check is listed first so that
+    // when a backend does arrive, granting claims starts working with no edit
+    // here and the collection can be retired at leisure.
+    function isAdmin() {
+      return signedIn() && (
+        request.auth.token.admin == true ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isStr(v, maxLen) { return v is string && v.size() <= maxLen; }
+
+    // The field allowlist is the load-bearing part. Without hasOnly() a
+    // signed-in user can write arbitrary keys into their own profile and use
+    // it as free storage, or inject content that an admin view later renders.
+    function validProfile(uid) {
+      let d = request.resource.data;
+      return d.uid == uid
+        && isStr(d.displayName, 60)
+        && isStr(d.badgeNumber, 12)
+        && isStr(d.depotKey, 60)
+        && d.driverType in ['regular', 'relief', 'slate']
+        && (!('roles' in d) || d.roles.admin == false)   // no self-promotion
+        && d.keys().hasOnly([
+             'uid', 'email', 'displayName', 'badgeNumber', 'driverType',
+             'depotKey', 'depotLabel', 'defaultSeasonId', 'seniority',
+             'roles', 'createdAt', 'updatedAt', 'schemaVersion', 'lastPlatform'
+           ]);
+    }
+
+    // ---- public app config ------------------------------------------------
+    // Season list and announcements. Readable signed-out because the paddle
+    // viewer boots before any auth exists.
+    match /config/{docId} {
+      allow read:  if true;
+      allow write: if isAdmin();
+    }
+
+    // ---- admin allowlist --------------------------------------------------
+    // Never client-writable. Combined with the roles.admin == false check in
+    // validProfile(), there is no client-reachable privilege escalation path.
+    match /admins/{uid} {
+      allow read:  if isOwner(uid) || isAdmin();
+      allow write: if false;
+    }
+
+    // ---- per-user data ----------------------------------------------------
+    match /users/{uid} {
+      // get and list are split deliberately. Even though a read rule that
+      // passes for one document cannot by itself enumerate a collection,
+      // stating it explicitly stops a future edit from opening enumeration by
+      // accident.
+      allow get:    if isOwner(uid) || isAdmin();
+      allow list:   if isAdmin();
+      allow create: if isOwner(uid) && validProfile(uid);
+      allow update: if isOwner(uid) && validProfile(uid)
+                    && request.resource.data.uid == resource.data.uid;
+      allow delete: if isOwner(uid);
+
+      match /settings/{toolId} {
+        allow read: if isOwner(uid);
+        allow write: if isOwner(uid)
+                     && toolId in ['paddle', 'tracker', 'vacsick', 'ui', 'notifications'];
+      }
+
+      match /favorites/{favId} {
+        allow read:   if isOwner(uid);
+        allow delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+                     && isStr(request.resource.data.runNo, 8)
+                     && isStr(request.resource.data.districtSlug, 64)
+                     && isStr(request.resource.data.note, 280)
+                     && request.resource.data.day in ['Weekday', 'Saturday', 'Sunday'];
+      }
+
+      match /timesheets/{weekId} {
+        allow read, write: if isOwner(uid);
+        match /days/{dayId} {
+          allow read, write: if isOwner(uid);
+        }
+      }
+
+      match /devices/{deviceId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      // Anything new under users/{uid} defaults to owner-only rather than
+      // denied, so shipping a new subcollection never requires a rules deploy
+      // to land first. Still scoped to the owner, so it grants nothing wider.
+      match /{doc=**} {
+        allow read, write: if isOwner(uid);
+      }
+    }
+
+    // ---- deny everything else --------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

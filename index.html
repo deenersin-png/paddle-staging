@@ -12,6 +12,23 @@
   gtag('config', 'G-QXEKGF4DXT');
 </script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/pa-account.css">
+<script>
+// pa-settings-hook: re-broadcasts this page's own localStorage writes as a
+// 'pa:setting' event so the account modules can mirror them to the signed-in
+// user's Firestore doc. Deliberately a classic script, not a module: it has to
+// run BEFORE the inline script below, and module scripts are always deferred.
+// Nothing here changes what the page stores or how it reads it.
+(function(){
+  var WATCH = /^(paddleSeason|paddleDepot|bt_route|bt_block|vacSickViewMode)/;
+  var set = Storage.prototype.setItem;
+  Storage.prototype.setItem = function(k, v){
+    set.call(this, k, v);
+    if (this === localStorage && WATCH.test(k))
+      window.dispatchEvent(new CustomEvent('pa:setting', {detail:{key:k, value:v}}));
+  };
+})();
+</script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
@@ -978,6 +995,7 @@ header {
     </div>
   </div>
   <a href="https://deenersin-png.github.io/septa-scheduler/block-tracker" class="btn-live">LIVE</a>
+  <div id="pa-slot"></div>
 </header>
 
 <div class="toolbar">
@@ -1625,5 +1643,6 @@ function render() {
 
 initSeasons();
 </script>
+<script type="module" src="assets/pa-account-ui.js"></script>
 </body>
 </html>

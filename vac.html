@@ -12,6 +12,23 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Callowhill Bus Relief</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/pa-account.css">
+<script>
+// pa-settings-hook: re-broadcasts this page's own localStorage writes as a
+// 'pa:setting' event so the account modules can mirror them to the signed-in
+// user's Firestore doc. Deliberately a classic script, not a module: it has to
+// run BEFORE the inline script below, and module scripts are always deferred.
+// Nothing here changes what the page stores or how it reads it.
+(function(){
+  var WATCH = /^(paddleSeason|paddleDepot|bt_route|bt_block|vacSickViewMode)/;
+  var set = Storage.prototype.setItem;
+  Storage.prototype.setItem = function(k, v){
+    set.call(this, k, v);
+    if (this === localStorage && WATCH.test(k))
+      window.dispatchEvent(new CustomEvent('pa:setting', {detail:{key:k, value:v}}));
+  };
+})();
+</script>
 <style>
   :root {
     --bg:#0a0f1a;--bg2:#0d1526;--accent:#F37321;
@@ -120,6 +137,7 @@
       </div>
     </div>
     <div class="header-count"><span id="count">0</span> <span id="countNoun">reliefs</span></div>
+    <div id="pa-slot"></div>
   </div>
 </div>
 
@@ -548,5 +566,6 @@ document.getElementById("vsOnlyBtn").addEventListener("click",()=>setViewMode("v
 
 loadData();
 </script>
+<script type="module" src="assets/pa-account-ui.js"></script>
 </body>
 </html>

@@ -1,0 +1,477 @@
+/* ==========================================================================
+   Paddle App — account layer styles.
+
+   This file is dropped into pages running three different, unshared design
+   systems whose variable names COLLIDE: --text, --green, --red, --bg,
+   --accent, --mono and --sans all mean different things in index.html,
+   block-tracker.html and vac.html. So:
+
+     - every custom property here is --pa-*
+     - every class here is .pa-*
+     - there are no bare element selectors, no reset, no @font-face
+
+   Vars are declared twice, on :root and again on .pa-root, so the component
+   keeps its own values even if a host page later redefines something on
+   :root. Font, size, colour, background and border are stated explicitly on
+   every element inside the modal, otherwise block-tracker's Inter and vac's
+   DM Sans leak in and the component stops looking like itself.
+   ========================================================================== */
+
+:root, .pa-root {
+  --pa-ink:      #0a0b0d;
+  --pa-ink2:     #13151a;
+  --pa-ink3:     #1d2028;
+  --pa-line:     rgba(255,255,255,0.07);
+  --pa-line2:    rgba(255,255,255,0.13);
+  --pa-line3:    rgba(255,255,255,0.22);
+  --pa-dim:      #4a4f5e;
+  --pa-mid:      #8a909f;
+  --pa-text:     #c8cdd8;
+  --pa-bright:   #e8ecf4;
+  --pa-amber:    #f5a623;
+  --pa-amber-dim:rgba(245,166,35,0.12);
+  --pa-green:    #3dd68c;
+  --pa-red:      #ff6b6b;
+  --pa-red-dim:  rgba(255,107,107,0.10);
+  --pa-sans: 'IBM Plex Sans Condensed', 'Inter', -apple-system, system-ui, sans-serif;
+  --pa-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --pa-radius: 4px;
+}
+
+/* ---- header slot ---------------------------------------------------------
+   The pages mount this into headers with different layouts, so the slot only
+   ever claims its intrinsic width and never grows. */
+#pa-slot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+}
+
+/* ---- the account button -------------------------------------------------- */
+
+.pa-btn {
+  font-family: var(--pa-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  background: none;
+  border: 1px solid var(--pa-line2);
+  border-radius: var(--pa-radius);
+  color: var(--pa-mid);
+  padding: 7px 14px;
+  cursor: pointer;
+  line-height: 1;
+  white-space: nowrap;
+  transition: color .15s, border-color .15s;
+}
+.pa-btn:hover  { color: var(--pa-amber); border-color: var(--pa-line3); }
+.pa-btn:active { transform: translateY(1px); }
+
+/* Returning users get this until Firebase hydrates, so the header never
+   flashes "SIGN IN" at someone who is already signed in. */
+.pa-btn.pa-loading { opacity: .45; pointer-events: none; }
+
+.pa-avatar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: var(--pa-mono);
+}
+.pa-avatar-circle {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: 50%;
+  background: var(--pa-amber-dim);
+  border: 1px solid rgba(245,166,35,0.25);
+  color: var(--pa-amber);
+  font-family: var(--pa-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.pa-avatar:hover .pa-avatar-circle { border-color: var(--pa-amber); }
+.pa-avatar-badge {
+  font-family: var(--pa-mono);
+  font-size: 10px;
+  letter-spacing: .04em;
+  color: var(--pa-dim);
+  display: none;
+}
+@media (min-width: 640px) { .pa-avatar-badge { display: block; } }
+
+/* ---- overlay -------------------------------------------------------------
+   z-index 10000 is not arbitrary. Every design-A page paints a fixed
+   full-viewport scanline texture at z-index:1000 (index.html:53-58), and the
+   headers sit at 200 / 100 / 10 depending on the page. Anything below 1000
+   renders UNDER the scanlines. */
+.pa-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(0,0,0,0.72);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: pa-fade .14s ease-out;
+}
+.pa-overlay[hidden] { display: none; }
+@keyframes pa-fade { from { opacity: 0 } to { opacity: 1 } }
+
+.pa-card {
+  width: 100%;
+  max-width: 380px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  background: var(--pa-ink2);
+  border: 1px solid var(--pa-line2);
+  border-radius: var(--pa-radius);
+  box-shadow: 0 24px 64px rgba(0,0,0,0.6);
+}
+
+.pa-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--pa-line);
+}
+.pa-card-title {
+  font-family: var(--pa-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  color: var(--pa-bright);
+  text-transform: uppercase;
+}
+.pa-close {
+  background: none;
+  border: none;
+  color: var(--pa-dim);
+  font-family: var(--pa-mono);
+  font-size: 18px;
+  line-height: 1;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+.pa-close:hover { color: var(--pa-bright); }
+
+.pa-card-body { padding: 16px; }
+
+/* ---- tab strip (mirrors the .day-btn treatment in design A) -------------- */
+
+.pa-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.pa-tab {
+  flex: 1 1 0;
+  font-family: var(--pa-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  padding: 8px 6px;
+  background: none;
+  border: 1px solid var(--pa-line);
+  border-radius: var(--pa-radius);
+  color: var(--pa-dim);
+  cursor: pointer;
+  line-height: 1;
+  white-space: nowrap;
+}
+.pa-tab:hover { color: var(--pa-mid); }
+.pa-tab.pa-on {
+  color: var(--pa-amber);
+  border-color: rgba(245,166,35,0.35);
+  background: var(--pa-amber-dim);
+}
+
+/* ---- fields -------------------------------------------------------------- */
+
+.pa-field { margin-bottom: 12px; }
+
+.pa-label {
+  display: block;
+  font-family: var(--pa-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--pa-dim);
+  margin-bottom: 5px;
+}
+
+/* 16px minimum, or iOS Safari zooms the viewport on focus. index.html does
+   not set user-scalable=no (block-tracker.html:5 does), so this matters. */
+.pa-input, .pa-select {
+  width: 100%;
+  font-family: var(--pa-mono);
+  font-size: 16px;
+  font-weight: 400;
+  letter-spacing: .02em;
+  background: var(--pa-ink);
+  border: 1px solid var(--pa-line2);
+  border-radius: var(--pa-radius);
+  color: var(--pa-bright);
+  padding: 10px 12px;
+  line-height: 1.2;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.pa-select {
+  background-image: linear-gradient(45deg, transparent 50%, var(--pa-dim) 50%),
+                    linear-gradient(135deg, var(--pa-dim) 50%, transparent 50%);
+  background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 32px;
+}
+.pa-input:focus, .pa-select:focus {
+  outline: none;
+  border-color: var(--pa-amber);
+}
+.pa-input::placeholder { color: var(--pa-dim); }
+.pa-input:disabled, .pa-select:disabled { opacity: .5; }
+
+/* segmented control — driver type */
+.pa-seg { display: flex; gap: 6px; }
+.pa-seg-btn {
+  flex: 1 1 0;
+  font-family: var(--pa-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  padding: 9px 4px;
+  background: var(--pa-ink);
+  border: 1px solid var(--pa-line2);
+  border-radius: var(--pa-radius);
+  color: var(--pa-dim);
+  cursor: pointer;
+  line-height: 1;
+}
+.pa-seg-btn:hover { color: var(--pa-mid); }
+.pa-seg-btn.pa-on {
+  color: var(--pa-amber);
+  border-color: rgba(245,166,35,0.35);
+  background: var(--pa-amber-dim);
+}
+
+/* ---- actions ------------------------------------------------------------- */
+
+.pa-submit {
+  width: 100%;
+  font-family: var(--pa-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  background: var(--pa-amber);
+  border: 1px solid var(--pa-amber);
+  border-radius: var(--pa-radius);
+  color: var(--pa-ink);
+  padding: 11px 14px;
+  margin-top: 4px;
+  cursor: pointer;
+  line-height: 1;
+}
+.pa-submit:hover:not(:disabled) { filter: brightness(1.1); }
+.pa-submit:disabled { opacity: .55; cursor: default; }
+
+.pa-ghost {
+  width: 100%;
+  font-family: var(--pa-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  background: none;
+  border: 1px solid var(--pa-line2);
+  border-radius: var(--pa-radius);
+  color: var(--pa-mid);
+  padding: 10px 14px;
+  cursor: pointer;
+  line-height: 1;
+  text-align: center;
+  text-decoration: none;
+  display: block;
+}
+.pa-ghost:hover { color: var(--pa-bright); border-color: var(--pa-line3); }
+.pa-ghost.pa-danger:hover { color: var(--pa-red); border-color: rgba(255,107,107,0.35); }
+
+.pa-linkrow {
+  margin-top: 12px;
+  text-align: center;
+}
+.pa-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: var(--pa-sans);
+  font-size: 11px;
+  color: var(--pa-dim);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.pa-link:hover { color: var(--pa-mid); }
+
+.pa-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0;
+  font-family: var(--pa-mono);
+  font-size: 10px;
+  letter-spacing: .08em;
+  color: var(--pa-dim);
+}
+.pa-divider::before, .pa-divider::after {
+  content: '';
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--pa-line);
+}
+
+.pa-google {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  font-family: var(--pa-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  background: none;
+  border: 1px solid var(--pa-line2);
+  border-radius: var(--pa-radius);
+  color: var(--pa-text);
+  padding: 10px 14px;
+  cursor: pointer;
+  line-height: 1;
+}
+.pa-google:hover:not(:disabled) { border-color: var(--pa-line3); color: var(--pa-bright); }
+.pa-google:disabled { opacity: .55; cursor: default; }
+.pa-google svg { flex: 0 0 15px; }
+
+/* ---- messages ------------------------------------------------------------ */
+
+.pa-msg {
+  font-family: var(--pa-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  letter-spacing: .01em;
+  border-radius: var(--pa-radius);
+  padding: 9px 11px;
+  margin-bottom: 12px;
+}
+.pa-msg[hidden] { display: none; }
+.pa-msg.pa-err  { color: var(--pa-red);   background: var(--pa-red-dim);
+                  border: 1px solid rgba(255,107,107,0.22); }
+.pa-msg.pa-ok   { color: var(--pa-green); background: rgba(61,214,140,0.10);
+                  border: 1px solid rgba(61,214,140,0.22); }
+
+/* ---- signed-in panel ----------------------------------------------------- */
+
+.pa-who { margin-bottom: 16px; }
+.pa-who-name {
+  font-family: var(--pa-sans);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--pa-bright);
+  line-height: 1.2;
+}
+.pa-who-email {
+  font-family: var(--pa-mono);
+  font-size: 11px;
+  letter-spacing: .02em;
+  color: var(--pa-dim);
+  margin-top: 3px;
+  word-break: break-all;
+}
+
+.pa-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--pa-line);
+  border: 1px solid var(--pa-line);
+  border-radius: var(--pa-radius);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+.pa-cell { background: var(--pa-ink); padding: 10px 12px; }
+.pa-cell-k {
+  font-family: var(--pa-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--pa-dim);
+}
+.pa-cell-v {
+  font-family: var(--pa-mono);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: .02em;
+  color: var(--pa-text);
+  margin-top: 3px;
+  word-break: break-word;
+}
+
+.pa-stack { display: flex; flex-direction: column; gap: 8px; }
+
+/* Offline indicator — Firestore snapshots report metadata.fromCache, and
+   depot parking lots have terrible service, so say so rather than erroring. */
+.pa-offline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--pa-mono);
+  font-size: 10px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--pa-dim);
+  margin-top: 12px;
+}
+.pa-offline[hidden] { display: none; }
+.pa-offline::before {
+  content: '';
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--pa-dim);
+}
+
+/* ---- mobile: bottom sheet ------------------------------------------------ */
+
+@media (max-width: 480px) {
+  .pa-overlay { padding: 0; align-items: flex-end; }
+  .pa-card {
+    max-width: none;
+    max-height: 92vh;
+    border-radius: var(--pa-radius) var(--pa-radius) 0 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    padding-bottom: env(safe-area-inset-bottom);
+    animation: pa-rise .18s ease-out;
+  }
+  @keyframes pa-rise { from { transform: translateY(14px) } to { transform: none } }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pa-overlay, .pa-card { animation: none; }
+}

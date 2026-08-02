@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Weekly Hours</title>
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-QXEKGF4DXT"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-QXEKGF4DXT');
+</script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/pa-account.css">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root {
+  --ink: #0a0b0d;
+  --ink2: #13151a;
+  --ink3: #1d2028;
+  --line: rgba(255,255,255,0.07);
+  --line2: rgba(255,255,255,0.13);
+  --line3: rgba(255,255,255,0.22);
+  --dim: #4a4f5e;
+  --mid: #8a909f;
+  --text: #c8cdd8;
+  --bright: #e8ecf4;
+  --amber: #f5a623;
+  --amber-dim: rgba(245,166,35,0.12);
+  --green: #3dd68c;
+  --blue: #4d9fff;
+  --red: #ff6b6b;
+  --violet: #a78bfa;
+  --sans: 'IBM Plex Sans Condensed', sans-serif;
+  --mono: 'IBM Plex Mono', monospace;
+}
+
+html { font-size: 16px; }
+body {
+  background: var(--ink);
+  color: var(--text);
+  font-family: var(--sans);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+body::before {
+  content:'';
+  position:fixed;inset:0;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+  pointer-events:none;z-index:1000;
+}
+
+header {
+  background: var(--ink2);
+  border-bottom: 1px solid var(--line2);
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  position: sticky; top: 0; z-index: 200;
+  justify-content: space-between;
+}
+.hd-left { display:flex; align-items:center; gap:12px; min-width:0; }
+.hd-dot { width:8px;height:8px;border-radius:50%;background:var(--amber);opacity:.7;
+          animation:pulse 2.5s ease-in-out infinite; flex:0 0 8px; }
+@keyframes pulse { 0%,100%{opacity:.5} 50%{opacity:.3} }
+.hd-title { font-family:var(--mono); font-size:15px; font-weight:600; letter-spacing:.04em; color:var(--bright); }
+.hd-sub { font-family:var(--mono); font-size:10px; letter-spacing:.06em; color:var(--dim); margin-top:2px; }
+.back-link { font-family:var(--mono); font-size:11px; letter-spacing:.04em; color:var(--dim); text-decoration:none; }
+.back-link:hover { color:var(--amber); }
+
+.wrap { max-width: 860px; margin: 0 auto; padding: 16px; }
+
+.weeknav {
+  display:flex; align-items:center; justify-content:space-between;
+  gap:10px; margin-bottom:16px;
+}
+.wk-btn {
+  font-family:var(--mono); font-size:12px; font-weight:600; letter-spacing:.04em;
+  background:none; border:1px solid var(--line2); border-radius:4px;
+  color:var(--mid); padding:8px 14px; cursor:pointer; line-height:1;
+}
+.wk-btn:hover { color:var(--amber); border-color:var(--line3); }
+.wk-label { font-family:var(--mono); font-size:13px; font-weight:600;
+            letter-spacing:.04em; color:var(--bright); text-align:center; }
+.wk-id { font-family:var(--mono); font-size:10px; letter-spacing:.08em;
+         color:var(--dim); margin-top:3px; }
+
+.gate, .note-line {
+  border:1px solid var(--line); border-radius:4px; background:var(--ink2);
+  padding:22px 18px; text-align:center;
+  font-family:var(--mono); font-size:12px; letter-spacing:.02em; color:var(--mid);
+  line-height:1.6;
+}
+.gate[hidden], .sheet[hidden] { display:none; }
+
+.rows { display:flex; flex-direction:column; gap:8px; }
+
+.row {
+  border:1px solid var(--line); border-radius:4px; background:var(--ink2);
+  padding:10px 12px;
+  display:grid; gap:8px;
+  grid-template-columns: 74px 1fr 1fr 1fr 1fr 64px;
+  align-items:end;
+}
+.row.off { opacity:.55; }
+.row-day { font-family:var(--mono); font-size:12px; font-weight:600;
+           letter-spacing:.04em; color:var(--bright); line-height:1.3; }
+.row-date { font-family:var(--mono); font-size:10px; color:var(--dim); margin-top:2px; }
+
+.f-label { display:block; font-family:var(--mono); font-size:9px; font-weight:600;
+           letter-spacing:.1em; text-transform:uppercase; color:var(--dim); margin-bottom:4px; }
+.f-in, .f-sel {
+  width:100%; font-family:var(--mono); font-size:16px; letter-spacing:.02em;
+  background:var(--ink); border:1px solid var(--line2); border-radius:4px;
+  color:var(--bright); padding:8px 9px; line-height:1.1;
+  -webkit-appearance:none; appearance:none;
+}
+.f-in:focus, .f-sel:focus { outline:none; border-color:var(--amber); }
+.f-in::placeholder { color:var(--dim); }
+.f-ot { font-family:var(--mono); font-size:14px; font-weight:600; color:var(--amber);
+        padding:8px 0; text-align:right; letter-spacing:.02em; }
+.f-ot.zero { color:var(--dim); font-weight:400; }
+
+.totals {
+  margin-top:16px;
+  display:grid; grid-template-columns:repeat(4,1fr); gap:1px;
+  background:var(--line); border:1px solid var(--line); border-radius:4px; overflow:hidden;
+}
+.tot { background:var(--ink2); padding:12px; }
+.tot-k { font-family:var(--mono); font-size:9px; font-weight:600; letter-spacing:.1em;
+         text-transform:uppercase; color:var(--dim); }
+.tot-v { font-family:var(--mono); font-size:19px; font-weight:600; color:var(--bright); margin-top:4px; }
+.tot-v.ot { color:var(--amber); }
+
+.actions { margin-top:16px; display:flex; gap:10px; align-items:center; }
+.save {
+  font-family:var(--mono); font-size:12px; font-weight:600; letter-spacing:.08em;
+  text-transform:uppercase; background:var(--amber); border:1px solid var(--amber);
+  border-radius:4px; color:var(--ink); padding:11px 22px; cursor:pointer; line-height:1;
+}
+.save:hover:not(:disabled) { filter:brightness(1.1); }
+.save:disabled { opacity:.55; cursor:default; }
+.status { font-family:var(--mono); font-size:11px; letter-spacing:.02em; color:var(--dim); }
+.status.ok  { color:var(--green); }
+.status.err { color:var(--red); }
+
+@media (max-width: 720px) {
+  .row { grid-template-columns: 1fr 1fr; grid-template-areas:
+         "day day" "run code" "sch act" "ot ot"; }
+  .row > .c-day  { grid-area:day; }
+  .row > .c-run  { grid-area:run; }
+  .row > .c-code { grid-area:code; }
+  .row > .c-sch  { grid-area:sch; }
+  .row > .c-act  { grid-area:act; }
+  .row > .c-ot   { grid-area:ot; display:flex; justify-content:space-between; align-items:center; }
+  .row > .c-ot .f-label { margin-bottom:0; }
+  .totals { grid-template-columns:repeat(2,1fr); }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hd-left">
+    <div class="hd-dot"></div>
+    <div>
+      <div class="hd-title">WEEKLY HOURS</div>
+      <div class="hd-sub"><a href="./" class="back-link">← Paddle App</a></div>
+    </div>
+  </div>
+  <div id="pa-slot"></div>
+</header>
+
+<div class="wrap">
+  <div class="weeknav">
+    <button class="wk-btn" id="prev" type="button">← PREV</button>
+    <div>
+      <div class="wk-label" id="wk-label">—</div>
+      <div class="wk-id" id="wk-id"></div>
+    </div>
+    <button class="wk-btn" id="next" type="button">NEXT →</button>
+  </div>
+
+  <div class="gate" id="gate">
+    Sign in to track your weekly hours.<br>
+    They sync across every device you use.
+  </div>
+
+  <div class="sheet" id="sheet" hidden>
+    <div class="rows" id="rows"></div>
+
+    <div class="totals">
+      <div class="tot"><div class="tot-k">Scheduled</div><div class="tot-v" id="t-sch">0.0</div></div>
+      <div class="tot"><div class="tot-k">Actual</div><div class="tot-v" id="t-act">0.0</div></div>
+      <div class="tot"><div class="tot-k">Overtime</div><div class="tot-v ot" id="t-ot">0.0</div></div>
+      <div class="tot"><div class="tot-k">Days worked</div><div class="tot-v" id="t-days">0</div></div>
+    </div>
+
+    <div class="actions">
+      <button class="save" id="save" type="button">Save week</button>
+      <span class="status" id="status"></span>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="assets/pa-account-ui.js"></script>
+<script type="module">
+import { weekStartFor, weekIdFor, loadWeek, saveWeek } from './assets/pa-store.js';
+
+// Sunday-first, matching DAY_ORDER in index.html and SEPTA's own schedule
+// day-typing. Hours are decimal, not minutes — that is what the pay column in
+// the schedule CSVs uses (e.g. 11.6) and what operators read off a paddle.
+const DAYS  = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const CODES = [
+  ['work','Work'], ['vac','Vacation'], ['sick','Sick'],
+  ['holiday','Holiday'], ['ad','AD'], ['swap','Swap'], ['off','Off']
+];
+
+let cursor = weekStartFor(new Date());
+let signedIn = false;
+let loadedWeekId = null;
+
+const $ = id => document.getElementById(id);
+const num = v => { const n = parseFloat(v); return Number.isFinite(n) && n > 0 ? n : 0; };
+const fmt = n => (Math.round(n * 10) / 10).toFixed(1);
+
+function dateFor(i) {
+  const d = new Date(cursor);
+  d.setDate(d.getDate() + i);
+  return d;
+}
+const iso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const pretty = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+function buildRows() {
+  const rows = $('rows');
+  rows.textContent = '';
+  DAYS.forEach((day, i) => {
+    const d = dateFor(i);
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.dataset.day = day.toLowerCase();
+    row.innerHTML = `
+      <div class="c-day">
+        <div class="row-day">${day.slice(0,3).toUpperCase()}</div>
+        <div class="row-date">${pretty(d)}</div>
+      </div>
+      <div class="c-run">
+        <label class="f-label">Run #</label>
+        <input class="f-in" data-f="runNo" type="text" inputmode="numeric" maxlength="4" placeholder="—">
+      </div>
+      <div class="c-code">
+        <label class="f-label">Code</label>
+        <select class="f-sel" data-f="code">
+          ${CODES.map(([v,l]) => `<option value="${v}">${l}</option>`).join('')}
+        </select>
+      </div>
+      <div class="c-sch">
+        <label class="f-label">Scheduled</label>
+        <input class="f-in" data-f="scheduledHours" type="text" inputmode="decimal" placeholder="0.0">
+      </div>
+      <div class="c-act">
+        <label class="f-label">Actual</label>
+        <input class="f-in" data-f="actualHours" type="text" inputmode="decimal" placeholder="0.0">
+      </div>
+      <div class="c-ot">
+        <label class="f-label">OT</label>
+        <div class="f-ot zero" data-f="overtimeHours">0.0</div>
+      </div>`;
+    rows.appendChild(row);
+  });
+  rows.addEventListener('input', recalc);
+  rows.addEventListener('change', recalc);
+}
+
+function readRows() {
+  const out = {};
+  [...$('rows').children].forEach(row => {
+    const get = f => row.querySelector(`[data-f="${f}"]`);
+    const sch = num(get('scheduledHours').value);
+    const act = num(get('actualHours').value);
+    out[row.dataset.day] = {
+      runNo: get('runNo').value.trim(),
+      code: get('code').value,
+      scheduledHours: sch,
+      actualHours: act,
+      overtimeHours: Math.max(0, Math.round((act - sch) * 10) / 10)
+    };
+  });
+  return out;
+}
+
+function recalc() {
+  const days = readRows();
+  let sch = 0, act = 0, ot = 0, worked = 0;
+  [...$('rows').children].forEach(row => {
+    const d = days[row.dataset.day];
+    sch += d.scheduledHours; act += d.actualHours; ot += d.overtimeHours;
+    if (d.code === 'work' && d.actualHours > 0) worked++;
+    row.classList.toggle('off', d.code === 'off');
+    const otEl = row.querySelector('[data-f="overtimeHours"]');
+    otEl.textContent = fmt(d.overtimeHours);
+    otEl.classList.toggle('zero', d.overtimeHours === 0);
+  });
+  $('t-sch').textContent = fmt(sch);
+  $('t-act').textContent = fmt(act);
+  $('t-ot').textContent  = fmt(ot);
+  $('t-days').textContent = String(worked);
+  return { days, totals: { scheduledHours: +fmt(sch), actualHours: +fmt(act),
+                           overtimeHours: +fmt(ot), daysWorked: worked } };
+}
+
+function fill(data) {
+  const days = data?.days || {};
+  [...$('rows').children].forEach(row => {
+    const d = days[row.dataset.day] || {};
+    const set = (f, v) => { const n = row.querySelector(`[data-f="${f}"]`); if (n) n.value = v; };
+    set('runNo', d.runNo || '');
+    set('code', d.code || 'work');
+    set('scheduledHours', d.scheduledHours ? fmt(d.scheduledHours) : '');
+    set('actualHours', d.actualHours ? fmt(d.actualHours) : '');
+  });
+  recalc();
+}
+
+function renderHeader() {
+  const end = dateFor(6);
+  $('wk-label').textContent = `${pretty(cursor)} – ${pretty(end)}, ${end.getFullYear()}`;
+  $('wk-id').textContent = weekIdFor(cursor);
+}
+
+function setStatus(text, kind) {
+  const s = $('status');
+  s.textContent = text;
+  s.className = 'status' + (kind ? ' ' + kind : '');
+}
+
+async function loadCurrent() {
+  renderHeader();
+  if (!signedIn) return;
+  const id = weekIdFor(cursor);
+  loadedWeekId = id;
+  setStatus('Loading…');
+  try {
+    const data = await loadWeek(id);
+    if (loadedWeekId !== id) return;          // week changed mid-flight
+    fill(data);
+    setStatus(data ? 'Saved week loaded.' : 'New week.');
+  } catch (e) {
+    setStatus('Could not load: ' + (e.code || e.message), 'err');
+  }
+}
+
+$('prev').addEventListener('click', () => { cursor.setDate(cursor.getDate() - 7); loadCurrent(); });
+$('next').addEventListener('click', () => { cursor.setDate(cursor.getDate() + 7); loadCurrent(); });
+
+$('save').addEventListener('click', async () => {
+  const btn = $('save');
+  btn.disabled = true;
+  setStatus('Saving…');
+  const { days, totals } = recalc();
+  try {
+    await saveWeek(weekIdFor(cursor), {
+      weekStart: iso(cursor),
+      days,
+      totalScheduledHours: totals.scheduledHours,
+      totalActualHours:    totals.actualHours,
+      totalOvertimeHours:  totals.overtimeHours,
+      daysWorked:          totals.daysWorked,
+      status: 'open'
+    });
+    setStatus('Saved.', 'ok');
+  } catch (e) {
+    // With persistentLocalCache the write is queued locally and will replay,
+    // so this is genuinely rare — usually a rules rejection, not a dead zone.
+    setStatus('Could not save: ' + (e.code || e.message), 'err');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// pa-account-ui.js owns the header button and the Firebase boot; this page
+// only listens for the result.
+window.addEventListener('pa:auth', e => {
+  signedIn = !!e.detail.user;
+  $('gate').hidden = signedIn;
+  $('sheet').hidden = !signedIn;
+  if (signedIn) loadCurrent(); else setStatus('');
+});
+
+buildRows();
+renderHeader();
+</script>
+</body>
+</html>
