@@ -13,6 +13,12 @@
 </script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/pa-account.css">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0a0b0d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Paddle">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root {
@@ -143,6 +149,7 @@ h2.k{margin-bottom:10px}
 <nav class="tabs" id="tabs" hidden>
   <button class="tab on" data-view="today" type="button">TODAY</button>
   <button class="tab" data-view="schedule" type="button">SCHEDULE</button>
+  <button class="tab" data-view="alerts" type="button">ALERTS</button>
 </nav>
 
 <div class="wrap">
@@ -173,6 +180,10 @@ h2.k{margin-bottom:10px}
       <div class="hint">Tap EDIT on any day to change the run, mark it off, or record a holiday or overtime. Past days are editable too.</div>
     </div>
   </section>
+
+  <section id="view-alerts" hidden>
+    <div class="card sect" id="alerts-body"></div>
+  </section>
 </div>
 
 <script type="module" src="assets/pa-account-ui.js"></script>
@@ -182,6 +193,7 @@ import * as A from './assets/pa-assignments.js';
 import { computeState, phaseLabel } from './assets/pa-countdown.js';
 import * as L from './assets/pa-live.js';
 import { loadProfile, saveProfile, ensureUser } from './assets/pa-store.js';
+import * as N from './assets/pa-notify.js';
 
 const $ = id => document.getElementById(id);
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
@@ -239,21 +251,22 @@ function findNext(fromIso, days) {
 // ---- boot / auth ----------------------------------------------------------
 
 function showOnly(id) {
-  ['gate-out', 'gate-setup', 'view-today', 'view-schedule'].forEach(x => { $(x).hidden = x !== id; });
-  $('tabs').hidden = !(id === 'view-today' || id === 'view-schedule');
+  ['gate-out', 'gate-setup', 'view-today', 'view-schedule', 'view-alerts'].forEach(x => { $(x).hidden = x !== id; });
+  $('tabs').hidden = !(id === 'view-today' || id === 'view-schedule' || id === 'view-alerts');
 }
 function setView(v) {
   ctx.view = v;
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.view === v));
-  showOnly(v === 'today' ? 'view-today' : 'view-schedule');
+  showOnly(v === 'today' ? 'view-today' : v === 'alerts' ? 'view-alerts' : 'view-schedule');
   if (v === 'schedule') renderSchedule();
+  if (v === 'alerts') renderAlerts();
 }
 document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => setView(t.dataset.view)));
 
 window.addEventListener('pa:auth', async e => {
   ctx.user = e.detail.user;
   stopTimers();
-  if (!ctx.user) { A.detach(); ctx.profile = null; showOnly('gate-out'); $('hd-ctx').textContent = ''; return; }
+  if (!ctx.user) { A.detach(); N.detach(); ctx.profile = null; showOnly('gate-out'); $('hd-ctx').textContent = ''; return; }
   ensureUser(ctx.user.uid);
   try { ctx.profile = await loadProfile(); } catch (err) { ctx.profile = null; }
   if (!ctx.profile || !ctx.profile.depotKey || !ctx.profile.driverType) { await renderSetup(); showOnly('gate-setup'); return; }
@@ -273,6 +286,8 @@ async function boot() {
     ctx.subscribed = true;
     A.onChange(() => { refreshToday(); if (ctx.view === 'schedule') renderSchedule(); });
   }
+  N.attach(ctx.user.uid).catch(() => {});
+  N.registerSW();
   setView('today');
   await refreshToday();
 }
@@ -355,6 +370,7 @@ async function refreshToday() {
   ctx.current = chosen;
   renderToday();
   startTicker();
+  planAlerts();
   if (chosen.mode === 'live') { ensureTrips(chosen); refreshLeader(); }
 }
 
@@ -379,6 +395,7 @@ function recompute() {
   c.st = st;
   if (st.phase === 'done') { refreshToday(); return; }
   if (changed) { renderToday(); refreshLeader(); }
+  planAlerts();
 }
 
 function stopTimers() {
@@ -549,6 +566,97 @@ async function refreshLeader() {
   } catch (_) { line.textContent = 'Live lookup failed — no leader data right now.'; }
   clearInterval(ctx.leaderTimer);
   ctx.leaderTimer = setInterval(() => { if (document.visibilityState === 'visible') refreshLeader(); }, 30000);
+}
+
+// ---- ALERTS ---------------------------------------------------------------
+
+function planAlerts() {
+  const c = ctx.current;
+  N.schedule({ current: c, tripsByBlock: c ? tripsFor(c.date) : null });
+}
+
+function selectField(label, options, value, onChange, suffix) {
+  const f = el('div', 'pa-field');
+  f.appendChild(el('label', 'pa-label', label));
+  const s = el('select', 'pa-select');
+  options.forEach(v => { const o = el('option', null, v + (suffix || '')); o.value = String(v); if (v === value) o.selected = true; s.appendChild(o); });
+  s.addEventListener('change', () => onChange(parseInt(s.value, 10)));
+  f.appendChild(s);
+  return f;
+}
+function timeField(label, value, onChange) {
+  const f = el('div', 'pa-field');
+  f.appendChild(el('label', 'pa-label', label));
+  const i = el('input', 'pa-input'); i.type = 'time'; i.value = value || '';
+  i.addEventListener('change', () => onChange(i.value));
+  f.appendChild(i);
+  return f;
+}
+
+function renderAlerts() {
+  const body = $('alerts-body'); body.textContent = '';
+  const sup = N.support(), s = N.getSettings();
+  body.appendChild(el('h2', 'k', 'Departure alerts'));
+
+  const permTxt = sup.permission === 'granted' ? 'allowed'
+                : sup.permission === 'denied' ? 'blocked in your browser settings'
+                : sup.permission === 'default' ? 'not asked yet' : 'not supported here';
+  body.appendChild(el('div', 'hint', 'Alerts: ' + (s.enabled ? 'ON' : 'OFF') + ' · permission ' + permTxt + ' · ' + (sup.standalone ? 'installed app' : 'browser tab')));
+  if (sup.ios && !sup.standalone) {
+    body.appendChild(el('div', 'msgline', 'iPhone: alerts only work after you add this page to your Home Screen (Share → Add to Home Screen) and open it from there.'));
+  } else if (!sup.api) {
+    body.appendChild(el('div', 'msgline err', 'This browser cannot show notifications.'));
+  }
+
+  const master = el('label', 'check');
+  const cb = el('input'); cb.type = 'checkbox'; cb.checked = s.enabled; cb.disabled = !sup.api;
+  cb.addEventListener('change', async () => {
+    if (cb.checked) {
+      const p = await N.requestPermission();
+      if (p !== 'granted') { cb.checked = false; await N.save({ enabled: false }); renderAlerts(); return; }
+      await N.registerSW();
+      await N.save({ enabled: true });
+    } else {
+      await N.save({ enabled: false });
+    }
+    planAlerts(); renderAlerts();
+  });
+  master.append(cb, document.createTextNode('Alert me before departures'));
+  body.appendChild(master);
+
+  const row = el('div', 'form-row');
+  row.appendChild(selectField('Before each departure', [2, 5, 10, 15], s.departureLeadMin, v => N.save({ departureLeadMin: v }).then(renderAlerts), ' min'));
+  row.appendChild(selectField('Before report time', [15, 30, 45, 60, 90], s.shiftLeadMin, v => N.save({ shiftLeadMin: v }).then(renderAlerts), ' min'));
+  body.appendChild(row);
+
+  const q = el('label', 'check');
+  const qc = el('input'); qc.type = 'checkbox'; qc.checked = s.quietEnabled;
+  qc.addEventListener('change', async () => { await N.save({ quietEnabled: qc.checked }); renderAlerts(); });
+  q.append(qc, document.createTextNode('Quiet hours — no alerts between'));
+  body.appendChild(q);
+  if (s.quietEnabled) {
+    const qr = el('div', 'form-row');
+    qr.appendChild(timeField('From', s.quietStart, v => N.save({ quietStart: v })));
+    qr.appendChild(timeField('Until', s.quietEnd, v => N.save({ quietEnd: v })));
+    body.appendChild(qr);
+  }
+
+  const np = N.nextPlanned();
+  const line = el('div', 'msgline' + (np ? ' ok' : ''));
+  line.textContent = np
+    ? 'Next alert: ' + np.title + ' · ' + new Date(np.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    : (s.enabled ? 'No upcoming alert planned — register a run first.' : '');
+  body.appendChild(line);
+
+  const test = el('button', 'pa-ghost', 'Send a test alert'); test.type = 'button'; test.style.marginTop = '8px';
+  test.addEventListener('click', async () => {
+    const ok = await N.show('Paddle App', 'Alerts are working. A departure alert looks like this.', 'pa-test');
+    test.textContent = ok ? 'Sent ✓' : 'Could not send — allow notifications first';
+    setTimeout(() => { test.textContent = 'Send a test alert'; }, 2500);
+  });
+  body.appendChild(test);
+
+  body.appendChild(el('div', 'hint', 'Alerts fire while this page is open or in the background. If the app is fully closed nothing fires — that needs push notifications, which come later. The alert time is the scheduled time; it never moves with the bus ahead of you.'));
 }
 
 // ---- SCHEDULE -------------------------------------------------------------
@@ -892,7 +1000,7 @@ function closeEdit() { if (editOverlay) editOverlay.hidden = true; }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeEdit(); });
 
 // Expose the pure pieces for in-browser checks (no side effects).
-window.PA_HOME = { S, A, computeState, ctx, renderSchedule, renderToday, openEdit, refreshToday };
+window.PA_HOME = { S, A, N, computeState, ctx, renderSchedule, renderToday, renderAlerts, openEdit, refreshToday };
 </script>
 </body>
 </html>
