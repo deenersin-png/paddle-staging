@@ -29,7 +29,9 @@ service cloud.firestore {
     function isAdmin() {
       return signedIn() && (
         request.auth.token.admin == true ||
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (exists(/databases/$(database)/documents/roles/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin')
       );
     }
 
@@ -47,7 +49,7 @@ service cloud.firestore {
         && d.driverType in ['regular', 'relief', 'slate']
         && (!('roles' in d) || d.roles.admin == false)   // no self-promotion
         && d.keys().hasOnly([
-             'uid', 'email', 'displayName', 'badgeNumber', 'driverType',
+             'uid', 'email', 'displayName', 'badgeNumber', 'driverType', 'role',
              'depotKey', 'depotLabel', 'defaultSeasonId', 'seniority',
              'roles', 'createdAt', 'updatedAt', 'schemaVersion', 'lastPlatform'
            ]);
@@ -59,6 +61,15 @@ service cloud.firestore {
     match /config/{docId} {
       allow read:  if true;
       allow write: if isAdmin();
+    }
+
+    // ---- roles ------------------------------------------------------------
+    // operator | supervisor | dispatcher | admin. Console-managed and the
+    // authority for anything role-gated; the profile only mirrors it for
+    // display. A role on the profile would be self-editable by definition.
+    match /roles/{uid} {
+      allow read:  if isOwner(uid) || isAdmin();
+      allow write: if false;
     }
 
     // ---- admin allowlist --------------------------------------------------

@@ -106,6 +106,16 @@ const profileRef  = () => doc(db, 'users', uid);
 const settingsRef = tool => doc(db, 'users', uid, 'settings', tool);
 const weekRef     = weekId => doc(db, 'users', uid, 'timesheets', weekId);
 
+/**
+ * Point this module at a signed-in user WITHOUT starting listeners or the
+ * migration. home.html and pa-strip.js need loadProfile()/saveProfile()
+ * while pa-account-ui.js owns the full attach() lifecycle.
+ */
+export function ensureUser(userId) {
+  if (!db) { const fb = initFirebase(); if (!fb) return; db = fb.db; }
+  if (!uid) uid = userId;
+}
+
 // ---- profile --------------------------------------------------------------
 
 export async function loadProfile() {

@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Run</title>
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-QXEKGF4DXT"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-QXEKGF4DXT');
+</script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/pa-account.css">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root {
+  --ink:#0a0b0d; --ink2:#13151a; --ink3:#1d2028;
+  --line:rgba(255,255,255,0.07); --line2:rgba(255,255,255,0.13); --line3:rgba(255,255,255,0.22);
+  --dim:#4a4f5e; --mid:#8a909f; --text:#c8cdd8; --bright:#e8ecf4;
+  --amber:#f5a623; --amber-dim:rgba(245,166,35,0.12);
+  --green:#3dd68c; --green-dim:rgba(61,214,140,0.1);
+  --blue:#4d9fff; --blue-dim:rgba(77,159,255,0.1);
+  --red:#ff6b6b; --red-dim:rgba(255,107,107,0.1);
+  --violet:#a78bfa; --violet-dim:rgba(167,139,250,0.1);
+  --sans:'IBM Plex Sans Condensed',sans-serif; --mono:'IBM Plex Mono',monospace;
+}
+html{font-size:16px}
+body{background:var(--ink);color:var(--text);font-family:var(--sans);min-height:100vh;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.03) 2px,rgba(0,0,0,0.03) 4px);pointer-events:none;z-index:1000}
+
+header{background:var(--ink2);border-bottom:1px solid var(--line2);padding:12px 16px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:200;justify-content:space-between}
+.hd-left{display:flex;align-items:center;gap:12px;min-width:0}
+.hd-dot{width:8px;height:8px;border-radius:50%;background:var(--amber);opacity:.7;animation:pulse 2.5s ease-in-out infinite;flex:0 0 8px}
+@keyframes pulse{0%,100%{opacity:.5}50%{opacity:.3}}
+.hd-title{font-family:var(--mono);font-size:15px;font-weight:600;letter-spacing:.04em;color:var(--bright)}
+.hd-sub{font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--dim);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hd-sub a{color:var(--dim);text-decoration:none}.hd-sub a:hover{color:var(--amber)}
+
+.tabs{display:flex;gap:6px;padding:12px 16px 0;max-width:860px;margin:0 auto}
+.tab{font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.06em;padding:9px 16px;background:none;border:1px solid var(--line);border-radius:4px;color:var(--dim);cursor:pointer}
+.tab:hover{color:var(--mid)}.tab.on{color:var(--amber);border-color:rgba(245,166,35,.35);background:var(--amber-dim)}
+
+.wrap{max-width:860px;margin:0 auto;padding:16px}
+[hidden]{display:none!important}
+
+.gate{border:1px solid var(--line);border-radius:4px;background:var(--ink2);padding:22px 18px;text-align:center;font-family:var(--mono);font-size:12px;letter-spacing:.02em;color:var(--mid);line-height:1.7}
+.gate .pa-submit,.gate .pa-select,.gate .pa-seg{margin-top:12px;text-align:left}
+
+.card{border:1px solid var(--line);border-radius:4px;background:var(--ink2);padding:16px;margin-bottom:12px}
+.k{font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.cd-phase{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--amber)}
+.cd-digits{font-family:var(--mono);font-size:56px;font-weight:600;letter-spacing:.02em;color:var(--bright);line-height:1.1;margin:8px 0 4px;font-variant-numeric:tabular-nums}
+.cd-digits.soon{color:var(--amber)}
+.cd-digits.now{color:var(--red)}
+.cd-at{font-family:var(--mono);font-size:13px;color:var(--text);letter-spacing:.02em}
+.cd-place{font-family:var(--sans);font-size:14px;color:var(--mid);margin-top:2px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+.chip{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.04em;padding:6px 10px;border-radius:3px;border:1px solid var(--line2);color:var(--mid);background:var(--ink3)}
+.chip.amber{color:var(--amber);border-color:rgba(245,166,35,.35);background:var(--amber-dim)}
+.chip.blue{color:var(--blue);border-color:rgba(77,159,255,.35);background:var(--blue-dim)}
+.chip.violet{color:var(--violet);border-color:rgba(167,139,250,.35);background:var(--violet-dim)}
+.chip.red{color:var(--red);border-color:rgba(255,107,107,.35);background:var(--red-dim)}
+.chip.green{color:var(--green);border-color:rgba(61,214,140,.35);background:var(--green-dim)}
+
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:4px;overflow:hidden;margin-top:12px}
+.stat{background:var(--ink);padding:10px 12px}
+.stat .v{font-family:var(--mono);font-size:14px;font-weight:600;color:var(--text);margin-top:3px}
+.stat .v.pay{color:var(--amber)}
+.pieces{margin-top:12px;display:flex;flex-direction:column;gap:6px}
+.piece{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;font-family:var(--mono);font-size:12px;padding:8px 10px;border:1px solid var(--line);border-radius:3px;background:var(--ink)}
+.piece.cur{border-color:rgba(245,166,35,.35);background:var(--amber-dim)}
+.piece .r{color:var(--amber);font-weight:600}.piece .b{color:var(--mid)}.piece .t{color:var(--text);white-space:nowrap}
+.piece .t .ty{color:var(--dim);font-size:10px;margin:0 3px}
+
+.leader{border-color:var(--line);opacity:.92}
+.leader .k{color:var(--dim)}
+.leader-line{font-family:var(--mono);font-size:12px;color:var(--text);margin-top:8px;line-height:1.6}
+.leader-note{font-family:var(--sans);font-size:11px;color:var(--dim);margin-top:6px}
+
+.meta{font-family:var(--mono);font-size:10px;letter-spacing:.04em;color:var(--dim);text-align:center;margin-top:8px;line-height:1.8}
+
+.form-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.form-row > *{flex:1 1 160px}
+.days{display:flex;gap:6px;flex-wrap:wrap}
+.dchip{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.04em;padding:9px 0;flex:1 1 0;min-width:40px;text-align:center;background:var(--ink);border:1px solid var(--line2);border-radius:4px;color:var(--dim);cursor:pointer}
+.dchip.on{color:var(--amber);border-color:rgba(245,166,35,.35);background:var(--amber-dim)}
+.lookup{font-family:var(--mono);font-size:11px;color:var(--dim);margin-top:5px;line-height:1.5;min-height:16px}
+.lookup.ok{color:var(--green)}.lookup.warn{color:var(--amber)}
+.preview{margin-top:12px;border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.row{display:grid;grid-template-columns:92px 1fr auto auto;gap:10px;align-items:center;padding:9px 12px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:12px;background:var(--ink)}
+.row:last-child{border-bottom:none}
+.row.today{background:var(--amber-dim)}
+.row .d{color:var(--bright);font-weight:600}.row .d small{display:block;color:var(--dim);font-weight:400;font-size:10px}
+.row .run{color:var(--text)}.row .run.off{color:var(--dim)}
+.row .t{color:var(--mid);white-space:nowrap}
+.badge{font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;padding:3px 7px;border-radius:3px;border:1px solid var(--line2);color:var(--dim)}
+.badge.pattern{color:var(--blue);border-color:rgba(77,159,255,.35)}
+.badge.manual{color:var(--green);border-color:rgba(61,214,140,.35)}
+.badge.edit{color:var(--violet);border-color:rgba(167,139,250,.35)}
+.badge.holiday{color:var(--amber);border-color:rgba(245,166,35,.35)}
+.rowbtn{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.06em;padding:6px 10px;background:none;border:1px solid var(--line2);border-radius:3px;color:var(--mid);cursor:pointer}
+.rowbtn:hover{color:var(--amber);border-color:var(--line3)}
+.week-nav{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.wk-label{font-family:var(--mono);font-size:13px;font-weight:600;letter-spacing:.04em;color:var(--bright)}
+.wk-row{display:grid;grid-template-columns:76px 1fr;gap:10px;align-items:start;padding:8px 0;border-bottom:1px solid var(--line)}
+.wk-row:last-child{border-bottom:none}
+.wk-row .d{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--bright);padding-top:11px}
+.wk-row .d small{display:block;color:var(--dim);font-weight:400;font-size:10px}
+.wk-row.hol .d{color:var(--amber)}
+.check{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;color:var(--mid);margin:12px 0;cursor:pointer}
+.check input{width:16px;height:16px;accent-color:var(--amber)}
+.msgline{font-family:var(--mono);font-size:11px;color:var(--dim);margin-top:8px;min-height:16px}
+.msgline.ok{color:var(--green)}.msgline.err{color:var(--red)}
+.hint{font-family:var(--sans);font-size:12px;color:var(--dim);line-height:1.5;margin-top:6px}
+.pay{font-family:var(--mono);font-size:12px;color:var(--mid);margin:10px 0}
+.pay b{color:var(--amber)}
+.sect{margin-bottom:12px}
+h2.k{margin-bottom:10px}
+
+@media (max-width:640px){
+  .cd-digits{font-size:44px}
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .row{grid-template-columns:78px 1fr auto;grid-template-areas:"d run b" "d t b"}
+  .row .d{grid-area:d}.row .run{grid-area:run}.row .t{grid-area:t}.row .acts{grid-area:b}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hd-left">
+    <div class="hd-dot"></div>
+    <div>
+      <div class="hd-title">MY RUN</div>
+      <div class="hd-sub"><a href="./">&larr; Paddle App</a> <span id="hd-ctx"></span></div>
+    </div>
+  </div>
+  <div id="pa-slot"></div>
+</header>
+
+<nav class="tabs" id="tabs" hidden>
+  <button class="tab on" data-view="today" type="button">TODAY</button>
+  <button class="tab" data-view="schedule" type="button">SCHEDULE</button>
+</nav>
+
+<div class="wrap">
+  <div class="gate" id="gate-out">Sign in to see your next run.<br>Your schedule follows you to every device.</div>
+
+  <div class="gate" id="gate-setup" hidden>
+    Tell the app where you work and what kind of driver you are.
+    <div style="text-align:left;margin-top:14px">
+      <label class="pa-label">Home depot</label>
+      <select class="pa-select" id="setup-depot"></select>
+      <label class="pa-label" style="margin-top:12px">Driver type</label>
+      <div class="pa-seg" id="setup-type"></div>
+      <button class="pa-submit" id="setup-save" type="button">Save</button>
+      <div class="msgline" id="setup-msg"></div>
+    </div>
+  </div>
+
+  <section id="view-today" hidden>
+    <div id="today-body"></div>
+    <div class="meta" id="meta"></div>
+  </section>
+
+  <section id="view-schedule" hidden>
+    <div class="card sect" id="sch-form"></div>
+    <div class="card sect">
+      <h2 class="k">Next 4 weeks</h2>
+      <div class="preview" id="sch-list"></div>
+      <div class="hint">Tap EDIT on any day to change the run, mark it off, or record a holiday or overtime. Past days are editable too.</div>
+    </div>
+  </section>
+</div>
+
+<script type="module" src="assets/pa-account-ui.js"></script>
+<script type="module">
+import * as S from './assets/pa-schedule.js';
+import * as A from './assets/pa-assignments.js';
+import { computeState, phaseLabel } from './assets/pa-countdown.js';
+import * as L from './assets/pa-live.js';
+import { loadProfile, saveProfile, ensureUser } from './assets/pa-store.js';
+
+const $ = id => document.getElementById(id);
+const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+const DRIVER_TYPES = [['regular','REGULAR'],['relief','RELIEF'],['slate','SLATE']];
+
+const ctx = {
+  user: null, profile: null, overrides: {}, gtfs: {}, view: 'today',
+  current: null,                 // { mode:'live'|'next'|'none', date, r, run, st, nowMin }
+  trips: new Map(),              // date -> Map(block -> trips[])
+  tickTimer: null, leaderTimer: null, wakeLock: null,
+  runCache: new Map(), weekCursor: null, districts: [], seasonLabel: ''
+};
+
+// ---- helpers --------------------------------------------------------------
+
+async function slugForDate(depotKey, iso) {
+  const k = 'slug|' + depotKey + '|' + iso.slice(0, 7);
+  if (!ctx.runCache.has(k)) ctx.runCache.set(k, S.slugFor(depotKey, iso));
+  return ctx.runCache.get(k);
+}
+
+/** Normalised run for a resolved day, or a synthetic one when the paddle
+ *  doesn't know the run but the operator gave a report time. */
+async function runFor(r, iso) {
+  if (!r || r.off || !r.runNo) return null;
+  const depot = r.depotKey || (ctx.profile && ctx.profile.depotKey);
+  const { slug } = await slugForDate(depot, iso);
+  let run = slug ? await S.getRun(slug, r.dayType, r.runNo) : null;
+  if (run && r.reportMin != null) run = { ...run, reportMin: r.reportMin, overridden: true };
+  if (!run && r.reportMin != null) {
+    run = { runNo: r.runNo, dayType: r.dayType, reportMin: r.reportMin, finishMin: null,
+            pullOutMin: r.reportMin, pullInMin: null, payHours: 0, pieces: [], routes: [], blocks: [], synthetic: true };
+  }
+  return run;
+}
+
+function fmtCountdown(ms) {
+  const neg = ms < 0; let s = Math.floor(Math.abs(ms) / 1000);
+  const d = Math.floor(s / 86400); s -= d * 86400;
+  const h = Math.floor(s / 3600); s -= h * 3600;
+  const m = Math.floor(s / 60); s -= m * 60;
+  const core = (d ? d + 'd ' : '') + (d || h ? S.pad2(h) + ':' : '') + S.pad2(m) + ':' + S.pad2(s);
+  return (neg ? '-' : '') + core;
+}
+
+function findNext(fromIso, days) {
+  for (let i = 0; i <= days; i++) {
+    const d = S.addDays(fromIso, i);
+    const r = A.resolve(d, ctx.overrides);
+    if (!r.off && r.runNo) return { date: d, r };
+  }
+  return null;
+}
+
+// ---- boot / auth ----------------------------------------------------------
+
+function showOnly(id) {
+  ['gate-out', 'gate-setup', 'view-today', 'view-schedule'].forEach(x => { $(x).hidden = x !== id; });
+  $('tabs').hidden = !(id === 'view-today' || id === 'view-schedule');
+}
+function setView(v) {
+  ctx.view = v;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.view === v));
+  showOnly(v === 'today' ? 'view-today' : 'view-schedule');
+  if (v === 'schedule') renderSchedule();
+}
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => setView(t.dataset.view)));
+
+window.addEventListener('pa:auth', async e => {
+  ctx.user = e.detail.user;
+  stopTimers();
+  if (!ctx.user) { A.detach(); ctx.profile = null; showOnly('gate-out'); $('hd-ctx').textContent = ''; return; }
+  ensureUser(ctx.user.uid);
+  try { ctx.profile = await loadProfile(); } catch (err) { ctx.profile = null; }
+  if (!ctx.profile || !ctx.profile.depotKey || !ctx.profile.driverType) { await renderSetup(); showOnly('gate-setup'); return; }
+  await boot();
+});
+
+async function boot() {
+  const today = S.todayIso();
+  const [ov, gtfs, seasonInfo] = await Promise.all([
+    S.loadCalendarOverrides(), S.loadGtfsManifest(), slugForDate(ctx.profile.depotKey, today)
+  ]);
+  ctx.overrides = ov || {}; ctx.gtfs = gtfs || {};
+  ctx.seasonLabel = seasonInfo.season ? seasonInfo.season.label : 'no season';
+  $('hd-ctx').textContent = ' · ' + (ctx.profile.depotLabel || ctx.profile.depotKey) + ' · ' + ctx.seasonLabel;
+  await A.attach(ctx.user.uid);
+  if (!ctx.subscribed) {
+    ctx.subscribed = true;
+    A.onChange(() => { refreshToday(); if (ctx.view === 'schedule') renderSchedule(); });
+  }
+  setView('today');
+  await refreshToday();
+}
+
+// ---- setup (no depot / driver type yet) -----------------------------------
+
+async function renderSetup() {
+  const sel = $('setup-depot'); sel.textContent = '';
+  let districts = [];
+  try {
+    const seasons = await S.loadSeasons(); const season = S.seasonFor(seasons, S.todayIso());
+    districts = season ? await S.loadManifest(season) : [];
+  } catch (_) {}
+  const seen = new Map();
+  districts.forEach(d => { const k = S.depotKeyOf(d.name); if (!seen.has(k)) seen.set(k, d.label || d.name); });
+  if (!seen.size) [['callowhillb','Callowhill Bus'],['allegheny','Allegheny'],['victory','Victory Bus'],['frontier','Frontier'],['southern','Southern'],['elmwood','Elmwood'],['comly','Comly'],['frankfordb','Frankford Bus'],['frankford-rail','Frankford Rail'],['midvale','Midvale']].forEach(([k,l]) => seen.set(k,l));
+  for (const [k, l] of seen) { const o = el('option', null, l); o.value = k; if (ctx.profile && ctx.profile.depotKey === k) o.selected = true; sel.appendChild(o); }
+  const seg = $('setup-type'); seg.textContent = '';
+  let dt = (ctx.profile && ctx.profile.driverType) || 'regular';
+  DRIVER_TYPES.forEach(([id, label]) => {
+    const b = el('button', 'pa-seg-btn' + (id === dt ? ' pa-on' : ''), label); b.type = 'button';
+    b.addEventListener('click', () => { dt = id; [...seg.children].forEach(c => c.classList.remove('pa-on')); b.classList.add('pa-on'); });
+    seg.appendChild(b);
+  });
+  $('setup-save').onclick = async () => {
+    const btn = $('setup-save'); btn.disabled = true; $('setup-msg').textContent = 'Saving…'; $('setup-msg').className = 'msgline';
+    try {
+      const opt = sel.selectedOptions[0];
+      await saveProfile({ ...(ctx.profile || {}), email: ctx.user.email || '',
+        displayName: (ctx.profile && ctx.profile.displayName) || ctx.user.displayName || '',
+        badgeNumber: (ctx.profile && ctx.profile.badgeNumber) || '',
+        driverType: dt, depotKey: sel.value, depotLabel: opt ? opt.textContent : '',
+        createdAt: ctx.profile && ctx.profile.createdAt });
+      ctx.profile = await loadProfile();
+      await boot();
+    } catch (err) { $('setup-msg').textContent = 'Could not save: ' + (err.code || err.message); $('setup-msg').className = 'msgline err'; }
+    btn.disabled = false;
+  };
+}
+
+// ---- TODAY ----------------------------------------------------------------
+
+function tripsFor(iso) { return ctx.trips.get(iso) || new Map(); }
+
+async function refreshToday() {
+  if (!ctx.user || !A.isAttached()) return;
+  const today = S.todayIso(), yday = S.addDays(today, -1);
+  const nowM = S.nowMinutes();
+  const SKIP = ['done', 'before_report', 'before_pullout', 'unknown', 'none'];
+  let chosen = null;
+
+  // 1. Yesterday's run, if it is still going past midnight (owl / late runs).
+  const ry = A.resolve(yday, ctx.overrides);
+  if (!ry.off && ry.runNo) {
+    const run = await runFor(ry, yday);
+    if (run) {
+      const nowMin = nowM + 1440;
+      const st = computeState({ run, nowMin, tripsByBlock: tripsFor(yday) });
+      if (!SKIP.includes(st.phase)) chosen = { mode: 'live', date: yday, r: ry, run, st, nowMin };
+    }
+  }
+  // 2. Today's run.
+  if (!chosen) {
+    const rt = A.resolve(today, ctx.overrides);
+    if (!rt.off && rt.runNo) {
+      const run = await runFor(rt, today);
+      if (!run) chosen = { mode: 'unknown', date: today, r: rt };
+      else chosen = { mode: 'live', date: today, r: rt, run, st: computeState({ run, nowMin: nowM, tripsByBlock: tripsFor(today) }), nowMin: nowM };
+    }
+  }
+  // 3. Nothing today, or done for today -> the next registered day.
+  if (!chosen || (chosen.mode === 'live' && chosen.st.phase === 'done')) {
+    const doneToday = chosen;
+    const nx = findNext(S.addDays(today, 1), 21);
+    chosen = nx
+      ? { mode: 'next', date: nx.date, r: nx.r, run: await runFor(nx.r, nx.date), doneToday }
+      : { mode: 'none', date: today, r: A.resolve(today, ctx.overrides), doneToday };
+  }
+
+  ctx.current = chosen;
+  renderToday();
+  startTicker();
+  if (chosen.mode === 'live') { ensureTrips(chosen); refreshLeader(); }
+}
+
+async function ensureTrips(c) {
+  if (!c.run || c.run.synthetic || ctx.trips.has(c.date)) return;
+  const m = new Map();
+  ctx.trips.set(c.date, m);                    // reserve so we don't double-load
+  await Promise.all(c.run.pieces.map(async p => {
+    try { m.set(p.block, await S.blockTrips(p.block, p.routes, c.run.dayType)); }
+    catch (_) { m.set(p.block, []); }
+  }));
+  recompute();
+}
+
+function recompute() {
+  const c = ctx.current;
+  if (!c || c.mode !== 'live' || !c.run) return;
+  const offset = c.date === S.todayIso() ? 0 : 1440;
+  c.nowMin = S.nowMinutes() + offset;
+  const st = computeState({ run: c.run, nowMin: c.nowMin, tripsByBlock: tripsFor(c.date) });
+  const changed = !c.st || st.phase !== c.st.phase || st.targetMin !== c.st.targetMin;
+  c.st = st;
+  if (st.phase === 'done') { refreshToday(); return; }
+  if (changed) { renderToday(); refreshLeader(); }
+}
+
+function stopTimers() {
+  clearInterval(ctx.tickTimer); ctx.tickTimer = null;
+  clearInterval(ctx.leaderTimer); ctx.leaderTimer = null;
+  if (ctx.wakeLock) { try { ctx.wakeLock.release(); } catch (_) {} ctx.wakeLock = null; }
+}
+function startTicker() {
+  clearInterval(ctx.tickTimer);
+  let n = 0;
+  ctx.tickTimer = setInterval(() => { tick(); if (++n % 20 === 0) recompute(); }, 1000);
+  tick();
+}
+
+function targetMs() {
+  const c = ctx.current;
+  if (!c) return null;
+  if (c.mode === 'live' && c.st && c.st.targetMin != null) return S.minToMs(c.date, c.st.targetMin);
+  if (c.mode === 'next' && c.run && c.run.reportMin != null) return S.minToMs(c.date, c.run.reportMin);
+  return null;
+}
+
+function tick() {
+  const d = $('cd-digits'); if (!d) return;
+  const t = targetMs(); if (t == null) { d.textContent = '—'; return; }
+  const ms = t - Date.now();
+  d.textContent = fmtCountdown(ms);
+  d.classList.toggle('soon', ms > 0 && ms <= 5 * 60000);
+  d.classList.toggle('now', ms <= 0);
+  if (ms < -1500 && !ctx.refreshing) {
+    ctx.refreshing = true;
+    const p = ctx.current && ctx.current.mode === 'live' ? Promise.resolve(recompute()) : refreshToday();
+    Promise.resolve(p).finally(() => { ctx.refreshing = false; });
+  }
+}
+
+// Keep the screen on during a layover countdown (Safari 18.4+ / Chrome).
+async function wakeLock(on) {
+  try {
+    if (on && !ctx.wakeLock && navigator.wakeLock && document.visibilityState === 'visible') {
+      ctx.wakeLock = await navigator.wakeLock.request('screen');
+      ctx.wakeLock.addEventListener('release', () => { ctx.wakeLock = null; });
+    } else if (!on && ctx.wakeLock) { await ctx.wakeLock.release(); ctx.wakeLock = null; }
+  } catch (_) {}
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') { recompute(); refreshToday(); refreshLeader(); }
+});
+
+function renderToday() {
+  const c = ctx.current, body = $('today-body');
+  body.textContent = '';
+  if (!c) return;
+
+  if (c.mode === 'unknown') {
+    const g = el('div', 'gate');
+    g.append('Run ' + c.r.runNo + ' is registered for today but is not in the ' + (ctx.profile.depotLabel || ctx.profile.depotKey) + ' ' + c.r.dayType + ' paddle.', el('br'), 'Add a report time to get a countdown.');
+    const b = el('button', 'pa-submit', 'Edit today'); b.type = 'button'; b.style.marginTop = '14px';
+    b.addEventListener('click', () => openEdit(c.r));
+    g.appendChild(b); body.appendChild(g);
+    $('meta').textContent = metaLine(); wakeLock(false); return;
+  }
+  if (c.mode === 'none') {
+    const g = el('div', 'gate');
+    g.append((c.doneToday ? 'Done for today. ' : '') + 'No run registered' + (c.doneToday ? ' in the next three weeks.' : ' for today.'), el('br'));
+    const b = el('button', 'pa-submit', 'Set up my schedule'); b.type = 'button'; b.style.marginTop = '14px';
+    b.addEventListener('click', () => setView('schedule'));
+    g.appendChild(b); body.appendChild(g);
+    $('meta').textContent = metaLine(); wakeLock(false); return;
+  }
+
+  const card = el('div', 'card');
+  const run = c.run, r = c.r;
+  let phase, at, place;
+  if (c.mode === 'next') {
+    phase = (c.doneToday ? 'Done for today · next run ' : 'Next run · ') + S.fmtDate(c.date);
+    at = run && run.reportMin != null ? 'Report ' + S.fmtClock(run.reportMin) : 'Report time unknown';
+    place = run && run.pieces[0] ? 'Pull-out ' + S.fmtClock(run.pullOutMin) + ' · ' + run.pieces[0].routeLabel + ' · block ' + run.pieces[0].block : '';
+    wakeLock(false);
+  } else {
+    const st = c.st;
+    phase = phaseLabel(st);
+    at = st.targetMin != null ? 'at ' + S.fmtClock(st.targetMin) : '';
+    if (st.phase === 'layover' || st.phase === 'in_service' || st.phase === 'first_departure') {
+      place = (st.from ? 'from ' + st.from : '') + (st.to ? ' → ' + st.to : '');
+      if (st.phase === 'in_service' && st.arriveMin != null && !st.lastTrip) place = 'Arrive ' + st.arriveAt + ' ' + S.fmtClock(st.arriveMin) + ' · then ' + place;
+    } else if (st.piece) {
+      place = st.piece.routeLabel + ' · block ' + st.piece.block;
+    } else place = '';
+    wakeLock(st.phase === 'layover' || st.phase === 'in_service' || st.phase === 'first_departure');
+  }
+  card.appendChild(el('div', 'cd-phase', phase));
+  card.appendChild(el('div', 'cd-digits', '—')).id = 'cd-digits';
+  card.appendChild(el('div', 'cd-at', at));
+  if (place) card.appendChild(el('div', 'cd-place', place));
+
+  const chips = el('div', 'chips');
+  chips.appendChild(el('span', 'chip amber', 'RUN ' + (r.runNo || '—')));
+  const piece = c.mode === 'live' && c.st.piece ? c.st.piece : (run && run.pieces[0]);
+  if (piece) { chips.appendChild(el('span', 'chip blue', 'ROUTE ' + piece.routeLabel)); chips.appendChild(el('span', 'chip', 'BLOCK ' + piece.block)); }
+  if (run && run.swing) chips.appendChild(el('span', 'chip violet', 'SWING'));
+  if (r.holiday && r.holiday.isHoliday) chips.appendChild(el('span', 'chip amber', 'HOLIDAY'));
+  if (r.flags && r.flags.overtime) chips.appendChild(el('span', 'chip red', 'OT'));
+  if (run && run.synthetic) chips.appendChild(el('span', 'chip', 'MANUAL TIME'));
+  card.appendChild(chips);
+  body.appendChild(card);
+
+  if (run) {
+    const rc = el('div', 'card');
+    rc.appendChild(el('div', 'k', 'Run ' + run.runNo + ' · ' + run.dayType + (run.synthetic ? ' · not in paddle' : '')));
+    const stats = el('div', 'stats');
+    [['Report', S.fmtClock(run.reportMin)], ['Pull-out', S.fmtClock(run.pullOutMin)], ['Finish', S.fmtClock(run.finishMin)], ['Pay hrs', run.payHours ? run.payHours.toFixed(1) : '—', 'pay']]
+      .forEach(([k, v, cls]) => { const s = el('div', 'stat'); s.appendChild(el('div', 'k', k)); s.appendChild(el('div', 'v' + (cls ? ' ' + cls : ''), v)); stats.appendChild(s); });
+    rc.appendChild(stats);
+    if (run.pieces.length) {
+      const ps = el('div', 'pieces');
+      run.pieces.forEach(p => {
+        const d = el('div', 'piece' + (piece && piece.index === p.index && c.mode === 'live' ? ' cur' : ''));
+        d.appendChild(el('span', 'r', p.routeLabel));
+        d.appendChild(el('span', 'b', 'BLK ' + p.block + (p.durLabel ? ' · ' + p.durLabel : '')));
+        const t = el('span', 't'); t.innerHTML = '<span class="ty">' + esc(p.startType) + '</span>' + esc(S.fmtClock(p.startMin)) + ' → <span class="ty">' + esc(p.endType) + '</span>' + esc(S.fmtClock(p.endMin));
+        d.appendChild(t); ps.appendChild(d);
+      });
+      rc.appendChild(ps);
+    }
+    if (r.holiday && r.holiday.isHoliday) {
+      const pay = A.payHoursFor(r, run);
+      rc.appendChild(el('div', 'pay', 'Holiday pay today: ' + pay.parts.map(([k, v]) => k + ' ' + v).join(' + ') + ' = ' + pay.total.toFixed(1) + ' hrs'));
+    }
+    body.appendChild(rc);
+  }
+
+  const lb = el('div', 'card leader'); lb.id = 'leader-box';
+  lb.appendChild(el('div', 'k', 'Your leader · live · info only'));
+  lb.appendChild(el('div', 'leader-line', 'Looking up the bus ahead of you…')).id = 'leader-line';
+  lb.appendChild(el('div', 'leader-note', 'Countdown above is the scheduled time and does not move with your leader.'));
+  lb.hidden = c.mode !== 'live';
+  body.appendChild(lb);
+
+  $('meta').textContent = metaLine();
+  tick();
+}
+
+function metaLine() {
+  const gv = ctx.gtfs && ctx.gtfs.gtfs_version ? 'GTFS ' + ctx.gtfs.gtfs_version : 'GTFS unavailable';
+  const stale = ctx.gtfs && ctx.gtfs.feed_end && ctx.gtfs.feed_end < S.todayIso().replace(/-/g, '') ? ' · FEED EXPIRED' : '';
+  return ctx.seasonLabel + ' · ' + (ctx.profile ? (ctx.profile.depotLabel || ctx.profile.depotKey) : '') + ' · ' + gv + stale;
+}
+
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+// ---- leader (informational) ----------------------------------------------
+
+async function refreshLeader() {
+  const c = ctx.current, line = $('leader-line');
+  if (!line || !c || c.mode !== 'live' || !c.st || !c.st.piece) return;
+  const p = c.st.piece;
+  const mine = tripsFor(c.date).get(p.block);
+  if (!mine) { line.textContent = 'Loading your block’s trips…'; return; }
+  if (!mine.length) { line.textContent = 'No GTFS trips found for block ' + p.block + ' on ' + p.routeLabel + ' — leader unknown.'; return; }
+  try {
+    const all = await S.routeTrips(p.routes, c.run.dayType);
+    const lb = S.leaderBlock(all, p.block, c.nowMin);
+    if (!lb) { line.textContent = 'No bus is scheduled ahead of you in this direction.'; return; }
+    line.textContent = 'Block ' + lb.block + ' · scheduled out ' + S.fmtClock(lb.trip.s) + ' · checking live…';
+    const v = await L.vehicleForBlock(p.routes, lb.block);
+    line.textContent = (v ? '' : 'Leader block ' + lb.block + ': ') + L.describe(v);
+  } catch (_) { line.textContent = 'Live lookup failed — no leader data right now.'; }
+  clearInterval(ctx.leaderTimer);
+  ctx.leaderTimer = setInterval(() => { if (document.visibilityState === 'visible') refreshLeader(); }, 30000);
+}
+
+// ---- SCHEDULE -------------------------------------------------------------
+
+function renderSchedule() {
+  if (!ctx.profile) return;
+  const form = $('sch-form'); form.textContent = '';
+  if (ctx.profile.driverType === 'regular') renderRegularForm(form); else renderWeekForm(form);
+  renderUpcoming();
+}
+
+function lookupLine(node, dayType, runNo, iso) {
+  node.className = 'lookup'; node.textContent = '';
+  if (!runNo) return;
+  node.textContent = 'Looking up run ' + runNo + '…';
+  slugForDate(ctx.profile.depotKey, iso || S.todayIso()).then(({ slug, district }) => {
+    if (!slug) { node.textContent = 'No paddle data for your depot this season.'; node.className = 'lookup warn'; return; }
+    return S.getRun(slug, dayType, runNo).then(run => {
+      if (!run) { node.textContent = 'Run ' + runNo + ' not found in ' + (district.label || slug) + ' ' + dayType + ' paddle. You can still save it.'; node.className = 'lookup warn'; return; }
+      node.textContent = 'Report ' + S.fmtClock(run.reportMin) + ' · Pull-out ' + S.fmtClock(run.pullOutMin) + ' · Finish ' + S.fmtClock(run.finishMin) + ' · ' + run.payHours.toFixed(1) + ' hrs · ' + run.pieces.map(p => p.routeLabel).join(' / ');
+      node.className = 'lookup ok';
+    });
+  }).catch(() => { node.textContent = ''; });
+}
+
+function renderRegularForm(form) {
+  const st = A.getState();
+  const cur = A.activePattern(st.patterns, S.todayIso());
+  form.appendChild(el('h2', 'k', 'My pick'));
+  if (cur) {
+    const days = Object.keys(cur.days || {}).map(Number).sort().map(i => S.DAY_SHORT[i]).join(' ');
+    const runs = Object.entries(cur.runByDayType || {}).filter(([, v]) => v).map(([k, v]) => k + ' ' + v).join(' · ');
+    form.appendChild(el('div', 'hint', 'Current: ' + (cur.preset || 'custom') + ' · ' + days + ' · ' + runs + ' · since ' + S.fmtDate(cur.effectiveFrom)));
+  } else {
+    form.appendChild(el('div', 'hint', 'Set your work pattern once. The app fills in every day from your pick and already knows each run’s start time.'));
+  }
+
+  let preset = (cur && cur.preset && A.PRESETS[cur.preset]) ? cur.preset : '5-day';
+  let days = new Set(cur && cur.days ? Object.keys(cur.days).map(Number) : A.PRESETS[preset].days);
+  const runs = { ...(cur && cur.runByDayType ? cur.runByDayType : {}) };
+
+  const presetWrap = el('div', 'pa-field'); presetWrap.style.marginTop = '12px';
+  presetWrap.appendChild(el('label', 'pa-label', 'Pattern'));
+  const seg = el('div', 'pa-seg');
+  Object.entries(A.PRESETS).forEach(([id, p]) => {
+    const b = el('button', 'pa-seg-btn' + (id === preset ? ' pa-on' : ''), p.label); b.type = 'button';
+    b.addEventListener('click', () => { preset = id; days = new Set(p.days); [...seg.children].forEach(c => c.classList.remove('pa-on')); b.classList.add('pa-on'); drawDays(); drawRuns(); });
+    seg.appendChild(b);
+  });
+  presetWrap.appendChild(seg); form.appendChild(presetWrap);
+
+  const dWrap = el('div', 'pa-field'); dWrap.appendChild(el('label', 'pa-label', 'Work days (tap to change)'));
+  const dRow = el('div', 'days'); dWrap.appendChild(dRow); form.appendChild(dWrap);
+  function drawDays() {
+    dRow.textContent = '';
+    for (let i = 0; i < 7; i++) {
+      const b = el('button', 'dchip' + (days.has(i) ? ' on' : ''), S.DAY_SHORT[i].toUpperCase()); b.type = 'button';
+      b.addEventListener('click', () => { days.has(i) ? days.delete(i) : days.add(i); drawDays(); drawRuns(); });
+      dRow.appendChild(b);
+    }
+  }
+
+  const rWrap = el('div'); form.appendChild(rWrap);
+  function drawRuns() {
+    rWrap.textContent = '';
+    const need = [];
+    if ([1, 2, 3, 4, 5].some(i => days.has(i))) need.push('weekday');
+    if (days.has(6)) need.push('saturday');
+    if (days.has(0)) need.push('sunday');
+    need.forEach(dt => {
+      const f = el('div', 'pa-field');
+      f.appendChild(el('label', 'pa-label', dt + ' run #'));
+      const i = el('input', 'pa-input'); i.type = 'text'; i.inputMode = 'numeric'; i.maxLength = 4; i.placeholder = 'e.g. 101'; i.value = runs[dt] || '';
+      const lk = el('div', 'lookup');
+      let t; i.addEventListener('input', () => { runs[dt] = i.value.trim(); clearTimeout(t); t = setTimeout(() => lookupLine(lk, dt, runs[dt]), 350); });
+      f.appendChild(i); f.appendChild(lk); rWrap.appendChild(f);
+      if (runs[dt]) lookupLine(lk, dt, runs[dt]);
+    });
+  }
+  drawDays(); drawRuns();
+
+  const eff = el('div', 'pa-field'); eff.appendChild(el('label', 'pa-label', 'Starts on (a Sunday starts a full week)'));
+  const effIn = el('input', 'pa-input'); effIn.type = 'date';
+  const today = S.todayIso(); const nextSun = S.dowOf(today) === 0 ? today : S.addDays(S.weekStartOf(today), 7);
+  effIn.value = cur ? today : nextSun;
+  eff.appendChild(effIn);
+  eff.appendChild(el('div', 'hint', 'New pick or mid-cycle swap? Pick the date it takes over. Days before it keep your previous pattern.'));
+  form.appendChild(eff);
+
+  const save = el('button', 'pa-submit', cur ? 'Save as new version' : 'Save pattern'); save.type = 'button';
+  const msg = el('div', 'msgline');
+  save.addEventListener('click', async () => {
+    const need = []; if ([1,2,3,4,5].some(i => days.has(i))) need.push('weekday'); if (days.has(6)) need.push('saturday'); if (days.has(0)) need.push('sunday');
+    const missing = need.filter(dt => !runs[dt]);
+    if (!days.size) { msg.textContent = 'Pick at least one work day.'; msg.className = 'msgline err'; return; }
+    if (missing.length) { msg.textContent = 'Enter the run number for: ' + missing.join(', '); msg.className = 'msgline err'; return; }
+    if (!effIn.value) { msg.textContent = 'Pick a start date.'; msg.className = 'msgline err'; return; }
+    save.disabled = true; msg.textContent = 'Saving…'; msg.className = 'msgline';
+    try {
+      const d = {}; days.forEach(i => { d[String(i)] = {}; });
+      const rbt = {}; need.forEach(dt => { rbt[dt] = runs[dt]; });
+      await A.savePattern({ periodDays: 7, days: d, runByDayType: rbt, depotKey: ctx.profile.depotKey, effectiveFrom: effIn.value, preset, label: preset });
+      msg.textContent = 'Saved. Your days are filled in below.'; msg.className = 'msgline ok';
+    } catch (err) { msg.textContent = 'Could not save: ' + (err.code || err.message); msg.className = 'msgline err'; }
+    save.disabled = false;
+  });
+  form.appendChild(save); form.appendChild(msg);
+}
+
+function renderWeekForm(form) {
+  const isRelief = ctx.profile.driverType === 'relief';
+  const today = S.todayIso();
+  if (!ctx.weekCursor) ctx.weekCursor = S.weekStartOf(today);
+  const ws = ctx.weekCursor;
+
+  form.appendChild(el('h2', 'k', isRelief ? 'My week (relief)' : 'My assignments (slate)'));
+  form.appendChild(el('div', 'hint', isRelief
+    ? 'Enter the run for each day dispatch gave you. Leave rest days blank. The app fills in the start time when the run is in the paddle.'
+    : 'Enter today or tomorrow as dispatch assigns it — or a whole week if they give you one.'));
+
+  const nav = el('div', 'week-nav'); nav.style.marginTop = '12px';
+  const prev = el('button', 'pa-ghost', '← PREV'); prev.type = 'button'; prev.style.width = 'auto';
+  const next = el('button', 'pa-ghost', 'NEXT →'); next.type = 'button'; next.style.width = 'auto';
+  const lbl = el('div', 'wk-label', S.fmtDate(ws) + ' – ' + S.fmtDate(S.addDays(ws, 6)));
+  prev.addEventListener('click', () => { ctx.weekCursor = S.addDays(ws, -7); renderSchedule(); });
+  next.addEventListener('click', () => { ctx.weekCursor = S.addDays(ws, 7); renderSchedule(); });
+  nav.append(prev, lbl, next); form.appendChild(nav);
+
+  // Relief packages, when the depot publishes them for this season.
+  const pkgWrap = el('div', 'pa-field'); form.appendChild(pkgWrap);
+  const inputs = [];
+  for (let i = 0; i < 7; i++) {
+    const date = S.addDays(ws, i);
+    const r = A.resolve(date, ctx.overrides);
+    const row = el('div', 'wk-row' + (r.holidayDate ? ' hol' : ''));
+    const d = el('div', 'd', S.DAY_SHORT[i].toUpperCase()); d.appendChild(el('small', null, S.fmtDate(date).slice(4) + (date === today ? ' · today' : '') + (r.holidayDate ? ' · holiday' : '')));
+    const f = el('div');
+    const inp = el('input', 'pa-input'); inp.type = 'text'; inp.inputMode = 'numeric'; inp.maxLength = 4; inp.placeholder = r.holidayDate ? 'Sunday schedule' : 'off';
+    if (!r.off && r.runNo) inp.value = r.runNo;
+    const lk = el('div', 'lookup');
+    let t; inp.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => lookupLine(lk, r.dayType, inp.value.trim(), date), 350); });
+    if (inp.value) lookupLine(lk, r.dayType, inp.value, date);
+    f.append(inp, lk); row.append(d, f); form.appendChild(row);
+    inputs.push({ date, inp, r });
+  }
+
+  slugForDate(ctx.profile.depotKey, ws).then(({ slug }) => slug ? S.loadReliefPackages(slug) : new Map()).then(pk => {
+    if (!pk || !pk.size || !isRelief) return;
+    pkgWrap.appendChild(el('label', 'pa-label', 'Fill from relief package'));
+    const sel = el('select', 'pa-select'); const o0 = el('option', null, 'Choose a package…'); o0.value = ''; sel.appendChild(o0);
+    for (const [id, days] of pk) { const o = el('option', null, 'Relief ' + id + ' · ' + S.DAY_NAMES.map(n => days[n.toLowerCase()] || 'off').join(' ')); o.value = id; sel.appendChild(o); }
+    sel.addEventListener('change', () => {
+      const days = pk.get(sel.value); if (!days) return;
+      inputs.forEach(({ inp, r }, i) => { inp.value = days[S.DAY_NAMES[i].toLowerCase()] || ''; inp.dispatchEvent(new Event('input')); });
+    });
+    pkgWrap.appendChild(sel);
+  }).catch(() => {});
+
+  const rep = el('label', 'check');
+  const cb = el('input'); cb.type = 'checkbox'; cb.checked = isRelief;
+  rep.append(cb, document.createTextNode('Repeat this week every week until I change it'));
+  form.appendChild(rep);
+  form.appendChild(el('div', 'hint', isRelief
+    ? 'Cycles usually run about four weeks but dispatch decides when they end — when your week changes, just enter the new one; earlier weeks stay as they were.'
+    : 'Leave unchecked to save only the days you entered.'));
+
+  const save = el('button', 'pa-submit', 'Save week'); save.type = 'button';
+  const msg = el('div', 'msgline');
+  save.addEventListener('click', async () => {
+    save.disabled = true; msg.textContent = 'Saving…'; msg.className = 'msgline';
+    try {
+      const entries = inputs.map(({ date, inp, r }) => ({ date, runNo: inp.value.trim(), r }));
+      if (cb.checked) {
+        const d = {}; entries.forEach((e, i) => { if (e.runNo) d[String(i)] = { runNo: e.runNo }; });
+        if (!Object.keys(d).length) throw new Error('Enter at least one run.');
+        await A.savePattern({ periodDays: 7, days: d, runByDayType: {}, depotKey: ctx.profile.depotKey,
+                              effectiveFrom: ws, preset: isRelief ? 'relief-week' : 'slate-week', label: 'week of ' + ws });
+        // Explicit days in this week that disagree with the new pattern would
+        // shadow it; clear them so the pattern is what shows.
+        const clears = entries.filter(e => e.r.source === 'assignment').map(e => ({ date: e.date, remove: true }));
+        if (clears.length) await A.saveDays(clears);
+      } else {
+        const ops = [];
+        entries.forEach(e => {
+          if (e.runNo) ops.push({ date: e.date, runNo: e.runNo, status: 'scheduled', source: 'manual',
+                                  depotKey: ctx.profile.depotKey, dayType: e.r.dayType });
+          else if (e.r.source === 'assignment') ops.push({ date: e.date, remove: true });
+        });
+        if (!ops.length) throw new Error('Nothing to save.');
+        await A.saveDays(ops);
+      }
+      msg.textContent = 'Saved.'; msg.className = 'msgline ok';
+    } catch (err) { msg.textContent = 'Could not save: ' + (err.code || err.message); msg.className = 'msgline err'; }
+    save.disabled = false;
+  });
+  form.appendChild(save); form.appendChild(msg);
+}
+
+async function renderUpcoming() {
+  const list = $('sch-list'); list.textContent = '';
+  const today = S.todayIso();
+  const rows = A.resolveRange(today, S.addDays(today, 27), ctx.overrides);
+  for (const r of rows) {
+    const row = el('div', 'row' + (r.date === today ? ' today' : ''));
+    const d = el('div', 'd', S.DAY_SHORT[S.dowOf(r.date)].toUpperCase()); d.appendChild(el('small', null, S.fmtDate(r.date).slice(4)));
+    const runCell = el('div', 'run' + (r.off ? ' off' : ''));
+    const t = el('div', 't', '');
+    const acts = el('div', 'acts');
+    const badge = el('span', 'badge ' + (r.holiday && r.holiday.isHoliday ? 'holiday' : r.source === 'assignment' ? (r.assignment && r.assignment.source === 'edit' ? 'edit' : 'manual') : r.source === 'pattern' ? 'pattern' : ''),
+      r.holiday && r.holiday.isHoliday ? 'holiday' : r.source === 'assignment' ? (r.assignment && r.assignment.source === 'edit' ? 'edited' : 'manual') : r.source === 'pattern' ? 'pattern' : 'none');
+    const btn = el('button', 'rowbtn', 'EDIT'); btn.type = 'button';
+    btn.addEventListener('click', () => openEdit(r));
+    acts.append(badge, btn);
+    if (r.off) {
+      runCell.textContent = r.unregistered ? '—' : (r.status === 'holiday' ? 'OFF · holiday' : r.status.toUpperCase());
+    } else {
+      runCell.textContent = 'RUN ' + r.runNo + (r.flags && r.flags.overtime ? ' · OT' : '');
+      runFor(r, r.date).then(run => {
+        if (run) { t.textContent = S.fmtClock(run.reportMin) + ' – ' + S.fmtClock(run.finishMin); if (run.pieces[0]) runCell.textContent += ' · ' + run.pieces.map(p => p.routeLabel).join(' / '); }
+        else t.textContent = 'not in paddle';
+      }).catch(() => {});
+    }
+    row.append(d, runCell, t, acts);
+    list.appendChild(row);
+  }
+}
+
+// ---- edit sheet -----------------------------------------------------------
+
+let editOverlay = null;
+function openEdit(r) {
+  if (!editOverlay) {
+    editOverlay = el('div', 'pa-overlay pa-root'); editOverlay.hidden = true;
+    editOverlay.addEventListener('click', e => { if (e.target === editOverlay) closeEdit(); });
+    document.body.appendChild(editOverlay);
+  }
+  editOverlay.textContent = ''; editOverlay.hidden = false;
+  const card = el('div', 'pa-card');
+  const head = el('div', 'pa-card-head');
+  head.appendChild(el('div', 'pa-card-title', S.fmtDate(r.date)));
+  const x = el('button', 'pa-close', '×'); x.type = 'button'; x.addEventListener('click', closeEdit); head.appendChild(x);
+  const body = el('div', 'pa-card-body');
+  const msg = el('div', 'pa-msg'); msg.hidden = true; body.appendChild(msg);
+
+  const a = r.assignment || {};
+  const state = {
+    runNo: r.runNo || '',
+    status: r.off ? (r.status === 'holiday' ? 'off' : (r.status || 'off')) : 'scheduled',
+    holiday: !!(r.holiday && r.holiday.isHoliday) || r.holidayDate,
+    worked: r.holiday ? !!r.holiday.worked : !r.off,
+    holidayHours: (r.holiday && r.holiday.payHours != null) ? r.holiday.payHours : A.HOLIDAY_PAY_HOURS,
+    bonusHours: (r.holiday && r.holiday.workedBonusHours != null) ? r.holiday.workedBonusHours : A.HOLIDAY_WORKED_BONUS_HOURS,
+    overtime: !!(r.flags && r.flags.overtime), callIn: !!(r.flags && r.flags.callIn),
+    reportMin: r.reportMin != null ? r.reportMin : null,
+    note: r.note || ''
+  };
+
+  const fRun = el('div', 'pa-field'); fRun.appendChild(el('label', 'pa-label', 'Run #'));
+  const iRun = el('input', 'pa-input'); iRun.type = 'text'; iRun.inputMode = 'numeric'; iRun.maxLength = 4; iRun.value = state.runNo;
+  const lk = el('div', 'lookup'); let t;
+  iRun.addEventListener('input', () => { state.runNo = iRun.value.trim(); clearTimeout(t); t = setTimeout(() => { lookupLine(lk, r.dayType, state.runNo, r.date); drawPay(); }, 350); });
+  fRun.append(iRun, lk); body.appendChild(fRun);
+  if (state.runNo) lookupLine(lk, r.dayType, state.runNo, r.date);
+
+  const fSt = el('div', 'pa-field'); fSt.appendChild(el('label', 'pa-label', 'Status'));
+  const sSt = el('select', 'pa-select');
+  [['scheduled', 'Working'], ['off', 'Off'], ['vacation', 'Vacation'], ['sick', 'Sick']].forEach(([v, l]) => { const o = el('option', null, l); o.value = v; if (v === state.status) o.selected = true; sSt.appendChild(o); });
+  sSt.addEventListener('change', () => { state.status = sSt.value; if (state.status !== 'scheduled') state.worked = false; drawHoliday(); drawPay(); });
+  fSt.appendChild(sSt); body.appendChild(fSt);
+
+  const fRep = el('div', 'pa-field'); fRep.appendChild(el('label', 'pa-label', 'Report time override (optional)'));
+  const iRep = el('input', 'pa-input'); iRep.type = 'time'; if (state.reportMin != null) iRep.value = S.pad2(Math.floor((state.reportMin % 1440) / 60)) + ':' + S.pad2(state.reportMin % 60);
+  iRep.addEventListener('input', () => { const m = iRep.value.match(/^(\d{2}):(\d{2})$/); state.reportMin = m ? parseInt(m[1]) * 60 + parseInt(m[2]) : null; });
+  fRep.appendChild(iRep); fRep.appendChild(el('div', 'hint', 'Only needed when the run isn’t in the paddle or your start differs from it.'));
+  body.appendChild(fRep);
+
+  const holWrap = el('div'); body.appendChild(holWrap);
+  function toggleRow(label, key, onChange) {
+    const w = el('label', 'check'); const c = el('input'); c.type = 'checkbox'; c.checked = !!state[key];
+    c.addEventListener('change', () => { state[key] = c.checked; if (onChange) onChange(); drawPay(); });
+    w.append(c, document.createTextNode(label)); return w;
+  }
+  function drawHoliday() {
+    holWrap.textContent = '';
+    holWrap.appendChild(toggleRow('Holiday' + (r.holidayDate ? ' (Sunday schedule)' : ''), 'holiday', drawHoliday));
+    if (state.holiday) {
+      holWrap.appendChild(toggleRow('I worked this holiday', 'worked', () => { if (state.worked) { state.status = 'scheduled'; sSt.value = 'scheduled'; } drawHoliday(); }));
+      const row = el('div', 'form-row');
+      const h1 = el('div', 'pa-field'); h1.appendChild(el('label', 'pa-label', 'Holiday hours')); const i1 = el('input', 'pa-input'); i1.type = 'number'; i1.step = '0.5'; i1.value = state.holidayHours; i1.addEventListener('input', () => { state.holidayHours = parseFloat(i1.value) || 0; drawPay(); }); h1.appendChild(i1);
+      row.appendChild(h1);
+      if (state.worked) { const h2 = el('div', 'pa-field'); h2.appendChild(el('label', 'pa-label', 'Worked bonus hours')); const i2 = el('input', 'pa-input'); i2.type = 'number'; i2.step = '0.5'; i2.value = state.bonusHours; i2.addEventListener('input', () => { state.bonusHours = parseFloat(i2.value) || 0; drawPay(); }); h2.appendChild(i2); row.appendChild(h2); }
+      holWrap.appendChild(row);
+    }
+    holWrap.appendChild(toggleRow('Overtime day', 'overtime'));
+    holWrap.appendChild(toggleRow('Called in late', 'callIn'));
+  }
+  drawHoliday();
+
+  const fNote = el('div', 'pa-field'); fNote.appendChild(el('label', 'pa-label', 'Note'));
+  const iNote = el('input', 'pa-input'); iNote.type = 'text'; iNote.maxLength = 140; iNote.value = state.note; iNote.addEventListener('input', () => { state.note = iNote.value; });
+  fNote.appendChild(iNote); body.appendChild(fNote);
+
+  const pay = el('div', 'pay'); body.appendChild(pay);
+  async function drawPay() {
+    const fake = { off: state.status !== 'scheduled' || !state.runNo, runNo: state.runNo, dayType: r.dayType, reportMin: state.reportMin, depotKey: ctx.profile.depotKey,
+                   holiday: state.holiday ? { isHoliday: true, worked: state.worked && state.status === 'scheduled', payHours: state.holidayHours, workedBonusHours: state.bonusHours } : null };
+    const run = fake.off ? null : await runFor(fake, r.date).catch(() => null);
+    const p = A.payHoursFor(fake, run);
+    pay.innerHTML = p.parts.length ? 'Pay: ' + p.parts.map(([k, v]) => esc(k) + ' ' + (+v).toFixed(1)).join(' + ') + ' = <b>' + p.total.toFixed(1) + ' hrs</b>' : 'Pay: <b>0.0 hrs</b>';
+  }
+  drawPay();
+
+  const stack = el('div', 'pa-stack');
+  const save = el('button', 'pa-submit', 'Save day'); save.type = 'button';
+  save.addEventListener('click', async () => {
+    save.disabled = true; msg.hidden = true;
+    try {
+      const working = state.status === 'scheduled' && !!state.runNo;
+      await A.saveAssignment(r.date, {
+        runNo: working ? state.runNo : null,
+        depotKey: ctx.profile.depotKey, dayType: r.dayType,
+        status: working ? 'scheduled' : (state.status === 'scheduled' ? 'off' : state.status),
+        flags: { overtime: state.overtime, holiday: state.holiday, callIn: state.callIn },
+        holiday: state.holiday ? { isHoliday: true, worked: working && state.worked, payHours: state.holidayHours, workedBonusHours: state.bonusHours } : null,
+        reportMin: state.reportMin, note: state.note, source: 'edit'
+      });
+      closeEdit();
+    } catch (err) { msg.textContent = 'Could not save: ' + (err.code || err.message); msg.className = 'pa-msg pa-err'; msg.hidden = false; save.disabled = false; }
+  });
+  stack.appendChild(save);
+  if (r.source === 'assignment') {
+    const rev = el('button', 'pa-ghost', r.patternId || A.activePattern(A.getState().patterns, r.date) ? 'Revert to my pattern' : 'Remove this day'); rev.type = 'button';
+    rev.addEventListener('click', async () => { try { await A.clearAssignment(r.date); closeEdit(); } catch (err) { msg.textContent = err.message; msg.className = 'pa-msg pa-err'; msg.hidden = false; } });
+    stack.appendChild(rev);
+  }
+  const cancel = el('button', 'pa-ghost', 'Cancel'); cancel.type = 'button'; cancel.addEventListener('click', closeEdit); stack.appendChild(cancel);
+  body.appendChild(stack);
+  card.append(head, body); editOverlay.appendChild(card);
+}
+function closeEdit() { if (editOverlay) editOverlay.hidden = true; }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeEdit(); });
+
+// Expose the pure pieces for in-browser checks (no side effects).
+window.PA_HOME = { S, A, computeState, ctx, renderSchedule, renderToday, openEdit, refreshToday };
+</script>
+</body>
+</html>

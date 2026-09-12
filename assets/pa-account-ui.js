@@ -32,7 +32,7 @@ const DRIVER_TYPES = [
 const SEASON_SUFFIX = /-(summer|fall|spring|winter)-?\d{4}$/i;
 const depotKeyOf = slug => String(slug || '').replace(SEASON_SUFFIX, '');
 
-let auth = null, store = null;      // lazily imported modules
+let auth = null, store = null, strip = null;   // lazily imported modules
 let booting = null;                 // in-flight boot promise
 let user = null, profile = null;
 let slot = null, overlay = null;
@@ -81,8 +81,15 @@ async function onAuthChange(e) {
     } catch (err) {
       console.warn('[pa] profile load failed', err.code || err.message);
     }
+    // The paddle viewer gets a one-line "next run" strip under its header.
+    // Only pages with the depot picker qualify, and only once signed in, so
+    // the tools stay exactly as light as they are for everyone else.
+    if (document.getElementById('district-select')) {
+      import('./pa-strip.js').then(m => { strip = m; return m.mount(user.uid, profile); }).catch(() => {});
+    }
   } else {
     profile = null;
+    if (strip) { try { strip.unmount(); } catch (_) {} }
     if (store) store.detach();
   }
   renderButton();
@@ -372,6 +379,11 @@ function buildSignedIn(body) {
   body.appendChild(grid);
 
   const stack = el('div', 'pa-stack');
+
+  const myrun = el('a', 'pa-ghost');
+  myrun.href = 'home.html';
+  myrun.textContent = 'My run';
+  stack.appendChild(myrun);
 
   const hours = el('a', 'pa-ghost');
   hours.href = 'hours.html';
