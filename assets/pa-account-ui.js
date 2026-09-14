@@ -576,6 +576,15 @@ function mount() {
   if (!slot) return;                       // page not wired; do nothing
   renderButton();
 
+  // Register the service worker on every wired page, signed in or not. It
+  // revalidates same-origin files with the server on every request, which is
+  // what stops a fresh page from running a ten-minute-old module after a
+  // deploy (GitHub Pages caches assets for 600 s). Non-blocking; failures
+  // are harmless.
+  if ('serviceWorker' in navigator) {
+    try { navigator.serviceWorker.register(new URL('sw.js', document.baseURI).href).catch(() => {}); } catch (_) {}
+  }
+
   // Returning user: hydrate straight away so the header does not sit on
   // "SIGN IN" while they are in fact signed in. Everyone else pays nothing
   // until they click.

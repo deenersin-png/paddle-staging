@@ -1,15 +1,52 @@
 // Paddle App service worker.
 //
 // Lives at the site root so its scope covers every page (on GitHub Pages
-// that is /septa-scheduler/). Today it does two things: exists, so the site
-// is installable, and displays / routes notifications. It deliberately has
-// NO fetch handler — nothing is cached, so a deploy is never masked by a
-// stale copy. The push handler is the hook for Tier-2 (server-sent) alerts.
+// that is /septa-scheduler/). It does three things:
+//
+//  1. Keeps the site installable and displays / routes notifications. The
+//     push handler is the hook for Tier-2 (server-sent) alerts.
+//
+//  2. Fetch: NETWORK-FIRST WITH REVALIDATION for same-origin files. GitHub
+//     Pages serves everything with Cache-Control: max-age=600, so after a
+//     deploy a browser can happily pair a fresh home.html with a ten-minute-
+//     old pa-assignments.js and throw "X is not a function". Asking the
+//     server every time (cache: 'no-cache' => conditional request, a cheap
+//     304 when unchanged) means a deploy is never masked by a stale module.
+//
+//  3. Offline: whatever was fetched successfully is kept in a cache and
+//     served only when the network fails - a depot parking lot with one bar
+//     still gets the paddle viewer it loaded this morning.
 
-const VERSION = 'pa-sw-1';
+const VERSION = 'pa-sw-2';
+const CACHE = 'pa-cache-v2';
 
 self.addEventListener('install', () => self.skipWaiting());
-self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
+self.addEventListener('activate', e => e.waitUntil((async () => {
+  const keys = await caches.keys();
+  await Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)));
+  await self.clients.claim();
+})()));
+
+self.addEventListener('fetch', e => {
+  const req = e.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;          // gstatic, SEPTA, fonts: browser default
+  e.respondWith((async () => {
+    try {
+      const res = await fetch(req, { cache: 'no-cache' });  // always revalidate with the server
+      if (res && res.ok) {
+        const copy = res.clone();
+        caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
+      }
+      return res;
+    } catch (_) {
+      const hit = await caches.match(req, { ignoreSearch: false });
+      if (hit) return hit;
+      throw _;
+    }
+  })());
+});
 
 self.addEventListener('notificationclick', e => {
   e.notification.close();
