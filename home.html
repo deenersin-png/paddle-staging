@@ -125,6 +125,8 @@ header{background:var(--ink2);border-bottom:1px solid var(--line2);padding:12px 
 .win:last-child{border-bottom:none}
 .win-d{color:var(--bright);font-weight:600;min-width:0}
 .win-d small{display:block;color:var(--mid);font-weight:400;font-size:10px;margin-top:2px;white-space:normal}
+.win-acts{display:flex;gap:6px;flex:0 0 auto}
+.rowbtn.rm:hover{color:var(--red);border-color:rgba(255,107,107,.35)}
 .winnav{display:flex;gap:8px;margin-top:4px}
 .winnav .pa-ghost{flex:1 1 0;width:auto}
 .pay{font-family:var(--mono);font-size:12px;color:var(--mid);margin:10px 0}
@@ -675,21 +677,34 @@ function renderRegularForm(form) {
   const range = (x, y) => S.fmtDate(x) + ' \u2013 ' + (y ? S.fmtDate(y) : 'open');
   const summary = p => { const r = runsOf(p); return Object.keys(r).map(Number).sort((x, y) => x - y).map(i => S.DAY_SHORT[i] + ' ' + r[i]).join(' \u00b7 '); };
 
-  form.appendChild(el('h2', 'k', 'My pick'));
+  form.appendChild(el('h2', 'k', 'My pick(s)'));
 
   // ---- saved windows
   if (wins.length) {
     const list = el('div', 'wins');
+    const listMsg = el('div', 'msgline');
     wins.forEach(p => {
       const row = el('div', 'win');
       const dd = el('div', 'win-d', range(p.effectiveFrom, p.effectiveTo));
       dd.appendChild(el('small', null, summary(p)));
+      const acts = el('div', 'win-acts');
       const b = el('button', 'rowbtn', 'EDIT'); b.type = 'button';
       b.addEventListener('click', () => { loadWindow(p); });
-      row.append(dd, b);
+      // Two taps to remove: the first arms it, the second deletes. Explicit
+      // days inside the block are kept; its weeks just become unregistered.
+      const rm = el('button', 'rowbtn rm', 'REMOVE'); rm.type = 'button';
+      rm.addEventListener('click', async () => {
+        if (rm.dataset.armed !== '1') { rm.dataset.armed = '1'; rm.textContent = 'TAP AGAIN'; setTimeout(() => { rm.dataset.armed = ''; rm.textContent = 'REMOVE'; }, 4000); return; }
+        rm.disabled = true;
+        try { await A.deletePattern(p.id); listMsg.textContent = 'Removed ' + range(p.effectiveFrom, p.effectiveTo) + '.'; listMsg.className = 'msgline ok'; setTimeout(() => renderSchedule(), 400); }
+        catch (err) { listMsg.textContent = 'Could not remove: ' + (err.code || err.message); listMsg.className = 'msgline err'; rm.disabled = false; rm.dataset.armed = ''; rm.textContent = 'REMOVE'; }
+      });
+      acts.append(b, rm);
+      row.append(dd, acts);
       list.appendChild(row);
     });
     form.appendChild(list);
+    form.appendChild(listMsg);
   } else {
     form.appendChild(el('div', 'hint', 'Enter your pick one four-week block at a time. Every day in the block fills in by itself, and the app already knows each run\u2019s hours.'));
   }

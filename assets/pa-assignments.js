@@ -176,6 +176,13 @@ export async function endPattern(id, lastDate) {
   await setDoc(patRef(id), { effectiveTo: lastDate, updatedAt: serverTimestamp() }, { merge: true });
 }
 
+/** Remove a saved block. Explicit days inside it are kept; the weeks it
+ *  covered simply become unregistered again. */
+export async function deletePattern(id) {
+  if (!db) throw new Error('not signed in');
+  await deleteDoc(patRef(id));
+}
+
 export function activePattern(patterns, date) {
   return patterns
     .filter(p => p.effectiveFrom <= date && (!p.effectiveTo || date <= p.effectiveTo))
