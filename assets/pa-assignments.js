@@ -111,23 +111,45 @@ export function detach() {
 // ---- patterns -------------------------------------------------------------
 
 /**
- * Save a new pattern version starting at p.effectiveFrom. Any existing
- * version still open on that date is closed the day before; any version
- * that would start on or after it is superseded and removed.
+ * Pure: what saving a window [from, to] does to the existing versions.
+ * Neighbouring windows are left alone; only overlap is resolved:
+ *   - a version that starts before `from` is closed the day before it
+ *   - a version that starts inside the window and ends after it is moved to
+ *     start the day after `to`
+ *   - a version wholly inside the window is removed
+ * `to` null means open-ended, which supersedes everything at/after `from`.
+ */
+export function windowOps(existing, from, to) {
+  const hi = to || '9999-12-31';
+  const ops = [];
+  for (const ex of existing) {
+    const exFrom = ex.effectiveFrom, exTo = ex.effectiveTo || '9999-12-31';
+    if (exFrom > hi || exTo < from) continue;                       // no overlap
+    if (exFrom < from) { ops.push({ op: 'update', id: ex.id, effectiveTo: addDays(from, -1) }); continue; }
+    if (to && exTo > hi) { ops.push({ op: 'update', id: ex.id, effectiveFrom: addDays(to, 1) }); continue; }
+    ops.push({ op: 'delete', id: ex.id });
+  }
+  return ops;
+}
+
+/**
+ * Save a pattern version covering [p.effectiveFrom, p.effectiveTo]. Other
+ * windows before and after are untouched (see windowOps).
  *
  * p = { periodDays:7, days:{ "1":{runNo:'209'}, "2":{runNo:'214'} },
- *       runByDayType:{weekday:'209'}, depotKey, effectiveFrom, preset, label }
+ *       runByDayType:{weekday:'209'}, depotKey, effectiveFrom, effectiveTo, preset, label }
  */
 export async function savePattern(p) {
   if (!db) throw new Error('not signed in');
-  const from = p.effectiveFrom;
+  const from = p.effectiveFrom, to = p.effectiveTo || null;
   if (!from) throw new Error('effectiveFrom required');
+  if (to && to < from) throw new Error('end before start');
   const batch = writeBatch(db);
-  for (const ex of state.patterns) {
-    if (ex.effectiveFrom >= from) { batch.delete(patRef(ex.id)); continue; }
-    if (!ex.effectiveTo || ex.effectiveTo >= from) {
-      batch.set(patRef(ex.id), { effectiveTo: addDays(from, -1), updatedAt: serverTimestamp() }, { merge: true });
-    }
+  for (const o of windowOps(state.patterns, from, to)) {
+    if (o.op === 'delete') batch.delete(patRef(o.id));
+    else batch.set(patRef(o.id), { ...(o.effectiveTo ? { effectiveTo: o.effectiveTo } : {}),
+                                   ...(o.effectiveFrom ? { effectiveFrom: o.effectiveFrom } : {}),
+                                   updatedAt: serverTimestamp() }, { merge: true });
   }
   const id = 'p' + from.replace(/-/g, '') + '_' + Math.random().toString(36).slice(2, 6);
   batch.set(patRef(id), {
@@ -137,7 +159,7 @@ export async function savePattern(p) {
     runByDayType: p.runByDayType || {},
     depotKey: p.depotKey || '',
     effectiveFrom: from,
-    effectiveTo: null,
+    effectiveTo: to,
     preset: p.preset || '',
     label: p.label || '',
     createdAt: serverTimestamp(),
@@ -240,7 +262,7 @@ function fromPattern(patterns, date, base) {
     // A Regular driver's pick stores one run per day too, but the holiday
     // rule for them is "Sunday schedule" — only a dispatch-assigned week
     // (holdowner / slate) keeps its explicit run on a holiday.
-    const isPick = !!PRESETS[p.preset];
+    const isPick = p.preset === 'pick' || !!PRESETS[p.preset];
     if (!isPick && slot && slot.runNo) {
       return { ...out, runNo: String(slot.runNo), holiday: { isHoliday: true, worked: true },
                extras: [{ kind: 'holiday', min: HOLIDAY_PAY_MIN, note: '' }, { kind: 'holiday', min: HOLIDAY_WORKED_BONUS_MIN, note: 'worked' }],
