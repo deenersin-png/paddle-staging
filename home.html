@@ -957,7 +957,10 @@ function renderWeekForm(form) {
 async function renderUpcoming() {
   const list = $('sch-list'); list.textContent = '';
   const today = S.todayIso();
-  const rows = A.resolveRange(today, S.addDays(today, 27), ctx.overrides);
+  // Four full Sunday-Saturday weeks, starting with this week's Sunday, so
+  // the days already worked this week stay visible and editable.
+  const weekStart = S.weekStartOf(today);
+  const rows = A.resolveRange(weekStart, S.addDays(weekStart, 27), ctx.overrides);
   for (const r of rows) {
     // The day letters say where the day came from: blue = your pick, purple =
     // edited, green = entered as a week (holdowner / slate). The whole line
