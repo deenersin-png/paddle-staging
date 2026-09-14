@@ -58,7 +58,7 @@ async function render() {
     return;
   }
   const { slug } = await S.slugFor(r.depotKey || profile.depotKey, date);
-  let run = slug ? await S.getRun(slug, r.dayType, r.runNo) : null;
+  let run = slug ? await S.getRun(slug, r.runDayType || r.dayType, r.runNo) : null;
   if (run && r.reportMin != null) run = { ...run, reportMin: r.reportMin };
   const nowMin = S.nowMinutes() + (date === today ? 0 : 0);
   let label, target;

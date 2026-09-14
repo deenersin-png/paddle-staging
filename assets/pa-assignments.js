@@ -38,7 +38,14 @@ import { dayTypeFor, isHoliday, dowOf, daysBetween, addDays, todayIso } from './
 export const HOLIDAY_PAY_MIN = 480;
 export const HOLIDAY_WORKED_BONUS_MIN = 240;
 
-export const EXTRA_KINDS = { ot: 'Overtime', holiday: 'Holiday bonus', other: 'Other' };
+export const EXTRA_KINDS = { ot: 'Overtime', holiday: 'Holiday', late: 'Late arrival', other: 'Other' };
+
+/** Labels for the day kinds the edit sheet writes (assignment.kind). */
+export const KIND_LABELS = {
+  'normal': 'Worked', 'late': 'Late arrival', 'holiday-off': 'Holiday', 'holiday-worked': 'Holiday worked',
+  'called-out': 'Called out', 'sick': 'Sick', 'paid-off': 'Paid day off', 'unpaid-off': 'Unpaid day off',
+  'unpaid-excused': 'Unpaid excused'
+};
 export const STATUSES = ['scheduled', 'off', 'sick', 'vacation', 'holiday'];
 
 // Work-day presets. Day indexes are 0 = Sunday .. 6 = Saturday.
@@ -311,6 +318,8 @@ export function resolvePure(st, date, overrides) {
     source: 'assignment',
     assignment: a,
     runNo: a.runNo ? String(a.runNo) : null,
+    runDayType: a.runDayType || null,           // paddle the swapped-in run belongs to
+    kind: a.kind || null,
     depotKey: a.depotKey || pat.depotKey || null,
     dayType: a.dayType || base.dayType,
     reportMin: a.reportMin != null ? a.reportMin : null,
@@ -352,16 +361,21 @@ export function runMinutes(run, resolved) {
  */
 export function dayHours(resolved, run, today) {
   const r = resolved, t = today || todayIso();
-  const runMin = runMinutes(run, r);
+  // Scheduled = the paddle's hours for the run. Worked = the same unless the
+  // operator typed a different amount (payMin), e.g. a short day or a run
+  // the paddle does not know.
+  const paddleMin = run && run.payHours ? Math.round(run.payHours * 60) : 0;
   const working = !r.off && r.status === 'scheduled' && !!r.runNo;
+  const workedMin = r.payMin != null ? Math.round(r.payMin) : paddleMin;
+  const runMin = paddleMin || workedMin;
   const scheduledMin = working ? runMin : 0;
   const ex = extrasMin(r.extras);
   const past = r.date <= t;
   const changedFromPattern = r.source === 'assignment' &&
     (r.extraShift || (!working && !!r.patternRunNo) || (working && r.patternRunNo && r.runNo !== r.patternRunNo));
   return {
-    runMin, scheduledMin, extrasMin: ex,
-    actualMin: past ? scheduledMin + ex : null,
+    runMin, scheduledMin, extrasMin: ex, workedMin: working ? workedMin : 0,
+    actualMin: past ? (working ? workedMin : 0) + ex : null,
     working, past,
     flagged: ex > 0 || (r.extras && r.extras.length > 0) || (!r.unregistered && !['scheduled', 'off'].includes(r.status)) || !!changedFromPattern,
     unknownRun: working && !run && r.payMin == null
@@ -386,7 +400,7 @@ export const fmtHours = min => (Math.round(min) / 60).toFixed(2);
 export function payHoursFor(resolved, run) {
   const h = dayHours(resolved, run, '9999-12-31');
   const parts = [];
-  if (h.working) parts.push(['Run', h.runMin / 60]);
+  if (h.working) parts.push(['Worked', h.workedMin / 60]);
   (resolved.extras || []).forEach(x => parts.push([EXTRA_KINDS[x.kind] || 'Extra', x.min / 60]));
-  return { total: (h.scheduledMin + h.extrasMin) / 60, parts };
+  return { total: (h.workedMin + h.extrasMin) / 60, parts };
 }

@@ -2,9 +2,12 @@
 // Paddle App — the day edit sheet, shared by home.html and hours.html.
 //
 // Editing a day writes ONLY assignments/{date}; the pattern is never touched.
-// "Revert to my pattern" deletes that document. The sheet never asks for a
-// run's base hours when the paddle knows the run — it looks them up — and
-// only offers a manual hours field when the run is not in the paddle.
+// "Revert to my pattern" deletes that document.
+//
+// One dropdown decides the day's kind; each kind shows only the fields it
+// needs. Hours for a known run come from the paddle and are pre-filled, never
+// required. A run swapped in from another day's schedule (a Sunday run worked
+// on a Monday) carries `runDayType`, so its hours come from the right paddle.
 // ==========================================================================
 
 import * as S from './pa-schedule.js';
@@ -19,6 +22,20 @@ export function configure(c) { Object.assign(cfg, c); }
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+export const KINDS = [
+  ['normal',         'Normal hours worked'],
+  ['late',           'Late arrival'],
+  ['holiday-off',    'Holiday, not worked (8 h)'],
+  ['holiday-worked', 'Holiday, worked (8 h + hours worked)'],
+  ['called-out',     'Not worked / called out'],
+  ['sick',           'Sick'],
+  ['paid-off',       'Paid day off'],
+  ['unpaid-off',     'Unpaid day off'],
+  ['unpaid-excused', 'Unpaid excused day']
+];
+const WORKING = new Set(['normal', 'late', 'holiday-worked']);
+const DAY_TYPES = [['weekday', 'Weekday schedule'], ['saturday', 'Saturday schedule'], ['sunday', 'Sunday schedule']];
+
 // ---- shared lookups -------------------------------------------------------
 
 export async function slugForDate(depotKey, iso) {
@@ -27,16 +44,17 @@ export async function slugForDate(depotKey, iso) {
   return slugCache.get(k);
 }
 
-/** Normalised run for a resolved day (paddle), with the day's report-time
- *  override applied; a synthetic run when only a manual time is known. */
+/** Normalised run for a resolved day. The paddle consulted is the run's own
+ *  schedule (`runDayType`) when the run was swapped in from another day. */
 export async function runFor(r, iso, depotKey) {
   if (!r || r.off || !r.runNo) return null;
   const depot = r.depotKey || depotKey || (cfg.profile && cfg.profile.depotKey);
   const { slug } = await slugForDate(depot, iso);
-  let run = slug ? await S.getRun(slug, r.dayType, r.runNo) : null;
+  const dt = r.runDayType || r.dayType;
+  let run = slug ? await S.getRun(slug, dt, r.runNo) : null;
   if (run && r.reportMin != null) run = { ...run, reportMin: r.reportMin, overridden: true };
   if (!run && r.reportMin != null) {
-    run = { runNo: r.runNo, dayType: r.dayType, reportMin: r.reportMin, finishMin: null,
+    run = { runNo: r.runNo, dayType: dt, reportMin: r.reportMin, finishMin: null,
             pullOutMin: r.reportMin, pullInMin: null, payHours: 0, pieces: [], routes: [], blocks: [], synthetic: true };
   }
   return run;
@@ -87,6 +105,21 @@ function showMsg(text, kind) {
   msgEl.textContent = text; msgEl.hidden = false;
 }
 
+/** Best guess of the kind for a day that predates the dropdown. */
+function kindOf(r) {
+  if (r.kind) return r.kind;
+  if (r.status === 'holiday') return 'holiday-off';
+  if (r.status === 'sick') return 'sick';
+  if (r.status === 'vacation') return 'paid-off';
+  if (r.status === 'off') return (r.source === 'assignment' && r.patternRunNo) ? 'called-out' : 'unpaid-off';
+  if (r.extras && r.extras.some(x => x.kind === 'holiday')) return 'holiday-worked';
+  if (r.extras && r.extras.some(x => x.kind === 'late')) return 'late';
+  return 'normal';
+}
+
+const hoursStr = min => (min == null ? '' : (Math.round(min) / 60).toFixed(2).replace(/\.?0+$/, ''));
+const parseHours = v => { const n = parseFloat(v); return Number.isFinite(n) && n >= 0 ? Math.round(n * 60) : null; };
+
 /**
  * @param r  a resolved day from pa-assignments (resolve / resolveRange)
  */
@@ -103,146 +136,162 @@ export function openEdit(r) {
   const body = el('div', 'pa-card-body');
   msgEl = el('div', 'pa-msg'); msgEl.hidden = true; body.appendChild(msgEl);
 
-  // Working state of the sheet.
   const st = {
+    kind: kindOf(r),
     runNo: r.runNo || r.patternRunNo || '',
-    status: r.status && r.status !== 'holiday' ? r.status : (r.status === 'holiday' ? 'holiday' : 'scheduled'),
-    extras: (r.extras || []).map(x => ({ ...x })),
-    payMin: r.payMin != null ? r.payMin : null,
+    runDayType: r.runDayType || r.dayType,
+    run: null,                                  // paddle run for runNo/runDayType
+    hoursMin: r.payMin != null ? r.payMin : null,   // typed hours (override / paid-off)
+    lateMin: (r.extras || []).filter(x => x.kind === 'late').reduce((s, x) => s + Math.abs(x.min), 0) || null,
     reportMin: r.reportMin != null ? r.reportMin : null,
-    callIn: !!(r.flags && r.flags.callIn),
-    note: r.note || '',
-    run: null
+    note: r.note || ''
   };
-  if (r.source !== 'assignment' && r.off && !r.holidayDate) st.status = 'off';
-
-  if (r.source === 'pattern' && r.runNo) {
-    body.appendChild(el('div', 'hint', 'From your pattern. Changes here affect this day only.'));
-  } else if (r.unregistered) {
-    body.appendChild(el('div', 'hint', 'Nothing registered for this day. Enter a run to log an extra shift.'));
+  if (st.kind === 'paid-off' && st.hoursMin == null) {
+    const other = (r.extras || []).find(x => x.kind === 'other');
+    st.hoursMin = other ? other.min : null;
   }
 
-  // Run
-  const fRun = el('div', 'pa-field'); fRun.appendChild(el('label', 'pa-label', 'Run #'));
-  const iRun = el('input', 'pa-input'); iRun.type = 'text'; iRun.inputMode = 'numeric'; iRun.maxLength = 4; iRun.value = st.runNo;
-  const lk = el('div', 'lookup');
-  const manualWrap = el('div', 'pa-field'); manualWrap.hidden = true;
-  manualWrap.appendChild(el('label', 'pa-label', 'Hours for this run (not in paddle)'));
-  const iPay = el('input', 'pa-input'); iPay.type = 'number'; iPay.step = '0.1'; iPay.min = '0'; iPay.placeholder = 'e.g. 8.5';
-  if (st.payMin != null) iPay.value = (st.payMin / 60).toFixed(2);
-  iPay.addEventListener('input', () => { const v = parseFloat(iPay.value); st.payMin = Number.isFinite(v) ? Math.round(v * 60) : null; drawPay(); });
-  manualWrap.appendChild(iPay);
-  let t;
+  if (r.source === 'pattern' && r.runNo) body.appendChild(el('div', 'hint', 'From your pattern. Changes here affect this day only.'));
+  else if (r.unregistered) body.appendChild(el('div', 'hint', 'Nothing registered for this day.'));
+
+  // ---- kind
+  const fK = el('div', 'pa-field'); fK.appendChild(el('label', 'pa-label', 'This day'));
+  const sK = el('select', 'pa-select');
+  KINDS.forEach(([v, l]) => { const oo = el('option', null, l); oo.value = v; if (v === st.kind) oo.selected = true; sK.appendChild(oo); });
+  sK.addEventListener('change', () => {
+    st.kind = sK.value;
+    if (st.kind !== 'paid-off' && st.kind !== 'normal' && st.kind !== 'holiday-worked') st.hoursMin = null;
+    if (st.kind === 'paid-off') st.hoursMin = st.hoursMin != null ? st.hoursMin : 480;
+    drawFields(); drawPay();
+  });
+  fK.appendChild(sK); body.appendChild(fK);
+
+  // ---- kind-specific fields
+  const fields = el('div'); body.appendChild(fields);
+  let lookupTimer;
+  function drawFields() {
+    fields.textContent = '';
+    const working = WORKING.has(st.kind);
+
+    if (working) {
+      const row = el('div', 'form-row');
+      const fRun = el('div', 'pa-field'); fRun.appendChild(el('label', 'pa-label', 'Run #'));
+      const iRun = el('input', 'pa-input'); iRun.type = 'text'; iRun.inputMode = 'numeric'; iRun.maxLength = 4; iRun.value = st.runNo;
+      iRun.addEventListener('input', () => { st.runNo = iRun.value.trim(); clearTimeout(lookupTimer); lookupTimer = setTimeout(doLookup, 350); });
+      fRun.appendChild(iRun); row.appendChild(fRun);
+
+      // Which schedule the run belongs to. A Sunday run worked on a Monday
+      // must be looked up in the Sunday paddle, not Monday's.
+      const fDt = el('div', 'pa-field'); fDt.appendChild(el('label', 'pa-label', 'Run is from'));
+      const sDt = el('select', 'pa-select');
+      DAY_TYPES.forEach(([v, l]) => { const oo = el('option', null, l + (v === r.dayType ? ' (this day)' : '')); oo.value = v; if (v === st.runDayType) oo.selected = true; sDt.appendChild(oo); });
+      sDt.addEventListener('change', () => { st.runDayType = sDt.value; doLookup(); });
+      fDt.appendChild(sDt); row.appendChild(fDt);
+      fields.appendChild(row);
+
+      const lk = el('div', 'lookup'); lk.id = 'pa-edit-lookup'; fields.appendChild(lk);
+
+      const fH = el('div', 'pa-field'); fH.style.marginTop = '10px';
+      fH.appendChild(el('label', 'pa-label', st.kind === 'holiday-worked' ? 'Hours actually worked' : 'Hours'));
+      const iH = el('input', 'pa-input'); iH.type = 'number'; iH.step = '0.05'; iH.min = '0'; iH.inputMode = 'decimal'; iH.id = 'pa-edit-hours';
+      iH.placeholder = 'from the paddle';
+      if (st.hoursMin != null) iH.value = hoursStr(st.hoursMin);
+      iH.addEventListener('input', () => { st.hoursMin = parseHours(iH.value); drawPay(); });
+      fH.appendChild(iH);
+      fH.appendChild(el('div', 'hint', 'Pre-filled from the run. Change it only if you worked a different amount.'));
+      fields.appendChild(fH);
+
+      if (st.kind === 'late') {
+        const fL = el('div', 'pa-field'); fL.appendChild(el('label', 'pa-label', 'Minutes late'));
+        const iL = el('input', 'pa-input'); iL.type = 'number'; iL.step = '5'; iL.min = '0'; iL.inputMode = 'numeric'; iL.placeholder = 'e.g. 30';
+        if (st.lateMin != null) iL.value = st.lateMin;
+        iL.addEventListener('input', () => { const n = parseInt(iL.value, 10); st.lateMin = Number.isFinite(n) && n > 0 ? n : null; drawPay(); });
+        fL.appendChild(iL); fields.appendChild(fL);
+      }
+
+      const fRep = el('div', 'pa-field'); fRep.appendChild(el('label', 'pa-label', 'Report time override (optional)'));
+      const iRep = el('input', 'pa-input'); iRep.type = 'time';
+      if (st.reportMin != null) iRep.value = S.pad2(Math.floor((st.reportMin % 1440) / 60)) + ':' + S.pad2(st.reportMin % 60);
+      iRep.addEventListener('input', () => { const m = iRep.value.match(/^(\d{2}):(\d{2})$/); st.reportMin = m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : null; });
+      fRep.appendChild(iRep); fields.appendChild(fRep);
+
+      if (st.runNo) doLookup();
+    } else if (st.kind === 'paid-off') {
+      const fH = el('div', 'pa-field'); fH.appendChild(el('label', 'pa-label', 'Paid hours'));
+      const iH = el('input', 'pa-input'); iH.type = 'number'; iH.step = '0.05'; iH.min = '0'; iH.inputMode = 'decimal';
+      iH.value = hoursStr(st.hoursMin != null ? st.hoursMin : 480);
+      iH.addEventListener('input', () => { st.hoursMin = parseHours(iH.value); drawPay(); });
+      fH.appendChild(iH); fH.appendChild(el('div', 'hint', 'No run this day. Enter whatever is paid.'));
+      fields.appendChild(fH);
+    } else if (st.kind === 'holiday-off') {
+      fields.appendChild(el('div', 'hint', 'No run this day. 8 hours holiday pay is added automatically.'));
+    } else {
+      fields.appendChild(el('div', 'hint', 'No run and no hours this day.'));
+    }
+  }
+
   async function doLookup() {
-    st.run = await lookupLine(lk, r.dayType, st.runNo, r.date, depotKey);
-    manualWrap.hidden = !(st.runNo && !st.run);
+    const lk = document.getElementById('pa-edit-lookup');
+    if (!lk) return;
+    st.run = await lookupLine(lk, st.runDayType, st.runNo, r.date, depotKey);
+    const iH = document.getElementById('pa-edit-hours');
+    if (iH && st.run && st.hoursMin == null) iH.value = hoursStr(Math.round(st.run.payHours * 60));
+    if (iH && !st.run) iH.placeholder = 'run not in paddle - enter hours';
     drawPay();
   }
-  iRun.addEventListener('input', () => { st.runNo = iRun.value.trim(); clearTimeout(t); t = setTimeout(doLookup, 350); });
-  fRun.append(iRun, lk); body.appendChild(fRun); body.appendChild(manualWrap);
 
-  // Status
-  const fSt = el('div', 'pa-field'); fSt.appendChild(el('label', 'pa-label', 'This day'));
-  const sSt = el('select', 'pa-select');
-  [['scheduled', 'Working'], ['off', 'Off'], ['sick', 'Sick'], ['vacation', 'Vacation'], ['holiday', 'Holiday (not worked)']]
-    .forEach(([v, l]) => { const oo = el('option', null, l); oo.value = v; if (v === st.status) oo.selected = true; sSt.appendChild(oo); });
-  sSt.addEventListener('change', () => {
-    st.status = sSt.value;
-    if (st.status === 'holiday' && !st.extras.some(x => x.kind === 'holiday')) {
-      st.extras.push({ kind: 'holiday', min: A.HOLIDAY_PAY_MIN, note: '' });
-    }
-    drawExtras(); drawPay();
-  });
-  fSt.appendChild(sSt); body.appendChild(fSt);
+  // ---- notes (every kind)
+  const fN = el('div', 'pa-field'); fN.appendChild(el('label', 'pa-label', 'Notes'));
+  const iN = el('input', 'pa-input'); iN.type = 'text'; iN.maxLength = 140; iN.value = st.note; iN.placeholder = 'e.g. Martin Luther King Day';
+  iN.addEventListener('input', () => { st.note = iN.value; });
+  fN.appendChild(iN); body.appendChild(fN);
 
-  // Report time override
-  const fRep = el('div', 'pa-field'); fRep.appendChild(el('label', 'pa-label', 'Report time override (optional)'));
-  const iRep = el('input', 'pa-input'); iRep.type = 'time';
-  if (st.reportMin != null) iRep.value = S.pad2(Math.floor((st.reportMin % 1440) / 60)) + ':' + S.pad2(st.reportMin % 60);
-  iRep.addEventListener('input', () => { const m = iRep.value.match(/^(\d{2}):(\d{2})$/); st.reportMin = m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : null; });
-  fRep.appendChild(iRep); body.appendChild(fRep);
-
-  // Extras
-  const exWrap = el('div', 'pa-field');
-  exWrap.appendChild(el('label', 'pa-label', 'Extra hours on top of the run'));
-  const exList = el('div', 'pa-stack');
-  exWrap.appendChild(exList);
-  const addRow = el('div', 'form-row'); addRow.style.marginTop = '8px';
-  [['ot', '+ Overtime'], ['holiday', '+ Holiday bonus'], ['other', '+ Other']].forEach(([kind, label]) => {
-    const b = el('button', 'pa-ghost', label); b.type = 'button';
-    b.addEventListener('click', () => {
-      st.extras.push({ kind, min: kind === 'ot' ? 30 : (kind === 'holiday' ? A.HOLIDAY_WORKED_BONUS_MIN : 60), note: '' });
-      drawExtras(); drawPay();
-    });
-    addRow.appendChild(b);
-  });
-  exWrap.appendChild(addRow);
-  body.appendChild(exWrap);
-
-  function drawExtras() {
-    exList.textContent = '';
-    if (!st.extras.length) { exList.appendChild(el('div', 'hint', 'None. Overtime is entered in minutes; bonuses in hours.')); return; }
-    st.extras.forEach((x, i) => {
-      const row = el('div', 'extra-row');
-      row.appendChild(el('span', 'extra-k', A.EXTRA_KINDS[x.kind] || 'Extra'));
-      const inp = el('input', 'pa-input extra-in'); inp.type = 'number'; inp.min = '0';
-      if (x.kind === 'ot') { inp.step = '5'; inp.value = x.min; inp.placeholder = 'min'; }
-      else { inp.step = '0.25'; inp.value = (x.min / 60).toFixed(2).replace(/\.?0+$/, ''); inp.placeholder = 'hrs'; }
-      inp.addEventListener('input', () => {
-        const v = parseFloat(inp.value);
-        x.min = Number.isFinite(v) ? Math.round(x.kind === 'ot' ? v : v * 60) : 0;
-        drawPay();
-      });
-      row.appendChild(inp);
-      row.appendChild(el('span', 'extra-u', x.kind === 'ot' ? 'min' : 'hrs'));
-      const note = el('input', 'pa-input extra-note'); note.type = 'text'; note.placeholder = 'note'; note.value = x.note || ''; note.maxLength = 60;
-      note.addEventListener('input', () => { x.note = note.value; });
-      row.appendChild(note);
-      const rm = el('button', 'pa-close', '×'); rm.type = 'button'; rm.setAttribute('aria-label', 'Remove');
-      rm.addEventListener('click', () => { st.extras.splice(i, 1); drawExtras(); drawPay(); });
-      row.appendChild(rm);
-      exList.appendChild(row);
-    });
-  }
-
-  // Called in late (no hours effect), note
-  const ci = el('label', 'check'); const cic = el('input'); cic.type = 'checkbox'; cic.checked = st.callIn;
-  cic.addEventListener('change', () => { st.callIn = cic.checked; });
-  ci.append(cic, document.createTextNode('Called in late')); body.appendChild(ci);
-
-  const fNote = el('div', 'pa-field'); fNote.appendChild(el('label', 'pa-label', 'Note'));
-  const iNote = el('input', 'pa-input'); iNote.type = 'text'; iNote.maxLength = 140; iNote.value = st.note;
-  iNote.addEventListener('input', () => { st.note = iNote.value; });
-  fNote.appendChild(iNote); body.appendChild(fNote);
-
-  // Pay line
+  // ---- pay line
   const pay = el('div', 'pay'); body.appendChild(pay);
+  function build() {
+    const working = WORKING.has(st.kind);
+    const runMin = st.run ? Math.round(st.run.payHours * 60) : 0;
+    const workedMin = working ? (st.hoursMin != null ? st.hoursMin : runMin) : 0;
+    const extras = [];
+    if (st.kind === 'late' && st.lateMin) extras.push({ kind: 'late', min: -st.lateMin, note: '' });
+    if (st.kind === 'holiday-off' || st.kind === 'holiday-worked') extras.push({ kind: 'holiday', min: A.HOLIDAY_PAY_MIN, note: '' });
+    if (st.kind === 'paid-off') extras.push({ kind: 'other', min: st.hoursMin != null ? st.hoursMin : 480, note: 'paid day off' });
+    const status = working ? 'scheduled'
+      : st.kind === 'holiday-off' ? 'holiday'
+      : st.kind === 'sick' ? 'sick'
+      : st.kind === 'paid-off' ? 'vacation' : 'off';
+    return { working, runMin, workedMin, extras, status };
+  }
   function drawPay() {
-    const working = st.status === 'scheduled' && !!st.runNo;
-    const fake = { date: r.date, off: !working, runNo: st.runNo, status: st.status, dayType: r.dayType,
-                   payMin: st.payMin, extras: st.extras, source: 'assignment' };
-    const p = A.payHoursFor(fake, working ? st.run : null);
-    pay.innerHTML = p.parts.length
-      ? p.parts.map(([k, v]) => esc(k) + ' ' + (+v).toFixed(2)).join(' + ') + ' = <b>' + p.total.toFixed(2) + ' hrs</b>'
+    const b = build();
+    const parts = [];
+    if (b.working) parts.push(['Worked', b.workedMin]);
+    b.extras.forEach(x => parts.push([A.EXTRA_KINDS[x.kind] || 'Extra', x.min]));
+    const total = parts.reduce((s, p) => s + p[1], 0);
+    pay.innerHTML = parts.length
+      ? parts.map(([k, v]) => esc(k) + ' ' + (v / 60).toFixed(2)).join(' + ') + ' = <b>' + (total / 60).toFixed(2) + ' hrs</b>'
       : '<b>0.00 hrs</b>';
   }
 
-  // Actions
+  // ---- actions
   const stack = el('div', 'pa-stack');
   const save = el('button', 'pa-submit', 'Save day'); save.type = 'button';
   save.addEventListener('click', async () => {
+    const b = build();
+    if (b.working && !st.runNo) { showMsg('Enter the run number, or choose a day-off kind.', 'err'); return; }
+    if (b.working && !st.run && st.hoursMin == null) { showMsg('That run is not in the paddle. Enter the hours.', 'err'); return; }
     save.disabled = true; msgEl.hidden = true;
     try {
-      const working = st.status === 'scheduled' && !!st.runNo;
-      const extras = st.extras.filter(x => x.min > 0 || x.note).map(x => ({ kind: x.kind, min: Math.round(x.min), note: x.note || '' }));
       await A.saveAssignment(r.date, {
-        runNo: working ? st.runNo : null,
+        kind: st.kind,
+        runNo: b.working ? st.runNo : null,
+        runDayType: b.working ? st.runDayType : null,
         depotKey: depotKey || null, dayType: r.dayType,
-        status: working ? 'scheduled' : (st.status === 'scheduled' ? 'off' : st.status),
-        extras,
-        payMin: working && !st.run && st.payMin != null ? st.payMin : null,
-        reportMin: st.reportMin,
-        flags: { overtime: extras.some(x => x.kind === 'ot'), holiday: st.status === 'holiday' || extras.some(x => x.kind === 'holiday'), callIn: st.callIn },
+        status: b.status,
+        extras: b.extras,
+        payMin: b.working && st.hoursMin != null && (!st.run || st.hoursMin !== b.runMin) ? st.hoursMin : null,
+        reportMin: b.working ? st.reportMin : null,
+        flags: { holiday: st.kind.startsWith('holiday'), late: st.kind === 'late', callIn: false },
         note: st.note, source: 'edit'
       });
       closeEdit();
@@ -267,6 +316,5 @@ export function openEdit(r) {
   body.appendChild(stack);
 
   card.append(head, body); o.appendChild(card);
-  drawExtras(); drawPay();
-  if (st.runNo) doLookup();
+  drawFields(); drawPay();
 }

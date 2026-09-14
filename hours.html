@@ -186,17 +186,21 @@ $('next').addEventListener('click', () => { ctx.weekStart = S.addDays(ctx.weekSt
 
 function statusLabel(r) {
   if (r.unregistered) return '—';
-  if (!r.off) return 'RUN ' + r.runNo;
-  return ({ off: 'OFF', sick: 'SICK', vacation: 'VACATION', holiday: 'HOLIDAY' })[r.status] || r.status.toUpperCase();
+  if (!r.off) return 'RUN ' + r.runNo + (r.runDayType && r.runDayType !== r.dayType ? ' (' + r.runDayType + ')' : '');
+  if (r.kind && A.KIND_LABELS[r.kind]) return A.KIND_LABELS[r.kind].toUpperCase();
+  return ({ off: 'OFF', sick: 'SICK', vacation: 'PAID DAY OFF', holiday: 'HOLIDAY' })[r.status] || r.status.toUpperCase();
 }
 
 function extrasText(r) {
-  if (!r.extras || !r.extras.length) return '';
-  return r.extras.map(x => {
-    const label = x.kind === 'ot' ? 'OT' : (x.kind === 'holiday' ? 'Holiday' : (x.note || 'Extra'));
-    const amt = x.kind === 'ot' ? x.min + 'm' : '+' + (x.min / 60).toFixed(2).replace(/\.?0+$/, '') + 'h';
-    return label + ' ' + amt;
-  }).join(' · ');
+  const bits = [];
+  (r.extras || []).forEach(x => {
+    if (x.kind === 'late') { bits.push('Late ' + Math.abs(x.min) + 'm'); return; }
+    if (x.kind === 'ot') { bits.push('OT ' + x.min + 'm'); return; }
+    const label = x.kind === 'holiday' ? 'Holiday' : (x.note || 'Extra');
+    bits.push(label + ' +' + (x.min / 60).toFixed(2).replace(/\.?0+$/, '') + 'h');
+  });
+  if (r.note) bits.push('“' + r.note + '”');
+  return bits.join(' · ');
 }
 
 async function renderWeek() {
