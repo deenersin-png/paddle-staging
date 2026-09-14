@@ -277,6 +277,82 @@ export async function getRun(slug, dayType, runNo) {
   return normalizeRun(m.get(String(runNo)), dayType);
 }
 
+/**
+ * Official SEPTA paddle PDF links for one depot slug (pdfs.csv), keyed
+ * "Weekday-209" -> { moblink, pclink }. Both forms open the same PDF at the
+ * run's page; the paddle viewer uses moblink on phones and pclink otherwise.
+ */
+export async function loadPaddleLinks(slug) {
+  const rows = parseCSV(await fetchText(PADDLE_BASE + slug + '/pdfs.csv'));
+  const m = new Map();
+  rows.forEach(r => {
+    if (r.runno && r.day) m.set(r.day + '-' + r.runno, { moblink: r.moblink || '', pclink: r.pclink || '' });
+  });
+  return m;
+}
+
+/** "weekday" -> "Weekday", the capitalisation pdfs.csv and the manifest use. */
+export const dayLabel = dayType => String(dayType || '').charAt(0).toUpperCase() + String(dayType || '').slice(1);
+
+/** The run's own paddle page: phone link on narrow screens, desktop link otherwise. */
+export async function paddleLinkFor(slug, dayType, runNo) {
+  if (!slug || !runNo) return '';
+  const hit = (await loadPaddleLinks(slug)).get(dayLabel(dayType) + '-' + runNo);
+  if (!hit) return '';
+  const phone = typeof window !== 'undefined' && window.innerWidth <= 768;
+  return (phone ? hit.moblink || hit.pclink : hit.pclink || hit.moblink) || '';
+}
+
+/**
+ * Pull-out / pull-in times and run numbers per block across every district
+ * for a day type - the same table block-tracker.html builds for its cards
+ * (PO / PI line and RUN chips). block -> { poTime, piTime, runs:[{runno, link}] }.
+ */
+export async function loadBlockPaddles(districts, dayType) {
+  const label = dayLabel(dayType);
+  const byBlock = new Map();
+  await Promise.all((districts || []).map(async d => {
+    if (!d.days || !d.days.includes(label)) return;
+    const [schedText, pdfsText] = await Promise.all([
+      fetchText(PADDLE_BASE + d.name + '/' + dayType + '.csv'),
+      fetchText(PADDLE_BASE + d.name + '/pdfs.csv')
+    ]);
+    const runLink = new Map();
+    for (const row of parseCSV(pdfsText)) {
+      if (!row.runno || (row.day || '') !== label) continue;
+      const link = (row.moblink || row.pclink || '').trim();
+      if (link) runLink.set(String(row.runno), link);
+    }
+    for (const row of parseCSV(schedText)) {
+      const runno = String(row.runno || '').trim();
+      if (!runno) continue;
+      for (let i = 1; i <= 10; i++) {
+        const b = (row['b' + i] || '').trim();
+        if (!b || b === '0') continue;
+        if (!byBlock.has(b)) byBlock.set(b, { poTime: '', piTime: '', runs: [] });
+        const rec = byBlock.get(b);
+        const potype = (row['potype' + i] || '').trim().toUpperCase();
+        const pitype = (row['pitype' + i] || '').trim().toUpperCase();
+        const pot = (row['pot' + i] || '').trim();
+        const pit = (row['pit' + i] || '').trim();
+        if (potype === 'O' && pot) rec.poTime = pot;
+        if (pitype === 'I' && pit) rec.piTime = pit;
+        if (!rec.runs.some(r => r.runno === runno)) {
+          rec.runs.push({ runno, link: runLink.get(runno) || '', sortMin: clockToMin(pot) ?? Infinity });
+        }
+      }
+    }
+  }));
+  for (const rec of byBlock.values()) rec.runs.sort((a, b) => a.sortMin - b.sortMin);
+  return byBlock;
+}
+
+/** GTFS direction names for a route, e.g. { "0": "Eastbound", "1": "Westbound" }. */
+export async function routeDirectionNames(route) {
+  const j = await fetchJson(GTFS_BASE + '/' + encodeURIComponent(route) + '.json');
+  return (j && j.directions) || {};
+}
+
 /** Relief packages (holdowner.csv) -> Map relief_run -> {sunday:'51', monday:'454', ...}. */
 export async function loadReliefPackages(slug) {
   const rows = parseCSV(await fetchText(PADDLE_BASE + slug + '/holdowner.csv'));
@@ -389,7 +465,9 @@ export function leaderBlock(allTrips, myBlock, nowMin) {
   if (!my) return null;
   let best = null;
   for (const t of allTrips) {
-    if (t.block === String(myBlock) || t.dir !== my.dir) continue;
+    // Same route AND direction: an interlined run loads two route files, and
+    // direction 0 on one route is not direction 0 on the other.
+    if (t.block === String(myBlock) || t.route !== my.route || t.dir !== my.dir) continue;
     if (t.s < my.s && (!best || t.s > best.s)) best = t;
   }
   return best ? { block: best.block, trip: best, myTrip: my } : null;

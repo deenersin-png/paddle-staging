@@ -12,6 +12,9 @@
   gtag('config', 'G-QXEKGF4DXT');
 </script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap" rel="stylesheet">
+<!-- Inter: the live tracker's scorecard font, used by the leader card. -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/pa-live-cards.css">
 <link rel="stylesheet" href="assets/pa-account.css">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0a0b0d">
@@ -69,6 +72,14 @@ header{background:var(--ink2);border-bottom:1px solid var(--line2);padding:12px 
 .chip.violet{color:var(--violet);border-color:rgba(167,139,250,.35);background:var(--violet-dim)}
 .chip.red{color:var(--red);border-color:rgba(255,107,107,.35);background:var(--red-dim)}
 .chip.green{color:var(--green);border-color:rgba(61,214,140,.35);background:var(--green-dim)}
+/* RUN chip as a button to the official SEPTA paddle PDF. */
+a.chip{text-decoration:none}
+.chip.run-link{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+.chip.run-link[href]:hover{border-color:var(--amber);color:var(--bright)}
+.chip.run-link .ext{font-size:10px;letter-spacing:.08em;opacity:.85}
+.chip.run-link.pending{cursor:default}
+.live-sect{margin:14px 0 12px}
+.live-h{font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin:0 0 8px 2px}
 
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:4px;overflow:hidden;margin-top:12px}
 .stat{background:var(--ink);padding:10px 12px}
@@ -223,6 +234,7 @@ import * as S from './assets/pa-schedule.js';
 import * as A from './assets/pa-assignments.js';
 import { computeState, phaseLabel } from './assets/pa-countdown.js';
 import * as L from './assets/pa-live.js';
+import * as C from './assets/pa-live-cards.js';
 import { loadProfile, loadProfileSafe, saveProfile, ensureUser } from './assets/pa-store.js';
 import * as N from './assets/pa-notify.js';
 import * as E from './assets/pa-edit-sheet.js';
@@ -437,6 +449,7 @@ async function refreshToday() {
   startTicker();
   planAlerts();
   if (chosen.mode === 'live') { ensureTrips(chosen); refreshLeader(); }
+  refreshDetours();
 }
 
 async function ensureTrips(c) {
@@ -466,6 +479,7 @@ function recompute() {
 function stopTimers() {
   clearInterval(ctx.tickTimer); ctx.tickTimer = null;
   clearInterval(ctx.leaderTimer); ctx.leaderTimer = null;
+  clearInterval(ctx.detourTimer); ctx.detourTimer = null;
   if (ctx.wakeLock) { try { ctx.wakeLock.release(); } catch (_) {} ctx.wakeLock = null; }
 }
 function startTicker() {
@@ -569,7 +583,12 @@ function renderToday() {
   if (place) card.appendChild(el('div', 'cd-place', place));
 
   const chips = el('div', 'chips');
-  chips.appendChild(el('span', 'chip amber', 'RUN ' + (r.runNo || '—')));
+  // The run number opens the operator's own paddle page on septa.org.
+  const runChip = el('a', 'chip amber run-link pending', 'RUN ' + (r.runNo || '—'));
+  runChip.setAttribute('aria-label', 'Open the official SEPTA paddle for run ' + (r.runNo || ''));
+  chips.appendChild(runChip);
+  if (r.runNo && run && !run.synthetic) attachPaddleLink(runChip, r, run, c.date);
+  else runChip.classList.remove('run-link', 'pending');
   const piece = c.mode === 'live' && c.st.piece ? c.st.piece : (run && run.pieces[0]);
   if (piece) { chips.appendChild(el('span', 'chip blue', 'ROUTE ' + piece.routeLabel)); chips.appendChild(el('span', 'chip', 'BLOCK ' + piece.block)); }
   if (run && run.swing) chips.appendChild(el('span', 'chip violet', 'SWING'));
@@ -604,12 +623,28 @@ function renderToday() {
     body.appendChild(rc);
   }
 
-  const lb = el('div', 'card leader'); lb.id = 'leader-box';
-  lb.appendChild(el('div', 'k', 'Your leader · live · info only'));
-  lb.appendChild(el('div', 'leader-line', 'Looking up the bus ahead of you…')).id = 'leader-line';
+  // Leader: the live tracker's scorecard for the bus scheduled ahead of you.
+  // Informational only - nothing here feeds the countdown above.
+  const lb = el('div', 'live-sect'); lb.id = 'leader-box';
+  lb.appendChild(el('div', 'live-h', 'Your leader · live · info only'));
+  const lcard = el('div', 'bt'); lcard.id = 'leader-card';
+  lcard.innerHTML = ctx.leaderHtml || '<div class="leader-line">Looking up the bus ahead of you…</div>';
+  lb.appendChild(lcard);
   lb.appendChild(el('div', 'leader-note', 'Countdown above is the scheduled time and does not move with your leader.'));
   lb.hidden = c.mode !== 'live';
   body.appendChild(lb);
+
+  // Detours on this run's routes, as the Detours page shows them.
+  const routes = runRoutesFor(c);
+  if (routes.length) {
+    const key = routes.join(',');
+    const ds = el('div', 'live-sect'); ds.id = 'detours-box';
+    const dh = el('div', 'live-h', 'Detours · Route ' + routes.join(' / ')); dh.id = 'detours-h';
+    const dc = el('div', 'dt'); dc.id = 'route-detours';
+    dc.innerHTML = (ctx.detoursKey === key && ctx.detoursHtml) || C.detoursLoadingHtml();
+    ds.append(dh, dc);
+    body.appendChild(ds);
+  }
 
   $('meta').textContent = metaLine();
   tick();
@@ -625,23 +660,118 @@ function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '
 
 // ---- leader (informational) ----------------------------------------------
 
+const lineHtml = text => '<div class="leader-line">' + esc(text) + '</div>';
+
 async function refreshLeader() {
-  const c = ctx.current, line = $('leader-line');
-  if (!line || !c || c.mode !== 'live' || !c.st || !c.st.piece) return;
+  const c = ctx.current;
+  if (!$('leader-card') || !c || c.mode !== 'live' || !c.st || !c.st.piece) return;
   const p = c.st.piece;
+  const token = ctx.leaderToken = (ctx.leaderToken || 0) + 1;
+  const show = html => {
+    if (token !== ctx.leaderToken || !$('leader-card')) return;
+    ctx.leaderHtml = html;
+    $('leader-card').innerHTML = html;
+  };
   const mine = tripsFor(c.date).get(p.block);
-  if (!mine) { line.textContent = 'Loading your block’s trips…'; return; }
-  if (!mine.length) { line.textContent = 'No GTFS trips found for block ' + p.block + ' on ' + p.routeLabel + ' — leader unknown.'; return; }
+  if (!mine) { if (!ctx.leaderHtml) show(lineHtml('Loading your block’s trips…')); return; }
+  if (!mine.length) { show(lineHtml('No GTFS trips found for block ' + p.block + ' on ' + p.routeLabel + ' — leader unknown.')); return; }
   try {
     const all = await S.routeTrips(p.routes, c.run.dayType);
     const lb = S.leaderBlock(all, p.block, c.nowMin);
-    if (!lb) { line.textContent = 'No bus is scheduled ahead of you in this direction.'; return; }
-    line.textContent = 'Block ' + lb.block + ' · scheduled out ' + S.fmtClock(lb.trip.s) + ' · checking live…';
-    const v = await L.vehicleForBlock(p.routes, lb.block);
-    line.textContent = (v ? '' : 'Leader block ' + lb.block + ': ') + L.describe(v);
-  } catch (_) { line.textContent = 'Live lookup failed — no leader data right now.'; }
+    if (!lb) { show(lineHtml('No bus is scheduled ahead of you in this direction.')); }
+    else {
+      const [buses, names, rec] = await Promise.all([
+        L.fetchRoutes(p.routes),
+        Promise.all(p.routes.map(rt => S.routeDirectionNames(rt).then(n => [rt, n]))),
+        blockPaddle(lb.block, c).catch(() => null)
+      ]);
+      const model = C.buildBusModel({ block: lb.block, allTrips: all, buses, nowMin: c.nowMin, dirNamesByRoute: Object.fromEntries(names) });
+      let html = C.busCardHtml(model, { rec, leadersOpen: !!ctx.leadersOpen });
+      if (model._scheduledOnly && !model._doneForDay) html += lineHtml('No live data for block ' + lb.block + ' — it may not be in service.');
+      show(html);
+    }
+  } catch (_) { show(lineHtml('Live lookup failed — no leader data right now.')); }
   clearInterval(ctx.leaderTimer);
   ctx.leaderTimer = setInterval(() => { if (document.visibilityState === 'visible') refreshLeader(); }, 30000);
+}
+
+// PO / PI and run chips for a block: this depot's paddle first, and every
+// district only if the leader belongs to another depot.
+async function blockPaddle(block, c) {
+  const { season, district } = await slugForDate(ctx.profile.depotKey, c.date);
+  if (!season) return null;
+  const key = season.id + '|' + c.run.dayType;
+  ctx.blockPaddles = ctx.blockPaddles || new Map();
+  let entry = ctx.blockPaddles.get(key);
+  if (!entry) { entry = {}; ctx.blockPaddles.set(key, entry); }
+  if (!entry.own && district) entry.own = await S.loadBlockPaddles([district], c.run.dayType);
+  if (entry.own && entry.own.has(String(block))) return entry.own.get(String(block));
+  if (!entry.all) entry.all = await S.loadBlockPaddles(await S.loadManifest(season), c.run.dayType);
+  return entry.all.get(String(block)) || null;
+}
+
+// The routes a run works, the piece in progress first.
+function runRoutesFor(c) {
+  if (!c || !c.run || c.run.synthetic) return [];
+  const cur = c.mode === 'live' && c.st && c.st.piece ? c.st.piece.routes : [];
+  return [...new Set([...cur, ...(c.run.routes || [])])];
+}
+
+async function refreshDetours() {
+  const c = ctx.current, routes = runRoutesFor(c);
+  if (!$('route-detours') || !routes.length) return;
+  const key = routes.join(',');
+  const token = ctx.detourToken = (ctx.detourToken || 0) + 1;
+  try {
+    const { cards, failed } = await L.fetchDetours(routes);
+    if (token !== ctx.detourToken || !$('route-detours')) return;
+    let html;
+    if (cards.length) html = C.detourCardsHtml(cards);
+    else if (failed.length === routes.length) html = C.detoursErrorHtml('Could not load detours for Route ' + routes.join(' / '));
+    else html = C.detoursEmptyHtml(routes.join(' / '));
+    if (cards.length && failed.length) html += lineHtml('Detours for Route ' + failed.join(' / ') + ' could not be loaded.');
+    ctx.detoursKey = key; ctx.detoursHtml = html;
+    $('route-detours').innerHTML = html;
+    if ($('detours-h')) $('detours-h').textContent = 'Detours · Route ' + routes.join(' / ') + ' · ' + cards.length + (cards.length === 1 ? ' detour' : ' detours');
+  } catch (_) {
+    if (token === ctx.detourToken && $('route-detours')) $('route-detours').innerHTML = C.detoursErrorHtml('Could not load detours');
+  }
+  clearInterval(ctx.detourTimer);
+  ctx.detourTimer = setInterval(() => { if (document.visibilityState === 'visible') refreshDetours(); }, 120000);
+}
+
+// The scorecard's "Leaders ▸" control, exactly as on the tracker.
+function toggleLeaders(t) {
+  const tl = t.closest('.leader-tl');
+  if (!tl) return;
+  ctx.leadersOpen = !tl.classList.contains('open');
+  tl.classList.toggle('open', ctx.leadersOpen);
+  const bodyEl = tl.querySelector('.leader-body');
+  if (bodyEl) bodyEl.classList.toggle('hidden', !ctx.leadersOpen);
+  if ($('leader-card')) ctx.leaderHtml = $('leader-card').innerHTML;
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest && e.target.closest('#leader-card [data-lead-toggle]');
+  if (t) toggleLeaders(t);
+});
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const t = e.target.closest && e.target.closest('#leader-card [data-lead-toggle]');
+  if (t) { e.preventDefault(); toggleLeaders(t); }
+});
+
+// Upgrade the RUN chip to a link once pdfs.csv answers; a run with no paddle
+// page stays a plain chip.
+function attachPaddleLink(a, r, run, iso) {
+  slugForDate(r.depotKey || ctx.profile.depotKey, iso)
+    .then(({ slug }) => S.paddleLinkFor(slug, run.dayType, r.runNo))
+    .then(url => {
+      a.classList.remove('pending');
+      if (!url) { a.classList.remove('run-link'); return; }
+      a.href = url; a.target = '_blank'; a.rel = 'noopener';
+      a.appendChild(el('span', 'ext', 'PADDLE ↗'));
+    })
+    .catch(() => { a.classList.remove('pending', 'run-link'); });
 }
 
 // ---- ALERTS ---------------------------------------------------------------

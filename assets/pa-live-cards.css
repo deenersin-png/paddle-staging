@@ -1,0 +1,130 @@
+/* ==========================================================================
+   Paddle App — the live tracker's bus scorecard (.bt) and the Detours page's
+   detour cards (.dt), for the home screen.
+
+   Rules are copied from block-tracker.html and detours.html. Each set is
+   scoped under its wrapper, and the colour variables are declared ON the
+   wrapper, so the tracker's GitHub-dark palette and Inter font apply inside
+   the card without touching the home page's own --text / --green / --red.
+   ========================================================================== */
+
+/* ---- block-tracker scorecard ------------------------------------------------ */
+
+.bt {
+  --bg:#0d1117; --card:#161b22; --border:#21262d; --border-light:#30363d;
+  --text:#e6edf3; --text-dim:#8b949e; --text-faint:#484f58;
+  --accent:#58a6ff; --accent-dim:rgba(88,166,255,.12);
+  --green:#3fb950; --green-dim:rgba(63,185,80,.12);
+  --yellow:#d29922; --yellow-dim:rgba(210,153,34,.15);
+  --red:#f85149; --red-dim:rgba(248,81,73,.12);
+  --orange:#f0883e; --orange-dim:rgba(240,136,62,.12);
+  --purple:#bc8cff; --purple-dim:rgba(188,140,255,.12);
+  font-family:'Inter',-apple-system,system-ui,sans-serif;
+  color:var(--text);
+  -webkit-font-smoothing:antialiased;
+  line-height:normal;
+}
+.bt *,.bt *::before,.bt *::after{box-sizing:border-box}
+
+.bt .bus-node{position:relative;padding:0 0 0 50px;margin-bottom:5px}
+/* The tracker paints this arrow over its list's timeline line; a single card
+   has no line, so no masking background is needed. */
+.bt .bus-node::before{content:'\25BC';position:absolute;left:12px;top:15px;width:18px;text-align:center;font-size:15px;line-height:1;z-index:2;color:var(--border-light)}
+.bt .bus-node.up::before{content:'\25B2'}
+.bt .bus-node.scheduled::before{color:var(--text-faint)}
+.bt .node-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px}
+.bt .bus-node.scheduled .node-card{border-style:dashed;border-color:var(--border-light);background:linear-gradient(135deg,rgba(139,148,158,.05),var(--card))}
+.bt .node-row1{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.bt .block-num{font-size:16px;font-weight:800;color:var(--text);letter-spacing:.05em}
+.bt .bus-node.scheduled .block-num{color:var(--text-dim)}
+.bt .vehicle-num{display:flex;align-items:center;gap:4px;font-size:15px;font-weight:700;color:var(--text-dim);margin-left:8px;background:var(--border);padding:3px 9px;border-radius:5px}
+.bt .vehicle-num svg{width:14px;height:14px;fill:currentColor;flex-shrink:0}
+.bt .vehicle-num.unknown{color:var(--text-faint);background:transparent;border:1px dashed var(--border-light)}
+.bt .late-tag{font-size:14px;font-weight:700;padding:3px 9px;border-radius:5px}
+.bt .late-tag.ontime{background:var(--green-dim);color:var(--green)}
+.bt .late-tag.early{background:var(--yellow-dim);color:var(--yellow)}
+.bt .late-tag.mild{background:var(--yellow-dim);color:var(--yellow)}
+.bt .late-tag.bad{background:var(--red-dim);color:var(--red)}
+.bt .not-tracking-tag{font-size:13px;font-weight:700;padding:3px 9px;border-radius:5px;background:var(--orange-dim);color:var(--orange)}
+.bt .sched-only-row{display:flex;align-items:center;gap:8px;margin-top:7px;flex-wrap:wrap}
+.bt .sched-only-badge{font-size:11px;font-weight:700;padding:3px 8px;border-radius:5px;background:var(--accent-dim);color:var(--accent);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+.bt .sched-only-badge.expected{background:var(--orange-dim);color:var(--orange)}
+.bt .sched-only-badge.served{background:var(--yellow-dim);color:var(--yellow)}
+.bt .sched-only-detail{font-size:14px;color:var(--text);font-weight:600}
+.bt .sched-only-detail.overdue{color:var(--red)}
+.bt .deparr{margin-top:6px;font-size:13px;font-weight:600;color:var(--text-dim);font-variant-numeric:tabular-nums}
+.bt .da-line{display:flex;align-items:center;gap:8px;min-width:0}
+.bt .da-line+.da-line{margin-top:2px}
+.bt .da-dir,.bt .da-dir-spacer{flex:0 0 30px;width:30px;box-sizing:border-box}
+.bt .da-dir{text-align:center;font-weight:800;color:var(--accent);font-size:12px;background:var(--accent-dim);padding:2px 0;border-radius:4px;letter-spacing:.02em}
+.bt .da-t{white-space:nowrap;flex:0 0 auto}
+.bt .da-loc{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-faint);font-weight:500}
+.bt .node-bottom{display:flex;align-items:center;gap:7px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border)}
+.bt .stop-name{font-size:15px;color:var(--text);font-weight:600;flex:1;min-width:0;line-height:1.35}
+.bt .paddle-row{display:flex;align-items:center;gap:7px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border);flex-wrap:wrap}
+.bt .po-pi{font-size:13px;font-weight:700;color:var(--text-dim);font-variant-numeric:tabular-nums}
+.bt .run-chip{font-size:12px;font-weight:700;padding:3px 9px;border-radius:5px;background:var(--purple-dim);color:var(--purple);border:1px solid rgba(188,140,255,.25);text-decoration:none;white-space:nowrap;touch-action:manipulation}
+.bt .run-chip.nolink{opacity:.55;border-style:dashed}
+.bt .seat-tag{font-size:12px;font-weight:600;padding:3px 7px;border-radius:5px;display:flex;align-items:center;gap:3px}
+.bt .seat-tag svg{width:12px;height:12px;fill:currentColor}
+.bt .seat-tag.many{background:var(--green-dim);color:var(--green)}
+.bt .seat-tag.few{background:var(--yellow-dim);color:var(--yellow)}
+.bt .seat-tag.standing,.bt .seat-tag.full{background:var(--red-dim);color:var(--red)}
+.bt .leader-tl{margin-top:7px;padding-top:7px;border-top:1px solid var(--border);font-size:12px}
+.bt .leader-sum{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:3px 0}
+.bt .lead-toggle{margin-left:auto;display:inline-flex;align-items:center;gap:5px;cursor:pointer;font-weight:800;color:var(--accent);font-size:13px;text-transform:uppercase;letter-spacing:.03em;touch-action:manipulation;user-select:none}
+.bt .lead-toggle .arrow{font-size:22px;line-height:1;display:inline-block;transition:transform .2s}
+.bt .leader-tl.open .lead-toggle .arrow{transform:rotate(90deg)}
+.bt .leader-body{margin-top:2px}
+.bt .leader-body.hidden{display:none}
+.bt .tl-head{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint);margin-top:7px;margin-bottom:2px}
+.bt .tl-row{display:flex;align-items:center;gap:7px;padding:2px 0;flex-wrap:wrap}
+.bt .tl-dir{font-weight:700;color:var(--text-dim);min-width:24px}
+.bt .tl-time{font-variant-numeric:tabular-nums;color:var(--text-faint)}
+.bt .tl-blk{font-weight:700;color:var(--text)}
+.bt .tl-bus{color:var(--text-dim)}
+.bt .tl-status{margin-left:auto;font-weight:600;color:var(--text-dim)}
+
+/* ---- detours.html cards ------------------------------------------------------ */
+
+.dt {
+  --ink:#0a0b0d; --ink2:#13151a; --ink3:#1d2028;
+  --line:rgba(255,255,255,0.07); --line2:rgba(255,255,255,0.13); --line3:rgba(255,255,255,0.22);
+  --dim:#4a4f5e; --mid:#8a909f; --text:#c8cdd8; --bright:#e8ecf4;
+  --amber:#f5a623; --amber-dim:rgba(245,166,35,0.12);
+  --green:#3dd68c; --green-dim:rgba(61,214,140,0.1);
+  --red:#ff6b6b; --red-dim:rgba(255,107,107,0.1);
+  --sans:'IBM Plex Sans Condensed', sans-serif;
+  --mono:'IBM Plex Mono', monospace;
+  font-family:var(--sans);
+  color:var(--text);
+}
+.dt .detour-card{background:var(--ink2);border:1px solid var(--line2);border-radius:6px;padding:16px;margin-bottom:12px;transition:border-color .2s, transform .15s}
+.dt .detour-card:hover{border-color:var(--line3);transform:translateY(-1px)}
+.dt .detour-header{display:flex;align-items:center;gap:12px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.dt .route-badge{background:var(--amber-dim);border:1px solid var(--amber);color:var(--amber);padding:6px 12px;border-radius:4px;font-family:var(--mono);font-size:15px;font-weight:600;flex-shrink:0}
+.dt .detour-title{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--bright);flex:1;min-width:200px}
+.dt .detour-direction{font-family:var(--mono);font-size:13px;color:var(--green);background:var(--green-dim);border:1px solid var(--green);padding:4px 8px;border-radius:3px;flex-shrink:0;font-weight:600}
+.dt .detour-body{display:grid;gap:12px}
+.dt .detour-section{display:grid;gap:6px}
+.dt .section-label{font-family:var(--mono);font-size:13px;font-weight:600;text-transform:uppercase;color:var(--dim);letter-spacing:.08em}
+.dt .section-content{font-family:var(--mono);font-size:15px;color:var(--text);line-height:1.6;word-break:break-word}
+/* The Detours page centres its empty message in a 300px block; on the home
+   screen that space belongs to the schedule, so the message is compact. */
+.dt .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:14px;color:var(--dim);text-align:center;border:1px solid var(--line);border-radius:6px}
+.dt .empty-state p{font-size:15px;max-width:400px;margin:0}
+.dt .error-banner{background:var(--red-dim);border:1px solid var(--red);color:var(--red);padding:16px;border-radius:4px;margin-bottom:16px;font-family:var(--mono);font-size:15px}
+.dt .loading{display:flex;align-items:center;justify-content:center;gap:8px;padding:20px;color:var(--dim);font-family:var(--mono);font-size:15px}
+.dt .spinner{width:16px;height:16px;border:2px solid var(--line2);border-top-color:var(--amber);border-radius:50%;animation:dt-spin .6s linear infinite}
+@keyframes dt-spin{to{transform:rotate(360deg)}}
+
+@media (max-width: 768px) {
+  .dt .detour-card{padding:12px}
+  .dt .detour-header{flex-wrap:wrap}
+  .dt .detour-title{flex-basis:100%;min-width:unset}
+}
+@media (max-width: 480px) {
+  .dt .detour-card{padding:10px;margin-bottom:8px}
+  .dt .section-content{font-size:14px}
+  .dt .detour-direction{font-size:12px;padding:3px 6px}
+}
