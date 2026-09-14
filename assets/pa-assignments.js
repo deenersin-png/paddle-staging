@@ -4,21 +4,26 @@
 // Two collections under users/{uid}:
 //
 //   patterns/{id}      A repeating weekly template with an effective date
-//                      range. Regular drivers get one from their pick; a
-//                      holdowner's week repeats until dispatch changes it.
-//                      Versions are immutable once effective — "change my
-//                      pattern" always creates a new version, so yesterday
-//                      keeps resolving against the version that was active
-//                      yesterday.
+//                      range. A Regular driver gets one from their pick (one
+//                      run per working day); a holdowner's week repeats until
+//                      dispatch changes it. Versions are immutable once
+//                      effective — "change my pattern" always creates a new
+//                      version, so yesterday keeps resolving against the
+//                      version that was active yesterday.
 //
 //   assignments/{date} An explicit day. Manual entries (slate / holdowner
-//                      weeks), edits to a pattern day, overtime on an off
-//                      day, holiday marks. Explicit ALWAYS wins over the
-//                      pattern. Nothing is ever materialised: an untouched
-//                      pattern day is computed on demand by resolvePure().
+//                      weeks), edits to a pattern day, an extra shift on an
+//                      off day, sick / vacation / holiday marks, and EXTRAS —
+//                      overtime, holiday bonus, anything on top of the run's
+//                      own hours. Explicit ALWAYS wins over the pattern.
+//                      Nothing is ever materialised: an untouched pattern day
+//                      is computed on demand by resolvePure().
 //
-// resolvePure() is deliberately a pure function over plain data so it can be
-// unit-tested in the browser and ported to Dart against the same test cases.
+// Hours are never stored. A day's scheduled hours come from the paddle's pay
+// column for the resolved run; actual hours are scheduled + extras. Both are
+// derived at read time by dayHours(), the one formula Flutter reimplements.
+// Every duration here is integer MINUTES (45 min of OT is 45, a 4 h holiday
+// bonus is 240, a 9.1 h run is 546), so the arithmetic is exact.
 // ==========================================================================
 
 import {
@@ -29,10 +34,12 @@ import { initFirebase } from './pa-firebase.js';
 import { dayTypeFor, isHoliday, dowOf, daysBetween, addDays, todayIso } from './pa-schedule.js';
 
 // Holiday pay, per the operator rule: every employee gets 8 hours for a
-// holiday; working it earns the run's hours plus a further 4. Both are
-// editable per day so payroll quirks can be entered by hand.
-export const HOLIDAY_PAY_HOURS = 8;
-export const HOLIDAY_WORKED_BONUS_HOURS = 4;
+// holiday; working it adds a further 4. Both are pre-fills, editable per day.
+export const HOLIDAY_PAY_MIN = 480;
+export const HOLIDAY_WORKED_BONUS_MIN = 240;
+
+export const EXTRA_KINDS = { ot: 'Overtime', holiday: 'Holiday bonus', other: 'Other' };
+export const STATUSES = ['scheduled', 'off', 'sick', 'vacation', 'holiday'];
 
 // Work-day presets. Day indexes are 0 = Sunday .. 6 = Saturday.
 export const PRESETS = {
@@ -58,8 +65,7 @@ function stopListeners() { unsubs.splice(0).forEach(u => { try { u(); } catch (_
 
 /**
  * Subscribe to this user's patterns and a window of assignments. Resolves
- * once patterns have been delivered (from cache or server), so the caller
- * can render immediately.
+ * once patterns have been delivered (from cache or server).
  */
 export async function attach(userId, opts = {}) {
   const fb = initFirebase();
@@ -67,8 +73,8 @@ export async function attach(userId, opts = {}) {
   db = fb.db; uid = userId;
   stopListeners();
   const today = todayIso();
-  const from = opts.from || addDays(today, -42);
-  const to   = opts.to   || addDays(today,  42);
+  const from = opts.from || addDays(today, -120);   // wide enough for a whole pick
+  const to   = opts.to   || addDays(today,  60);
 
   await new Promise(res => {
     let first = true;
@@ -109,8 +115,8 @@ export function detach() {
  * version still open on that date is closed the day before; any version
  * that would start on or after it is superseded and removed.
  *
- * p = { periodDays:7, days:{ "1":{}, "2":{runNo:'454'} }, runByDayType:{...},
- *       depotKey, effectiveFrom, preset, label }
+ * p = { periodDays:7, days:{ "1":{runNo:'209'}, "2":{runNo:'214'} },
+ *       runByDayType:{weekday:'209'}, depotKey, effectiveFrom, preset, label }
  */
 export async function savePattern(p) {
   if (!db) throw new Error('not signed in');
@@ -159,7 +165,7 @@ export function activePattern(patterns, date) {
 /** Write (merge) one explicit day. */
 export async function saveAssignment(date, data) {
   if (!db) throw new Error('not signed in');
-  await setDoc(asgRef(date), { ...data, date, updatedAt: serverTimestamp(), schemaVersion: 1 }, { merge: true });
+  await setDoc(asgRef(date), { ...data, date, updatedAt: serverTimestamp(), schemaVersion: 2 }, { merge: true });
 }
 
 /** Remove an explicit day so the date falls back to the pattern. */
@@ -168,8 +174,7 @@ export async function clearAssignment(date) {
   await deleteDoc(asgRef(date));
 }
 
-/** Write several days at once (a holdowner / slate week). Empty runNo with
- *  no status is treated as "leave the pattern alone" and is skipped. */
+/** Write several days at once (a holdowner / slate week). */
 export async function saveDays(entries) {
   if (!db) throw new Error('not signed in');
   const batch = writeBatch(db);
@@ -177,75 +182,121 @@ export async function saveDays(entries) {
   for (const e of entries) {
     if (!e.date) continue;
     if (e.remove) { batch.delete(asgRef(e.date)); n++; continue; }
-    batch.set(asgRef(e.date), { ...e, updatedAt: serverTimestamp(), schemaVersion: 1 }, { merge: true });
+    batch.set(asgRef(e.date), { ...e, updatedAt: serverTimestamp(), schemaVersion: 2 }, { merge: true });
     n++;
   }
   if (n) await batch.commit();
   return n;
 }
 
-// ---- resolver -------------------------------------------------------------
+// ---- extras ---------------------------------------------------------------
 
 /**
- * What is this operator doing on `date`?
- *
- * Returns a plain object; `off` true means no run. `source` is 'assignment'
- * (explicit day), 'pattern' (computed), or null (nothing registered).
- *
- * Holiday rule (from the operator): a holiday runs the Sunday schedule. You
- * are off with holiday pay unless you hold a Sunday run, in which case you
- * work it. A holdowner / slate day with an explicit run keeps that run but
- * is flagged so the operator can confirm it operates.
+ * A day's extras as [{kind, min, note}]. Reads the current `extras` array,
+ * and synthesises one from the schema-1 fields (boolean `flags.overtime`,
+ * `holiday{}`) so nothing written before this version needs migrating.
  */
-export function resolvePure(st, date, overrides) {
-  const base = { date, dayType: dayTypeFor(date, overrides), holidayDate: isHoliday(date, overrides) };
-
-  const a = st.assignments.get(date);
-  if (a) {
-    const status = a.status || (a.runNo ? 'scheduled' : 'off');
-    return {
-      ...base,
-      source: a.source || 'manual',
-      assignment: a,
-      runNo: a.runNo || null,
-      depotKey: a.depotKey || null,
-      dayType: a.dayType || base.dayType,
-      reportMin: a.reportMin != null ? a.reportMin : null,
-      status,
-      off: status !== 'scheduled' || !a.runNo,
-      flags: a.flags || {},
-      holiday: a.holiday || null,
-      note: a.note || ''
-    };
+export function normalizeExtras(a) {
+  if (!a) return [];
+  if (Array.isArray(a.extras)) {
+    return a.extras
+      .filter(x => x && Number.isFinite(+x.min))
+      .map(x => ({ kind: EXTRA_KINDS[x.kind] ? x.kind : 'other', min: Math.round(+x.min), note: x.note || '' }));
   }
+  const out = [];
+  if (a.holiday && a.holiday.isHoliday) {
+    out.push({ kind: 'holiday', min: Math.round((a.holiday.payHours != null ? a.holiday.payHours : 8) * 60), note: '' });
+    if (a.holiday.worked) {
+      out.push({ kind: 'holiday', min: Math.round((a.holiday.workedBonusHours != null ? a.holiday.workedBonusHours : 4) * 60), note: 'worked' });
+    }
+  }
+  if (a.flags && a.flags.overtime) out.push({ kind: 'ot', min: 0, note: 'amount not recorded' });
+  return out;
+}
 
-  const p = activePattern(st.patterns, date);
-  if (!p) return { ...base, source: null, off: true, unregistered: true, status: 'off', flags: {}, holiday: null };
+export const extrasMin = extras => (extras || []).reduce((s, x) => s + (x.min || 0), 0);
+export const hasExtra = (r, kind) => !!(r && r.extras && r.extras.some(x => x.kind === kind));
 
+// ---- resolver -------------------------------------------------------------
+
+function fromPattern(patterns, date, base) {
+  const p = activePattern(patterns, date);
+  if (!p) return { ...base, source: null, off: true, unregistered: true, status: 'off', runNo: null,
+                   flags: {}, holiday: null, extras: [], reportMin: null, payMin: null };
   const period = p.periodDays || 7;
   const idx = period === 7
     ? dowOf(date)
     : ((daysBetween(p.anchor || p.effectiveFrom, date) % period) + period) % period;
   const slot = p.days ? p.days[String(idx)] : null;
   const out = { ...base, source: 'pattern', patternId: p.id, depotKey: p.depotKey || null,
-                flags: {}, holiday: null, status: 'scheduled', off: false, reportMin: null };
+                flags: {}, holiday: null, extras: [], status: 'scheduled', off: false,
+                reportMin: null, payMin: null, runNo: null };
 
+  // Holiday rule (from the operator): a holiday runs the Sunday schedule. Off
+  // with holiday pay unless you hold a Sunday run, in which case you work it
+  // and earn the run plus the holiday plus the worked bonus. A holdowner /
+  // slate day with an explicit run keeps that run but is flagged.
   if (base.holidayDate) {
-    if (slot && slot.runNo) {
-      return { ...out, runNo: slot.runNo, holiday: { isHoliday: true, worked: true },
-               holidayNote: 'Holiday — Sunday schedule. Confirm this run operates.' };
+    // A Regular driver's pick stores one run per day too, but the holiday
+    // rule for them is "Sunday schedule" — only a dispatch-assigned week
+    // (holdowner / slate) keeps its explicit run on a holiday.
+    const isPick = !!PRESETS[p.preset];
+    if (!isPick && slot && slot.runNo) {
+      return { ...out, runNo: String(slot.runNo), holiday: { isHoliday: true, worked: true },
+               extras: [{ kind: 'holiday', min: HOLIDAY_PAY_MIN, note: '' }, { kind: 'holiday', min: HOLIDAY_WORKED_BONUS_MIN, note: 'worked' }],
+               holidayNote: 'Holiday: Sunday schedule. Confirm this run operates.' };
     }
     const sunRun = p.runByDayType && p.runByDayType.sunday;
     if (slot && sunRun) {
-      return { ...out, runNo: sunRun, dayType: 'sunday', holiday: { isHoliday: true, worked: true } };
+      return { ...out, runNo: String(sunRun), dayType: 'sunday', holiday: { isHoliday: true, worked: true },
+               extras: [{ kind: 'holiday', min: HOLIDAY_PAY_MIN, note: '' }, { kind: 'holiday', min: HOLIDAY_WORKED_BONUS_MIN, note: 'worked' }] };
     }
-    return { ...out, runNo: null, off: true, status: 'holiday', holiday: { isHoliday: true, worked: false } };
+    return { ...out, off: true, status: 'holiday', holiday: { isHoliday: true, worked: false },
+             extras: [{ kind: 'holiday', min: HOLIDAY_PAY_MIN, note: '' }] };
   }
 
-  if (!slot) return { ...out, runNo: null, off: true, status: 'off' };
+  if (!slot) return { ...out, off: true, status: 'off' };
   const runNo = slot.runNo || (p.runByDayType && p.runByDayType[base.dayType]) || null;
-  if (!runNo) return { ...out, runNo: null, off: true, status: 'off', reason: 'no-run-for-daytype' };
+  if (!runNo) return { ...out, off: true, status: 'off', reason: 'no-run-for-daytype' };
   return { ...out, runNo: String(runNo) };
+}
+
+/**
+ * What is this operator doing on `date`?
+ *
+ * `off` true means no run. `source` is 'assignment' (explicit day),
+ * 'pattern' (computed), or null (nothing registered). `patternRunNo` says
+ * what the pattern alone would have given, so an explicit day can be shown
+ * as an override / extra shift.
+ */
+export function resolvePure(st, date, overrides) {
+  const base = { date, dayType: dayTypeFor(date, overrides), holidayDate: isHoliday(date, overrides) };
+  const pat = fromPattern(st.patterns, date, base);
+  const a = st.assignments.get(date);
+  if (!a) return pat;
+
+  const status = a.status || (a.runNo ? 'scheduled' : 'off');
+  const working = status === 'scheduled' && !!a.runNo;
+  return {
+    ...base,
+    source: 'assignment',
+    assignment: a,
+    runNo: a.runNo ? String(a.runNo) : null,
+    depotKey: a.depotKey || pat.depotKey || null,
+    dayType: a.dayType || base.dayType,
+    reportMin: a.reportMin != null ? a.reportMin : null,
+    payMin: a.payMin != null ? a.payMin : null,
+    status,
+    off: !working,
+    flags: a.flags || {},
+    holiday: (status === 'holiday' || (a.holiday && a.holiday.isHoliday))
+      ? { isHoliday: true, worked: working } : null,
+    extras: normalizeExtras(a),
+    note: a.note || '',
+    patternRunNo: pat.runNo || null,
+    patternOff: !!pat.off,
+    extraShift: working && !pat.runNo
+  };
 }
 
 export function resolve(date, overrides) { return resolvePure(state, date, overrides); }
@@ -256,17 +307,57 @@ export function resolveRange(from, to, overrides) {
   return out;
 }
 
-/** Pay hours for a resolved day, given its run (may be null). */
-export function payHoursFor(resolved, run) {
-  const h = resolved && resolved.holiday;
-  if (h && h.isHoliday) {
-    const base = h.payHours != null ? h.payHours : HOLIDAY_PAY_HOURS;
-    if (!h.worked) return { total: base, parts: [['Holiday', base]] };
-    const bonus = h.workedBonusHours != null ? h.workedBonusHours : HOLIDAY_WORKED_BONUS_HOURS;
-    const runH = run ? run.payHours : 0;
-    return { total: runH + base + bonus, parts: [['Run', runH], ['Holiday', base], ['Worked holiday', bonus]] };
+// ---- hours (derived, never stored) ---------------------------------------
+
+/** Pay minutes for the resolved run: paddle pay hours, else the day's manual payMin. */
+export function runMinutes(run, resolved) {
+  if (run && run.payHours) return Math.round(run.payHours * 60);
+  if (resolved && resolved.payMin != null) return Math.round(resolved.payMin);
+  return 0;
+}
+
+/**
+ * The one formula. Scheduled = the run's hours when the day is a working
+ * day; actual = scheduled + extras, but only once the day has arrived.
+ * `flagged` marks anything that is not a plain pattern working day.
+ */
+export function dayHours(resolved, run, today) {
+  const r = resolved, t = today || todayIso();
+  const runMin = runMinutes(run, r);
+  const working = !r.off && r.status === 'scheduled' && !!r.runNo;
+  const scheduledMin = working ? runMin : 0;
+  const ex = extrasMin(r.extras);
+  const past = r.date <= t;
+  const changedFromPattern = r.source === 'assignment' &&
+    (r.extraShift || (!working && !!r.patternRunNo) || (working && r.patternRunNo && r.runNo !== r.patternRunNo));
+  return {
+    runMin, scheduledMin, extrasMin: ex,
+    actualMin: past ? scheduledMin + ex : null,
+    working, past,
+    flagged: ex > 0 || (r.extras && r.extras.length > 0) || (!r.unregistered && !['scheduled', 'off'].includes(r.status)) || !!changedFromPattern,
+    unknownRun: working && !run && r.payMin == null
+  };
+}
+
+export function weekTotals(days) {
+  let scheduledMin = 0, actualMin = 0, daysWorked = 0;
+  for (const d of days) {
+    scheduledMin += d.hours.scheduledMin;
+    if (d.hours.past) {
+      actualMin += d.hours.actualMin || 0;
+      if (d.hours.scheduledMin > 0) daysWorked++;
+    }
   }
-  if (!resolved || resolved.off) return { total: 0, parts: [] };
-  const runH = run ? run.payHours : 0;
-  return { total: runH, parts: run ? [['Run', runH]] : [] };
+  return { scheduledMin, actualMin, daysWorked };
+}
+
+export const fmtHours = min => (Math.round(min) / 60).toFixed(2);
+
+/** Pay summary for one day: [[label, hours], ...] and a total. */
+export function payHoursFor(resolved, run) {
+  const h = dayHours(resolved, run, '9999-12-31');
+  const parts = [];
+  if (h.working) parts.push(['Run', h.runMin / 60]);
+  (resolved.extras || []).forEach(x => parts.push([EXTRA_KINDS[x.kind] || 'Extra', x.min / 60]));
+  return { total: (h.scheduledMin + h.extrasMin) / 60, parts };
 }

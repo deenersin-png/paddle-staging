@@ -194,6 +194,7 @@ import { computeState, phaseLabel } from './assets/pa-countdown.js';
 import * as L from './assets/pa-live.js';
 import { loadProfile, saveProfile, ensureUser } from './assets/pa-store.js';
 import * as N from './assets/pa-notify.js';
+import * as E from './assets/pa-edit-sheet.js';
 
 const $ = id => document.getElementById(id);
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
@@ -209,26 +210,10 @@ const ctx = {
 
 // ---- helpers --------------------------------------------------------------
 
-async function slugForDate(depotKey, iso) {
-  const k = 'slug|' + depotKey + '|' + iso.slice(0, 7);
-  if (!ctx.runCache.has(k)) ctx.runCache.set(k, S.slugFor(depotKey, iso));
-  return ctx.runCache.get(k);
-}
+async function slugForDate(depotKey, iso) { return E.slugForDate(depotKey, iso); }
 
-/** Normalised run for a resolved day, or a synthetic one when the paddle
- *  doesn't know the run but the operator gave a report time. */
-async function runFor(r, iso) {
-  if (!r || r.off || !r.runNo) return null;
-  const depot = r.depotKey || (ctx.profile && ctx.profile.depotKey);
-  const { slug } = await slugForDate(depot, iso);
-  let run = slug ? await S.getRun(slug, r.dayType, r.runNo) : null;
-  if (run && r.reportMin != null) run = { ...run, reportMin: r.reportMin, overridden: true };
-  if (!run && r.reportMin != null) {
-    run = { runNo: r.runNo, dayType: r.dayType, reportMin: r.reportMin, finishMin: null,
-            pullOutMin: r.reportMin, pullInMin: null, payHours: 0, pieces: [], routes: [], blocks: [], synthetic: true };
-  }
-  return run;
-}
+/** Normalised run for a resolved day (shared with hours.html). */
+async function runFor(r, iso) { return E.runFor(r, iso, ctx.profile && ctx.profile.depotKey); }
 
 function fmtCountdown(ms) {
   const neg = ms < 0; let s = Math.floor(Math.abs(ms) / 1000);
@@ -498,7 +483,7 @@ function renderToday() {
   if (piece) { chips.appendChild(el('span', 'chip blue', 'ROUTE ' + piece.routeLabel)); chips.appendChild(el('span', 'chip', 'BLOCK ' + piece.block)); }
   if (run && run.swing) chips.appendChild(el('span', 'chip violet', 'SWING'));
   if (r.holiday && r.holiday.isHoliday) chips.appendChild(el('span', 'chip amber', 'HOLIDAY'));
-  if (r.flags && r.flags.overtime) chips.appendChild(el('span', 'chip red', 'OT'));
+  if (A.hasExtra(r, 'ot')) chips.appendChild(el('span', 'chip red', 'OT'));
   if (run && run.synthetic) chips.appendChild(el('span', 'chip', 'MANUAL TIME'));
   card.appendChild(chips);
   body.appendChild(card);
@@ -669,34 +654,31 @@ function renderSchedule() {
 }
 
 function lookupLine(node, dayType, runNo, iso) {
-  node.className = 'lookup'; node.textContent = '';
-  if (!runNo) return;
-  node.textContent = 'Looking up run ' + runNo + '…';
-  slugForDate(ctx.profile.depotKey, iso || S.todayIso()).then(({ slug, district }) => {
-    if (!slug) { node.textContent = 'No paddle data for your depot this season.'; node.className = 'lookup warn'; return; }
-    return S.getRun(slug, dayType, runNo).then(run => {
-      if (!run) { node.textContent = 'Run ' + runNo + ' not found in ' + (district.label || slug) + ' ' + dayType + ' paddle. You can still save it.'; node.className = 'lookup warn'; return; }
-      node.textContent = 'Report ' + S.fmtClock(run.reportMin) + ' · Pull-out ' + S.fmtClock(run.pullOutMin) + ' · Finish ' + S.fmtClock(run.finishMin) + ' · ' + run.payHours.toFixed(1) + ' hrs · ' + run.pieces.map(p => p.routeLabel).join(' / ');
-      node.className = 'lookup ok';
-    });
-  }).catch(() => { node.textContent = ''; });
+  return E.lookupLine(node, dayType, runNo, iso, ctx.profile && ctx.profile.depotKey);
 }
 
 function renderRegularForm(form) {
   const st = A.getState();
-  const cur = A.activePattern(st.patterns, S.todayIso());
+  const today = S.todayIso();
+  const cur = A.activePattern(st.patterns, today);
   form.appendChild(el('h2', 'k', 'My pick'));
   if (cur) {
-    const days = Object.keys(cur.days || {}).map(Number).sort().map(i => S.DAY_SHORT[i]).join(' ');
-    const runs = Object.entries(cur.runByDayType || {}).filter(([, v]) => v).map(([k, v]) => k + ' ' + v).join(' · ');
-    form.appendChild(el('div', 'hint', 'Current: ' + (cur.preset || 'custom') + ' · ' + days + ' · ' + runs + ' · since ' + S.fmtDate(cur.effectiveFrom)));
+    const days = Object.keys(cur.days || {}).map(Number).sort();
+    const desc = days.map(i => S.DAY_SHORT[i] + ' ' + ((cur.days[String(i)] && cur.days[String(i)].runNo) || (cur.runByDayType && cur.runByDayType[i === 0 ? 'sunday' : i === 6 ? 'saturday' : 'weekday']) || '?')).join(' \u00b7 ');
+    form.appendChild(el('div', 'hint', 'Current: ' + (cur.preset || 'custom') + ' \u00b7 ' + desc + ' \u00b7 since ' + S.fmtDate(cur.effectiveFrom)));
   } else {
-    form.appendChild(el('div', 'hint', 'Set your work pattern once. The app fills in every day from your pick and already knows each run’s start time.'));
+    form.appendChild(el('div', 'hint', 'Enter your pick once. Every day from the pick start date fills in by itself, and the app already knows each run\u2019s hours.'));
   }
 
   let preset = (cur && cur.preset && A.PRESETS[cur.preset]) ? cur.preset : '5-day';
   let days = new Set(cur && cur.days ? Object.keys(cur.days).map(Number) : A.PRESETS[preset].days);
-  const runs = { ...(cur && cur.runByDayType ? cur.runByDayType : {}) };
+  const runs = {};                         // day index -> run number
+  if (cur && cur.days) Object.keys(cur.days).forEach(i => { const slot = cur.days[i] || {}; runs[i] = slot.runNo || (cur.runByDayType && cur.runByDayType[+i === 0 ? 'sunday' : +i === 6 ? 'saturday' : 'weekday']) || ''; });
+  let sameWeekday = true;
+  {
+    const wk = [1, 2, 3, 4, 5].filter(i => days.has(i)).map(i => runs[i] || '');
+    sameWeekday = wk.every(v => v === wk[0]);
+  }
 
   const presetWrap = el('div', 'pa-field'); presetWrap.style.marginTop = '12px';
   presetWrap.appendChild(el('label', 'pa-label', 'Pattern'));
@@ -719,47 +701,69 @@ function renderRegularForm(form) {
     }
   }
 
+  const sameWrap = el('label', 'check');
+  const sameCb = el('input'); sameCb.type = 'checkbox'; sameCb.checked = sameWeekday;
+  sameCb.addEventListener('change', () => { sameWeekday = sameCb.checked; drawRuns(); });
+  sameWrap.append(sameCb, document.createTextNode('Same run every weekday'));
+  form.appendChild(sameWrap);
+
   const rWrap = el('div'); form.appendChild(rWrap);
+  const dayTypeOf = i => (i === 0 ? 'sunday' : i === 6 ? 'saturday' : 'weekday');
+  function runField(label, dt, get, set) {
+    const f = el('div', 'pa-field');
+    f.appendChild(el('label', 'pa-label', label));
+    const i = el('input', 'pa-input'); i.type = 'text'; i.inputMode = 'numeric'; i.maxLength = 4; i.placeholder = 'e.g. 209'; i.value = get() || '';
+    const lk = el('div', 'lookup');
+    let t; i.addEventListener('input', () => { set(i.value.trim()); clearTimeout(t); t = setTimeout(() => lookupLine(lk, dt, get()), 350); });
+    f.appendChild(i); f.appendChild(lk);
+    if (get()) lookupLine(lk, dt, get());
+    return f;
+  }
   function drawRuns() {
     rWrap.textContent = '';
-    const need = [];
-    if ([1, 2, 3, 4, 5].some(i => days.has(i))) need.push('weekday');
-    if (days.has(6)) need.push('saturday');
-    if (days.has(0)) need.push('sunday');
-    need.forEach(dt => {
-      const f = el('div', 'pa-field');
-      f.appendChild(el('label', 'pa-label', dt + ' run #'));
-      const i = el('input', 'pa-input'); i.type = 'text'; i.inputMode = 'numeric'; i.maxLength = 4; i.placeholder = 'e.g. 101'; i.value = runs[dt] || '';
-      const lk = el('div', 'lookup');
-      let t; i.addEventListener('input', () => { runs[dt] = i.value.trim(); clearTimeout(t); t = setTimeout(() => lookupLine(lk, dt, runs[dt]), 350); });
-      f.appendChild(i); f.appendChild(lk); rWrap.appendChild(f);
-      if (runs[dt]) lookupLine(lk, dt, runs[dt]);
-    });
+    const wk = [1, 2, 3, 4, 5].filter(i => days.has(i));
+    if (sameWeekday && wk.length) {
+      rWrap.appendChild(runField('Weekday run # (' + wk.map(i => S.DAY_SHORT[i]).join(', ') + ')', 'weekday',
+        () => runs[wk[0]] || '', v => wk.forEach(i => { runs[i] = v; })));
+    } else {
+      wk.forEach(i => rWrap.appendChild(runField(S.DAY_NAMES[i] + ' run #', 'weekday', () => runs[i] || '', v => { runs[i] = v; })));
+    }
+    if (days.has(6)) rWrap.appendChild(runField('Saturday run #', 'saturday', () => runs[6] || '', v => { runs[6] = v; }));
+    if (days.has(0)) rWrap.appendChild(runField('Sunday run #', 'sunday', () => runs[0] || '', v => { runs[0] = v; }));
   }
   drawDays(); drawRuns();
 
-  const eff = el('div', 'pa-field'); eff.appendChild(el('label', 'pa-label', 'Starts on (a Sunday starts a full week)'));
+  const eff = el('div', 'pa-field'); eff.appendChild(el('label', 'pa-label', 'Starts on'));
   const effIn = el('input', 'pa-input'); effIn.type = 'date';
-  const today = S.todayIso(); const nextSun = S.dowOf(today) === 0 ? today : S.addDays(S.weekStartOf(today), 7);
-  effIn.value = cur ? today : nextSun;
-  eff.appendChild(effIn);
-  eff.appendChild(el('div', 'hint', 'New pick or mid-cycle swap? Pick the date it takes over. Days before it keep your previous pattern.'));
+  const effHint = el('div', 'hint');
+  effIn.value = cur ? today : today;
+  slugForDate(ctx.profile.depotKey, today).then(({ season }) => {
+    if (!season) return;
+    if (!cur) effIn.value = season.start;
+    effHint.textContent = season.label + ' pick started ' + S.fmtDate(season.start) + '. ' + (cur
+      ? 'For a new pick or a mid-cycle swap, choose the date it takes over; earlier days keep your previous pattern.'
+      : 'Starting there fills in every week back to the start of the pick.');
+  }).catch(() => {});
+  eff.appendChild(effIn); eff.appendChild(effHint);
   form.appendChild(eff);
 
   const save = el('button', 'pa-submit', cur ? 'Save as new version' : 'Save pattern'); save.type = 'button';
   const msg = el('div', 'msgline');
   save.addEventListener('click', async () => {
-    const need = []; if ([1,2,3,4,5].some(i => days.has(i))) need.push('weekday'); if (days.has(6)) need.push('saturday'); if (days.has(0)) need.push('sunday');
-    const missing = need.filter(dt => !runs[dt]);
     if (!days.size) { msg.textContent = 'Pick at least one work day.'; msg.className = 'msgline err'; return; }
+    const missing = [...days].filter(i => !runs[i]).map(i => S.DAY_SHORT[i]);
     if (missing.length) { msg.textContent = 'Enter the run number for: ' + missing.join(', '); msg.className = 'msgline err'; return; }
     if (!effIn.value) { msg.textContent = 'Pick a start date.'; msg.className = 'msgline err'; return; }
-    save.disabled = true; msg.textContent = 'Saving…'; msg.className = 'msgline';
+    save.disabled = true; msg.textContent = 'Saving\u2026'; msg.className = 'msgline';
     try {
-      const d = {}; days.forEach(i => { d[String(i)] = {}; });
-      const rbt = {}; need.forEach(dt => { rbt[dt] = runs[dt]; });
+      const d = {}; days.forEach(i => { d[String(i)] = { runNo: runs[i] }; });
+      const rbt = {};
+      const wk = [1, 2, 3, 4, 5].filter(i => days.has(i));
+      if (wk.length) rbt.weekday = runs[wk[0]];
+      if (days.has(6)) rbt.saturday = runs[6];
+      if (days.has(0)) rbt.sunday = runs[0];
       await A.savePattern({ periodDays: 7, days: d, runByDayType: rbt, depotKey: ctx.profile.depotKey, effectiveFrom: effIn.value, preset, label: preset });
-      msg.textContent = 'Saved. Your days are filled in below.'; msg.className = 'msgline ok';
+      msg.textContent = 'Saved. Every week from ' + S.fmtDate(effIn.value) + ' is filled in.'; msg.className = 'msgline ok';
     } catch (err) { msg.textContent = 'Could not save: ' + (err.code || err.message); msg.className = 'msgline err'; }
     save.disabled = false;
   });
@@ -875,7 +879,7 @@ async function renderUpcoming() {
     } else {
       runCell.textContent = 'RUN ' + r.runNo + (r.flags && r.flags.overtime ? ' · OT' : '');
       runFor(r, r.date).then(run => {
-        if (run) { t.textContent = S.fmtClock(run.reportMin) + ' – ' + S.fmtClock(run.finishMin); if (run.pieces[0]) runCell.textContent += ' · ' + run.pieces.map(p => p.routeLabel).join(' / '); }
+        if (run) { t.textContent = S.fmtClock(run.reportMin) + ' – ' + S.fmtClock(run.finishMin) + (A.extrasMin(r.extras) ? ' +' + A.fmtHours(A.extrasMin(r.extras)) : ''); if (run.pieces[0]) runCell.textContent += ' · ' + run.pieces.map(p => p.routeLabel).join(' / '); }
         else t.textContent = 'not in paddle';
       }).catch(() => {});
     }
@@ -884,123 +888,15 @@ async function renderUpcoming() {
   }
 }
 
-// ---- edit sheet -----------------------------------------------------------
+// ---- edit sheet (shared module) ------------------------------------------
 
-let editOverlay = null;
 function openEdit(r) {
-  if (!editOverlay) {
-    editOverlay = el('div', 'pa-overlay pa-root'); editOverlay.hidden = true;
-    editOverlay.addEventListener('click', e => { if (e.target === editOverlay) closeEdit(); });
-    document.body.appendChild(editOverlay);
-  }
-  editOverlay.textContent = ''; editOverlay.hidden = false;
-  const card = el('div', 'pa-card');
-  const head = el('div', 'pa-card-head');
-  head.appendChild(el('div', 'pa-card-title', S.fmtDate(r.date)));
-  const x = el('button', 'pa-close', '×'); x.type = 'button'; x.addEventListener('click', closeEdit); head.appendChild(x);
-  const body = el('div', 'pa-card-body');
-  const msg = el('div', 'pa-msg'); msg.hidden = true; body.appendChild(msg);
-
-  const a = r.assignment || {};
-  const state = {
-    runNo: r.runNo || '',
-    status: r.off ? (r.status === 'holiday' ? 'off' : (r.status || 'off')) : 'scheduled',
-    holiday: !!(r.holiday && r.holiday.isHoliday) || r.holidayDate,
-    worked: r.holiday ? !!r.holiday.worked : !r.off,
-    holidayHours: (r.holiday && r.holiday.payHours != null) ? r.holiday.payHours : A.HOLIDAY_PAY_HOURS,
-    bonusHours: (r.holiday && r.holiday.workedBonusHours != null) ? r.holiday.workedBonusHours : A.HOLIDAY_WORKED_BONUS_HOURS,
-    overtime: !!(r.flags && r.flags.overtime), callIn: !!(r.flags && r.flags.callIn),
-    reportMin: r.reportMin != null ? r.reportMin : null,
-    note: r.note || ''
-  };
-
-  const fRun = el('div', 'pa-field'); fRun.appendChild(el('label', 'pa-label', 'Run #'));
-  const iRun = el('input', 'pa-input'); iRun.type = 'text'; iRun.inputMode = 'numeric'; iRun.maxLength = 4; iRun.value = state.runNo;
-  const lk = el('div', 'lookup'); let t;
-  iRun.addEventListener('input', () => { state.runNo = iRun.value.trim(); clearTimeout(t); t = setTimeout(() => { lookupLine(lk, r.dayType, state.runNo, r.date); drawPay(); }, 350); });
-  fRun.append(iRun, lk); body.appendChild(fRun);
-  if (state.runNo) lookupLine(lk, r.dayType, state.runNo, r.date);
-
-  const fSt = el('div', 'pa-field'); fSt.appendChild(el('label', 'pa-label', 'Status'));
-  const sSt = el('select', 'pa-select');
-  [['scheduled', 'Working'], ['off', 'Off'], ['vacation', 'Vacation'], ['sick', 'Sick']].forEach(([v, l]) => { const o = el('option', null, l); o.value = v; if (v === state.status) o.selected = true; sSt.appendChild(o); });
-  sSt.addEventListener('change', () => { state.status = sSt.value; if (state.status !== 'scheduled') state.worked = false; drawHoliday(); drawPay(); });
-  fSt.appendChild(sSt); body.appendChild(fSt);
-
-  const fRep = el('div', 'pa-field'); fRep.appendChild(el('label', 'pa-label', 'Report time override (optional)'));
-  const iRep = el('input', 'pa-input'); iRep.type = 'time'; if (state.reportMin != null) iRep.value = S.pad2(Math.floor((state.reportMin % 1440) / 60)) + ':' + S.pad2(state.reportMin % 60);
-  iRep.addEventListener('input', () => { const m = iRep.value.match(/^(\d{2}):(\d{2})$/); state.reportMin = m ? parseInt(m[1]) * 60 + parseInt(m[2]) : null; });
-  fRep.appendChild(iRep); fRep.appendChild(el('div', 'hint', 'Only needed when the run isn’t in the paddle or your start differs from it.'));
-  body.appendChild(fRep);
-
-  const holWrap = el('div'); body.appendChild(holWrap);
-  function toggleRow(label, key, onChange) {
-    const w = el('label', 'check'); const c = el('input'); c.type = 'checkbox'; c.checked = !!state[key];
-    c.addEventListener('change', () => { state[key] = c.checked; if (onChange) onChange(); drawPay(); });
-    w.append(c, document.createTextNode(label)); return w;
-  }
-  function drawHoliday() {
-    holWrap.textContent = '';
-    holWrap.appendChild(toggleRow('Holiday' + (r.holidayDate ? ' (Sunday schedule)' : ''), 'holiday', drawHoliday));
-    if (state.holiday) {
-      holWrap.appendChild(toggleRow('I worked this holiday', 'worked', () => { if (state.worked) { state.status = 'scheduled'; sSt.value = 'scheduled'; } drawHoliday(); }));
-      const row = el('div', 'form-row');
-      const h1 = el('div', 'pa-field'); h1.appendChild(el('label', 'pa-label', 'Holiday hours')); const i1 = el('input', 'pa-input'); i1.type = 'number'; i1.step = '0.5'; i1.value = state.holidayHours; i1.addEventListener('input', () => { state.holidayHours = parseFloat(i1.value) || 0; drawPay(); }); h1.appendChild(i1);
-      row.appendChild(h1);
-      if (state.worked) { const h2 = el('div', 'pa-field'); h2.appendChild(el('label', 'pa-label', 'Worked bonus hours')); const i2 = el('input', 'pa-input'); i2.type = 'number'; i2.step = '0.5'; i2.value = state.bonusHours; i2.addEventListener('input', () => { state.bonusHours = parseFloat(i2.value) || 0; drawPay(); }); h2.appendChild(i2); row.appendChild(h2); }
-      holWrap.appendChild(row);
-    }
-    holWrap.appendChild(toggleRow('Overtime day', 'overtime'));
-    holWrap.appendChild(toggleRow('Called in late', 'callIn'));
-  }
-  drawHoliday();
-
-  const fNote = el('div', 'pa-field'); fNote.appendChild(el('label', 'pa-label', 'Note'));
-  const iNote = el('input', 'pa-input'); iNote.type = 'text'; iNote.maxLength = 140; iNote.value = state.note; iNote.addEventListener('input', () => { state.note = iNote.value; });
-  fNote.appendChild(iNote); body.appendChild(fNote);
-
-  const pay = el('div', 'pay'); body.appendChild(pay);
-  async function drawPay() {
-    const fake = { off: state.status !== 'scheduled' || !state.runNo, runNo: state.runNo, dayType: r.dayType, reportMin: state.reportMin, depotKey: ctx.profile.depotKey,
-                   holiday: state.holiday ? { isHoliday: true, worked: state.worked && state.status === 'scheduled', payHours: state.holidayHours, workedBonusHours: state.bonusHours } : null };
-    const run = fake.off ? null : await runFor(fake, r.date).catch(() => null);
-    const p = A.payHoursFor(fake, run);
-    pay.innerHTML = p.parts.length ? 'Pay: ' + p.parts.map(([k, v]) => esc(k) + ' ' + (+v).toFixed(1)).join(' + ') + ' = <b>' + p.total.toFixed(1) + ' hrs</b>' : 'Pay: <b>0.0 hrs</b>';
-  }
-  drawPay();
-
-  const stack = el('div', 'pa-stack');
-  const save = el('button', 'pa-submit', 'Save day'); save.type = 'button';
-  save.addEventListener('click', async () => {
-    save.disabled = true; msg.hidden = true;
-    try {
-      const working = state.status === 'scheduled' && !!state.runNo;
-      await A.saveAssignment(r.date, {
-        runNo: working ? state.runNo : null,
-        depotKey: ctx.profile.depotKey, dayType: r.dayType,
-        status: working ? 'scheduled' : (state.status === 'scheduled' ? 'off' : state.status),
-        flags: { overtime: state.overtime, holiday: state.holiday, callIn: state.callIn },
-        holiday: state.holiday ? { isHoliday: true, worked: working && state.worked, payHours: state.holidayHours, workedBonusHours: state.bonusHours } : null,
-        reportMin: state.reportMin, note: state.note, source: 'edit'
-      });
-      closeEdit();
-    } catch (err) { msg.textContent = 'Could not save: ' + (err.code || err.message); msg.className = 'pa-msg pa-err'; msg.hidden = false; save.disabled = false; }
-  });
-  stack.appendChild(save);
-  if (r.source === 'assignment') {
-    const rev = el('button', 'pa-ghost', r.patternId || A.activePattern(A.getState().patterns, r.date) ? 'Revert to my pattern' : 'Remove this day'); rev.type = 'button';
-    rev.addEventListener('click', async () => { try { await A.clearAssignment(r.date); closeEdit(); } catch (err) { msg.textContent = err.message; msg.className = 'pa-msg pa-err'; msg.hidden = false; } });
-    stack.appendChild(rev);
-  }
-  const cancel = el('button', 'pa-ghost', 'Cancel'); cancel.type = 'button'; cancel.addEventListener('click', closeEdit); stack.appendChild(cancel);
-  body.appendChild(stack);
-  card.append(head, body); editOverlay.appendChild(card);
+  E.configure({ profile: ctx.profile, onSaved: () => { refreshToday(); if (ctx.view === 'schedule') renderSchedule(); } });
+  E.openEdit(r);
 }
-function closeEdit() { if (editOverlay) editOverlay.hidden = true; }
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeEdit(); });
 
 // Expose the pure pieces for in-browser checks (no side effects).
-window.PA_HOME = { S, A, N, computeState, ctx, renderSchedule, renderToday, renderAlerts, openEdit, refreshToday };
+window.PA_HOME = { S, A, N, E, computeState, ctx, renderSchedule, renderToday, renderAlerts, openEdit, refreshToday };
 </script>
 </body>
 </html>
