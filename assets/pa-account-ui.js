@@ -33,6 +33,7 @@ const SEASON_SUFFIX = /-(summer|fall|spring|winter)-?\d{4}$/i;
 const depotKeyOf = slug => String(slug || '').replace(SEASON_SUFFIX, '');
 
 let auth = null, store = null, strip = null;   // lazily imported modules
+let lastUid = null;                             // who to forget on sign-out
 let booting = null;                 // in-flight boot promise
 let user = null, profile = null;
 let slot = null, overlay = null;
@@ -68,17 +69,23 @@ const UNCONFIGURED_MSG =
 async function onAuthChange(e) {
   user = e.detail.user;
   if (user) {
+    // The account is known the moment auth reports it; show it now rather
+    // than after the network calls below, which can take a while on a phone.
+    lastUid = user.uid;
+    profile = store.savedProfile(user.uid) || profile;
+    renderButton();
     try {
       await store.attach(user.uid);
-      profile = await store.loadProfile();
-      if (!profile) {
-        profile = await store.saveProfile({
-          email:       user.email || '',
-          displayName: user.displayName || '',
-          driverType:  'regular'
-        });
-      }
+      const fresh = await store.loadProfile();
+      // Only a brand-new account gets a default profile, and ensureProfile
+      // re-checks on the server so it cannot overwrite a real one.
+      profile = fresh || await store.ensureProfile({
+        email:       user.email || '',
+        displayName: user.displayName || '',
+        driverType:  'regular'
+      });
     } catch (err) {
+      // Offline or refused: keep the copy saved on this device.
       console.warn('[pa] profile load failed', err.code || err.message);
     }
     // The paddle viewer gets a one-line "next run" strip under its header.
@@ -88,6 +95,8 @@ async function onAuthChange(e) {
       import('./pa-strip.js').then(m => { strip = m; return m.mount(user.uid, profile); }).catch(() => {});
     }
   } else {
+    if (store && lastUid) store.forgetProfile(lastUid);
+    lastUid = null;
     profile = null;
     if (strip) { try { strip.unmount(); } catch (_) {} }
     if (store) store.detach();

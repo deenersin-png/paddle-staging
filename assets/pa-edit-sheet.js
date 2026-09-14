@@ -37,7 +37,14 @@ const DAY_TYPES = [['weekday', 'Weekday schedule'], ['saturday', 'Saturday sched
 
 export async function slugForDate(depotKey, iso) {
   const k = 'slug|' + depotKey + '|' + iso.slice(0, 7);
-  if (!slugCache.has(k)) slugCache.set(k, S.slugFor(depotKey, iso));
+  if (!slugCache.has(k)) {
+    // An empty answer is usually a failed download, not a real "no season":
+    // don't keep it, so the next lookup tries again.
+    const p = S.slugFor(depotKey, iso).then(
+      r => { if (!r || !r.slug) slugCache.delete(k); return r; },
+      e => { slugCache.delete(k); throw e; });
+    slugCache.set(k, p);
+  }
   return slugCache.get(k);
 }
 
@@ -79,6 +86,74 @@ export function lookupLine(node, dayType, runNo, iso, depotKey) {
   }).catch(() => { node.textContent = ''; return null; });
 }
 
+// ---- saving and sync, shown honestly ---------------------------------------
+
+/**
+ * Await a Firestore write. A write only resolves once the SERVER has it, so
+ * if that takes more than a few seconds `onSlow` tells the operator why
+ * nothing has happened yet. Firestore keeps retrying while the page is open.
+ */
+export async function confirmWrite(promise, onSlow, slowMs = 6000) {
+  const t = setTimeout(() => { try { onSlow(); } catch (_) {} }, slowMs);
+  try { return await promise; } finally { clearTimeout(t); }
+}
+export const WAITING_FOR_SIGNAL = 'Waiting for signal… keep this page open until it says saved.';
+
+const clock = ms => {
+  if (!ms) return '';
+  const d = new Date(ms), now = new Date();
+  const t = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return d.toDateString() === now.toDateString() ? t : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + t;
+};
+
+/**
+ * One line saying where the schedule on screen came from, with Retry when
+ * it isn't live, and a Details panel an operator can screenshot when
+ * something is wrong. `st` is pa-assignments getState().
+ */
+export function renderSync(node, st, onRetry) {
+  if (!node || !st) return;
+  const s = st.sync || {};
+  const wasOpen = !!(node.querySelector('details') && node.querySelector('details').open);
+  node.textContent = '';
+  if (s.status === 'idle') { node.hidden = true; return; }
+  node.hidden = false;
+
+  const line = el('div', 'pa-sync-line');
+  const dot = el('span', 'pa-sync-dot');
+  const text = el('span', 'pa-sync-text');
+  const kind = { live: 'ok', offline: 'warn', saved: 'warn', connecting: 'dim', error: 'err' }[s.status] || 'dim';
+  node.className = 'pa-sync pa-root pa-sync-' + kind;
+  text.textContent = s.status === 'live' ? 'Synced ' + clock(s.lastServerAt)
+    : s.status === 'offline' ? 'No connection · showing what synced at ' + clock(s.lastServerAt)
+    : s.status === 'saved' ? 'Connecting… · showing this device’s copy from ' + clock(s.savedAt)
+    : s.status === 'error' ? 'Can’t sync (' + s.error + ') · retrying'
+    : 'Connecting…';
+  line.append(dot, text);
+  if (s.status !== 'live' && s.status !== 'connecting' && onRetry) {
+    const b = el('button', 'pa-sync-retry', 'Retry'); b.type = 'button';
+    b.addEventListener('click', onRetry);
+    line.appendChild(b);
+  }
+  node.appendChild(line);
+
+  const det = el('details', 'pa-sync-details');
+  det.open = wasOpen;
+  det.appendChild(el('summary', null, 'Details'));
+  const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+  [
+    ['Status', s.status + (s.error ? ' (' + s.error + ')' : '')],
+    ['Last server sync', clock(s.lastServerAt) || 'not this session'],
+    ['Device copy', clock(s.savedAt) || 'none'],
+    ['Pick blocks', String(st.patterns.length)],
+    ['Edited days', String(st.assignments.size)],
+    ['Network', navigator.onLine ? 'online' : 'offline'],
+    ['Opened as', standalone ? 'installed app' : 'browser tab'],
+    ['Page updater', navigator.serviceWorker && navigator.serviceWorker.controller ? 'active' : 'not active']
+  ].forEach(([k, v]) => { const r = el('div', 'pa-sync-kv'); r.append(el('span', null, k), el('b', null, v)); det.appendChild(r); });
+  node.appendChild(det);
+}
+
 // ---- the sheet ------------------------------------------------------------
 
 function ensureOverlay() {
@@ -99,7 +174,7 @@ export function closeEdit() {
 
 function showMsg(text, kind) {
   if (!msgEl) return;
-  msgEl.className = 'pa-msg ' + (kind === 'ok' ? 'pa-ok' : 'pa-err');
+  msgEl.className = 'pa-msg ' + (kind === 'ok' ? 'pa-ok' : kind === 'warn' ? 'pa-warn' : 'pa-err');
   msgEl.textContent = text; msgEl.hidden = false;
 }
 
@@ -304,7 +379,7 @@ export function openEdit(r) {
     if (b.working && !st.run && st.hoursMin == null) { showMsg('That run is not in the paddle. Enter the hours.', 'err'); return; }
     save.disabled = true; msgEl.hidden = true;
     try {
-      await A.saveAssignment(r.date, {
+      await confirmWrite(A.saveAssignment(r.date, {
         kind: st.kind,
         runNo: b.working ? st.runNo : null,
         runDayType: b.working ? st.runDayType : null,
@@ -315,7 +390,7 @@ export function openEdit(r) {
         reportMin: b.working ? st.reportMin : null,
         flags: { holiday: st.kind.startsWith('holiday'), late: st.kind === 'late', callIn: false },
         note: st.note, source: 'edit'
-      });
+      }), () => showMsg(WAITING_FOR_SIGNAL, 'warn'));
       closeEdit();
       if (cfg.onSaved) cfg.onSaved(r.date);
     } catch (err) {
@@ -328,8 +403,9 @@ export function openEdit(r) {
     const hasPattern = !!A.activePattern(A.getState().patterns, r.date);
     const rev = el('button', 'pa-ghost', hasPattern ? 'Revert to my pattern' : 'Remove this day'); rev.type = 'button';
     rev.addEventListener('click', async () => {
-      try { await A.clearAssignment(r.date); closeEdit(); if (cfg.onSaved) cfg.onSaved(r.date); }
-      catch (err) { showMsg(err.message, 'err'); }
+      rev.disabled = true;
+      try { await confirmWrite(A.clearAssignment(r.date), () => showMsg(WAITING_FOR_SIGNAL, 'warn')); closeEdit(); if (cfg.onSaved) cfg.onSaved(r.date); }
+      catch (err) { showMsg(err.message, 'err'); rev.disabled = false; }
     });
     stack.appendChild(rev);
   }

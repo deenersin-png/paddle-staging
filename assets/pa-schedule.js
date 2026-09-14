@@ -91,10 +91,25 @@ export function fmtDate(iso) {
 
 // ---- fetch + CSV ----------------------------------------------------------
 
+// Every schedule-data download gets a time limit. On weak cellular a fetch
+// can stall for minutes without failing, and nothing downstream can render
+// until it settles.
+const FETCH_TIMEOUT_MS = 20000;
+
 const mem = new Map();
 async function fetchText(url) {
   if (mem.has(url)) return mem.get(url);
-  const p = fetch(url).then(r => r.ok ? r.text() : '').catch(() => '');
+  const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = ctl ? setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS) : null;
+  const p = fetch(url, ctl ? { signal: ctl.signal } : undefined)
+    .then(r => (r.ok ? r.text() : Promise.reject(new Error('HTTP ' + r.status))))
+    .catch(() => {
+      // Do NOT remember a failure: one dropped request on a bad connection
+      // used to leave every run "not in paddle" until the page was reloaded.
+      mem.delete(url);
+      return '';
+    })
+    .finally(() => { if (timer) clearTimeout(timer); });
   mem.set(url, p);
   return p;
 }

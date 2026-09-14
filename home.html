@@ -163,7 +163,14 @@ h2.k{margin-bottom:10px}
 </nav>
 
 <div class="wrap">
+  <div class="pa-sync" id="sync-line" hidden></div>
   <div class="gate" id="gate-out">Sign in to see your next run.<br>Your schedule follows you to every device.</div>
+
+  <div class="gate" id="gate-retry" hidden>
+    <span id="gate-retry-text">Can't reach the server to load your account.</span><br>
+    Check your signal, then try again. Nothing on your account has changed.
+    <button class="pa-submit" id="gate-retry-btn" type="button" style="margin-top:14px">Try again</button>
+  </div>
 
   <div class="gate" id="gate-setup" hidden>
     Tell the app where you work and what kind of driver you are.
@@ -196,13 +203,27 @@ h2.k{margin-bottom:10px}
   </section>
 </div>
 
+<script>
+// If this page's modules fail to link - an update landed and the browser
+// mixed old and new files - reload once to fetch a consistent set, and if
+// that doesn't fix it, say so instead of leaving a blank screen.
+window.addEventListener('error', function (e) {
+  var m = String((e && (e.message || (e.error && e.error.message))) || '');
+  if (!/does not provide an export|doesn't provide an export|Importing binding name|Importing a module script failed|dynamically imported module/i.test(m)) return;
+  var again = false;
+  try { again = !!sessionStorage.getItem('pa_update_reload'); sessionStorage.setItem('pa_update_reload', '1'); } catch (_) {}
+  if (!again) { location.reload(); return; }
+  var w = document.querySelector('.wrap');
+  if (w) w.innerHTML = '<div class="gate">The app was just updated and this page could not finish loading.<br>Close this tab and open the app again.</div>';
+}, true);
+</script>
 <script type="module" src="assets/pa-account-ui.js"></script>
 <script type="module">
 import * as S from './assets/pa-schedule.js';
 import * as A from './assets/pa-assignments.js';
 import { computeState, phaseLabel } from './assets/pa-countdown.js';
 import * as L from './assets/pa-live.js';
-import { loadProfile, saveProfile, ensureUser } from './assets/pa-store.js';
+import { loadProfile, loadProfileSafe, saveProfile, ensureUser } from './assets/pa-store.js';
 import * as N from './assets/pa-notify.js';
 import * as E from './assets/pa-edit-sheet.js';
 
@@ -215,7 +236,8 @@ const ctx = {
   current: null,                 // { mode:'live'|'next'|'none', date, r, run, st, nowMin }
   trips: new Map(),              // date -> Map(block -> trips[])
   tickTimer: null, leaderTimer: null, wakeLock: null,
-  runCache: new Map(), weekCursor: null, districts: [], seasonLabel: ''
+  runCache: new Map(), weekCursor: null, districts: [], seasonLabel: '',
+  authToken: 0, drawnVersion: -1, redrawTimer: null
 };
 
 // ---- helpers --------------------------------------------------------------
@@ -246,7 +268,7 @@ function findNext(fromIso, days) {
 // ---- boot / auth ----------------------------------------------------------
 
 function showOnly(id) {
-  ['gate-out', 'gate-setup', 'view-today', 'view-schedule', 'view-alerts'].forEach(x => { $(x).hidden = x !== id; });
+  ['gate-out', 'gate-retry', 'gate-setup', 'view-today', 'view-schedule', 'view-alerts'].forEach(x => { $(x).hidden = x !== id; });
   $('tabs').hidden = !(id === 'view-today' || id === 'view-schedule' || id === 'view-alerts');
 }
 function setView(v) {
@@ -258,32 +280,80 @@ function setView(v) {
 }
 document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => setView(t.dataset.view)));
 
-window.addEventListener('pa:auth', async e => {
+window.addEventListener('pa:auth', e => {
   ctx.user = e.detail.user;
   stopTimers();
-  if (!ctx.user) { A.detach(); N.detach(); ctx.profile = null; showOnly('gate-out'); $('hd-ctx').textContent = ''; return; }
-  ensureUser(ctx.user.uid);
-  try { ctx.profile = await loadProfile(); } catch (err) { ctx.profile = null; }
-  if (!ctx.profile || !ctx.profile.depotKey || !ctx.profile.driverType) { await renderSetup(); showOnly('gate-setup'); return; }
-  await boot();
+  if (!ctx.user) {
+    ctx.authToken++;
+    A.detach(); N.detach(); ctx.profile = null;
+    showOnly('gate-out'); $('hd-ctx').textContent = ''; renderSyncLine();
+    return;
+  }
+  start();
 });
+$('gate-retry-btn').addEventListener('click', () => start());
+
+async function start() {
+  const token = ++ctx.authToken;
+  ensureUser(ctx.user.uid);
+  // The server's answer wins, but a slow or failed read must not look like a
+  // brand-new account: fall back to this device's copy of the profile, and
+  // only ask for depot and driver type when the SERVER says they're missing.
+  const res = await loadProfileSafe();
+  if (token !== ctx.authToken) return;                  // signed out / retried meanwhile
+  ctx.profile = res.profile;
+  const incomplete = p => !p || !p.depotKey || !p.driverType;
+  if (res.source === 'server' && incomplete(res.profile)) { await renderSetup(); showOnly('gate-setup'); return; }
+  if (!ctx.profile) {
+    $('gate-retry-text').textContent = 'Can’t load your account right now (' + res.error + ').';
+    showOnly('gate-retry');
+    return;
+  }
+  if (incomplete(ctx.profile)) { await renderSetup(); showOnly('gate-setup'); return; }
+  await boot();
+  // Showing this device's copy: pick up any change made on another device.
+  if (res.source === 'device') {
+    loadProfile().then(p => { if (p && token === ctx.authToken) { ctx.profile = p; E.configure({ profile: p }); scheduleRedraw(true); } }).catch(() => {});
+  }
+}
+
+function renderSyncLine() { E.renderSync($('sync-line'), A.getState(), () => A.retryNow()); }
+
+// Snapshots also arrive for connection-only changes; redraw the schedule only
+// when it actually changed, and coalesce bursts.
+function scheduleRedraw(force) {
+  if (!force && A.getState().version === ctx.drawnVersion) return;
+  clearTimeout(ctx.redrawTimer);
+  ctx.redrawTimer = setTimeout(() => {
+    ctx.drawnVersion = A.getState().version;
+    refreshToday();
+    if (ctx.view === 'schedule') renderSchedule();
+  }, 150);
+}
 
 async function boot() {
   const today = S.todayIso();
-  const [ov, gtfs, seasonInfo] = await Promise.all([
-    S.loadCalendarOverrides(), S.loadGtfsManifest(), slugForDate(ctx.profile.depotKey, today)
-  ]);
-  ctx.overrides = ov || {}; ctx.gtfs = gtfs || {};
-  ctx.seasonLabel = seasonInfo.season ? seasonInfo.season.label : 'no season';
-  $('hd-ctx').textContent = ' · ' + (ctx.profile.depotLabel || ctx.profile.depotKey) + ' · ' + ctx.seasonLabel;
-  await A.attach(ctx.user.uid);
+  $('hd-ctx').textContent = ' · ' + (ctx.profile.depotLabel || ctx.profile.depotKey);
+  // Holidays, season and GTFS version come from other files on other sites.
+  // None of them may hold up the operator's own schedule: fetch in the
+  // background and redraw when each one lands.
+  S.loadCalendarOverrides().then(ov => { ctx.overrides = ov || {}; scheduleRedraw(true); }).catch(() => {});
+  S.loadGtfsManifest().then(g => { ctx.gtfs = g || {}; if ($('meta')) $('meta').textContent = metaLine(); }).catch(() => {});
+  slugForDate(ctx.profile.depotKey, today).then(info => {
+    ctx.seasonLabel = info && info.season ? info.season.label : '';
+    $('hd-ctx').textContent = ' · ' + (ctx.profile.depotLabel || ctx.profile.depotKey) + (ctx.seasonLabel ? ' · ' + ctx.seasonLabel : '');
+  }).catch(() => {});
   if (!ctx.subscribed) {
     ctx.subscribed = true;
-    A.onChange(() => { refreshToday(); if (ctx.view === 'schedule') renderSchedule(); });
+    A.onChange(() => { renderSyncLine(); scheduleRedraw(false); });
   }
+  E.configure({ profile: ctx.profile });
+  setView('today');
+  await A.attach(ctx.user.uid);          // returns at once when this device has a copy
+  renderSyncLine();
   N.attach(ctx.user.uid).catch(() => {});
   N.registerSW();
-  setView('today');
+  ctx.drawnVersion = A.getState().version;
   await refreshToday();
 }
 
@@ -451,6 +521,17 @@ function renderToday() {
     const b = el('button', 'pa-submit', 'Edit today'); b.type = 'button'; b.style.marginTop = '14px';
     b.addEventListener('click', () => openEdit(c.r));
     g.appendChild(b); body.appendChild(g);
+    $('meta').textContent = metaLine(); wakeLock(false); return;
+  }
+  // Nothing to show yet is not the same as nothing registered: never tell an
+  // operator their schedule is empty while it is still loading or failing.
+  const sync = A.getState().sync;
+  if (c.mode === 'none' && !c.doneToday && !A.getState().patterns.length && ['connecting', 'error'].includes(sync.status)) {
+    const g = el('div', 'gate');
+    g.textContent = sync.status === 'error'
+      ? 'Can’t load your schedule right now (' + sync.error + '). It will retry by itself — or tap Retry above.'
+      : 'Loading your schedule…';
+    body.appendChild(g);
     $('meta').textContent = metaLine(); wakeLock(false); return;
   }
   if (c.mode === 'none') {
@@ -697,7 +778,7 @@ function renderRegularForm(form) {
       rm.addEventListener('click', async () => {
         if (rm.dataset.armed !== '1') { rm.dataset.armed = '1'; rm.textContent = 'TAP AGAIN'; setTimeout(() => { rm.dataset.armed = ''; rm.textContent = 'REMOVE'; }, 4000); return; }
         rm.disabled = true;
-        try { await A.deletePattern(p.id); listMsg.textContent = 'Removed ' + range(p.effectiveFrom, p.effectiveTo) + '.'; listMsg.className = 'msgline ok'; setTimeout(() => renderSchedule(), 400); }
+        try { await E.confirmWrite(A.deletePattern(p.id), () => { listMsg.textContent = E.WAITING_FOR_SIGNAL; listMsg.className = 'msgline'; }); listMsg.textContent = 'Removed ' + range(p.effectiveFrom, p.effectiveTo) + '.'; listMsg.className = 'msgline ok'; setTimeout(() => renderSchedule(), 400); }
         catch (err) { listMsg.textContent = 'Could not remove: ' + (err.code || err.message); listMsg.className = 'msgline err'; rm.disabled = false; rm.dataset.armed = ''; rm.textContent = 'REMOVE'; }
       });
       acts.append(b, rm);
@@ -844,8 +925,9 @@ function renderRegularForm(form) {
       if (wk.length) rbt.weekday = w.runs[wk[0]];
       if (w.days.has(6)) rbt.saturday = w.runs[6];
       if (w.days.has(0)) rbt.sunday = w.runs[0];
-      await A.savePattern({ periodDays: 7, days: d, runByDayType: rbt, depotKey: ctx.profile.depotKey,
-                            effectiveFrom: w.start, effectiveTo: w.end, preset: 'pick', label: range(w.start, w.end) });
+      await E.confirmWrite(A.savePattern({ periodDays: 7, days: d, runByDayType: rbt, depotKey: ctx.profile.depotKey,
+                            effectiveFrom: w.start, effectiveTo: w.end, preset: 'pick', label: range(w.start, w.end) }),
+                           () => { msg.textContent = E.WAITING_FOR_SIGNAL; msg.className = 'msgline'; });
       msg.textContent = 'Saved. ' + range(w.start, w.end) + ' is filled in.'; msg.className = 'msgline ok';
       setTimeout(() => renderSchedule(), 600);
     } catch (err) { msg.textContent = 'Could not save: ' + (err.code || err.message); msg.className = 'msgline err'; }
@@ -926,6 +1008,7 @@ function renderWeekForm(form) {
   const msg = el('div', 'msgline');
   save.addEventListener('click', async () => {
     save.disabled = true; msg.textContent = 'Saving…'; msg.className = 'msgline';
+    const slow = setTimeout(() => { msg.textContent = E.WAITING_FOR_SIGNAL; }, 6000);
     try {
       const entries = inputs.map(({ date, inp, r }) => ({ date, runNo: inp.value.trim(), r }));
       if (cb.checked) {
@@ -949,6 +1032,7 @@ function renderWeekForm(form) {
       }
       msg.textContent = 'Saved.'; msg.className = 'msgline ok';
     } catch (err) { msg.textContent = 'Could not save: ' + (err.code || err.message); msg.className = 'msgline err'; }
+    clearTimeout(slow);
     save.disabled = false;
   });
   form.appendChild(save); form.appendChild(msg);
@@ -1007,6 +1091,8 @@ function openEdit(r) {
 
 // Expose the pure pieces for in-browser checks (no side effects).
 window.PA_HOME = { S, A, N, E, computeState, ctx, renderSchedule, renderToday, renderAlerts, openEdit, refreshToday };
+// Modules linked fine: allow a future update to trigger one reload again.
+try { sessionStorage.removeItem('pa_update_reload'); } catch (_) {}
 </script>
 </body>
 </html>

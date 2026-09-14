@@ -13,7 +13,7 @@
 // ==========================================================================
 
 import {
-  doc, getDoc, setDoc, onSnapshot, serverTimestamp, collection, getDocs
+  doc, getDoc, setDoc, onSnapshot, serverTimestamp, collection, getDocs, runTransaction
 } from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore.js';
 
 import { initFirebase } from './pa-firebase.js';
@@ -118,15 +118,59 @@ export function ensureUser(userId) {
 
 // ---- profile --------------------------------------------------------------
 
-export async function loadProfile() {
-  const snap = await getDoc(profileRef());
-  return snap.exists() ? snap.data() : null;
+// A copy of the profile on this device, so a weak connection never turns a
+// known account into a "set up your depot" screen.
+const PROFILE_PREFIX = 'pa_profile_v1_';
+const plainProfile = p => { const c = { ...p }; delete c.createdAt; delete c.updatedAt; return c; };
+
+function rememberProfile(p) {
+  if (!uid || !p) return;
+  try { localStorage.setItem(PROFILE_PREFIX + uid, JSON.stringify(plainProfile(p))); } catch (_) {}
 }
 
-export async function saveProfile(fields) {
+/** The profile saved on this device for `userId` (default: signed-in user). */
+export function savedProfile(userId) {
+  const id = userId || uid;
+  if (!id) return null;
+  try { return JSON.parse(localStorage.getItem(PROFILE_PREFIX + id) || 'null'); } catch (_) { return null; }
+}
+
+export function forgetProfile(userId) {
+  const id = userId || uid;
+  if (id) { try { localStorage.removeItem(PROFILE_PREFIX + id); } catch (_) {} }
+}
+
+export async function loadProfile() {
+  const snap = await getDoc(profileRef());
+  const p = snap.exists() ? snap.data() : null;
+  if (p) rememberProfile(p);
+  return p;
+}
+
+/**
+ * The signed-in user's profile without ever hanging the page.
+ * Resolves to { profile, source, error }:
+ *   source 'server'  the server answered (profile null = really none yet)
+ *   source 'device'  the server couldn't be reached in time; this device's copy
+ *   source null      the server couldn't be reached and there is no copy
+ */
+export async function loadProfileSafe(timeoutMs = 8000) {
+  const copy = savedProfile();
+  try {
+    const p = await Promise.race([
+      loadProfile(),
+      new Promise((_, reject) => setTimeout(() => reject(Object.assign(new Error('timeout'), { code: 'timeout' })), timeoutMs))
+    ]);
+    return { profile: p, source: 'server', error: null };
+  } catch (e) {
+    return { profile: copy, source: copy ? 'device' : null, error: e.code || e.message || 'error' };
+  }
+}
+
+function profilePayload(fields) {
   // Keys here must stay inside the hasOnly() allowlist in firestore.rules,
   // or the write is rejected server-side.
-  const payload = {
+  return {
     uid,
     email:           fields.email ?? '',
     displayName:     fields.displayName ?? '',
@@ -141,11 +185,37 @@ export async function saveProfile(fields) {
     schemaVersion:   1,
     lastPlatform:    'web'
   };
+}
+
+export async function saveProfile(fields) {
+  const payload = profilePayload(fields);
   if (fields.createdAt) payload.createdAt = fields.createdAt;
   else payload.createdAt = serverTimestamp();
 
   await setDoc(profileRef(), payload, { merge: true });
+  rememberProfile(payload);
   return payload;
+}
+
+/**
+ * Create a default profile ONLY if the account has none. A transaction
+ * re-checks on the server before writing, so it can never overwrite a real
+ * profile - unlike the blind merge-write it replaces, which wrote an empty
+ * depot and badge whenever a read came back empty (e.g. racing the sign-up
+ * form's own write). Rejects when offline, which is the safe outcome.
+ */
+export async function ensureProfile(defaults) {
+  if (!db || !uid) throw new Error('not signed in');
+  const ref = profileRef();
+  const result = await runTransaction(db, async tx => {
+    const snap = await tx.get(ref);
+    if (snap.exists()) return snap.data();
+    const payload = { ...profilePayload(defaults), createdAt: serverTimestamp() };
+    tx.set(ref, payload);
+    return payload;
+  });
+  rememberProfile(result);
+  return result;
 }
 
 // ---- settings sync --------------------------------------------------------

@@ -17,8 +17,21 @@
 //     served only when the network fails - a depot parking lot with one bar
 //     still gets the paddle viewer it loaded this morning.
 
-const VERSION = 'pa-sw-2';
+const VERSION = 'pa-sw-3';
 const CACHE = 'pa-cache-v2';
+
+// What the worker hands the PAGE is marked no-store. The browser's in-memory
+// cache otherwise reuses a module it loaded minutes earlier without asking
+// this worker (observed: pa-store.js served with zero network and zero worker
+// time right after a deploy), so a new page ran against an old module and
+// failed to start. Freshness is decided here; the worker's own fetch still
+// uses the HTTP cache to revalidate cheaply (a 304 when nothing changed).
+function forPage(res) {
+  if (!res || res.type !== 'basic') return res;   // leave redirects and opaque responses untouched
+  const headers = new Headers(res.headers);
+  headers.set('Cache-Control', 'no-store');
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+}
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil((async () => {
@@ -39,10 +52,10 @@ self.addEventListener('fetch', e => {
         const copy = res.clone();
         caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
       }
-      return res;
+      return forPage(res);
     } catch (_) {
       const hit = await caches.match(req, { ignoreSearch: false });
-      if (hit) return hit;
+      if (hit) return forPage(hit);
       throw _;
     }
   })());

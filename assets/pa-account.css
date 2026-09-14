@@ -383,6 +383,40 @@
                   border: 1px solid rgba(255,107,107,0.22); }
 .pa-msg.pa-ok   { color: var(--pa-green); background: rgba(61,214,140,0.10);
                   border: 1px solid rgba(61,214,140,0.22); }
+.pa-msg.pa-warn { color: var(--pa-amber); background: var(--pa-amber-dim);
+                  border: 1px solid rgba(245,166,35,0.25); }
+
+/* ---- sync status line (home.html, hours.html) ----------------------------
+   Says where the schedule on screen came from. Operators check this app on
+   weak cellular, so "showing this device's copy" must be visible, not a
+   silent blank screen. */
+.pa-sync {
+  font-family: var(--pa-mono);
+  font-size: 11px;
+  letter-spacing: .02em;
+  color: var(--pa-mid);
+  margin: 0 0 10px;
+}
+.pa-sync[hidden] { display: none; }
+.pa-sync-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.pa-sync-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 7px; background: var(--pa-dim); }
+.pa-sync-ok   .pa-sync-dot { background: var(--pa-green); }
+.pa-sync-warn .pa-sync-dot { background: var(--pa-amber); }
+.pa-sync-err  .pa-sync-dot { background: var(--pa-red); }
+.pa-sync-warn .pa-sync-text { color: var(--pa-amber); }
+.pa-sync-err  .pa-sync-text { color: var(--pa-red); }
+.pa-sync-text { min-width: 0; overflow-wrap: anywhere; }
+.pa-sync-retry {
+  font-family: var(--pa-mono); font-size: 10px; font-weight: 600; letter-spacing: .06em;
+  background: none; border: 1px solid var(--pa-line2); border-radius: var(--pa-radius);
+  color: var(--pa-mid); padding: 4px 9px; cursor: pointer; line-height: 1;
+}
+.pa-sync-retry:hover { color: var(--pa-amber); border-color: var(--pa-line3); }
+.pa-sync-details { margin-top: 4px; }
+.pa-sync-details summary { cursor: pointer; color: var(--pa-dim); font-size: 10px; letter-spacing: .06em; }
+.pa-sync-kv { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0;
+              border-bottom: 1px solid var(--pa-line); font-size: 11px; color: var(--pa-dim); }
+.pa-sync-kv b { color: var(--pa-text); font-weight: 500; text-align: right; overflow-wrap: anywhere; }
 
 /* ---- signed-in panel ----------------------------------------------------- */
 

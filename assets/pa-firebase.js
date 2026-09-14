@@ -13,7 +13,7 @@ import { initializeApp, getApps }
   from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-app.js';
 import { getAuth, setPersistence, browserLocalPersistence }
   from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-auth.js';
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager }
+import { initializeFirestore, getFirestore, memoryLocalCache }
   from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore.js';
 
 // ==========================================================================
@@ -62,18 +62,24 @@ export function initFirebase() {
     // Private mode / blocked storage. Auth still works for this tab.
   });
 
-  // persistentLocalCache, not the deprecated enableIndexedDbPersistence().
-  // This is what makes depot dead zones a non-issue: reads serve from
-  // IndexedDB, writes queue locally and replay on reconnect, and snapshots
-  // fire immediately from cache with metadata.fromCache === true.
+  // Memory cache, deliberately NOT persistentLocalCache.
+  //
+  // Firestore's IndexedDB persistence is the one piece known to fail silently
+  // on iPhone. WebKit drops its IndexedDB connection after Safari or a Home
+  // Screen app is backgrounded ("Connection to Indexed Database server lost",
+  // WebKit bug 273827), Firestore's listeners then stop WITHOUT calling their
+  // error callbacks (firebase-js-sdk #4948), and because that state lives on
+  // disk it survives reloads and sign-out. In the field that looked like:
+  // signed in, no schedule, refresh and re-login no help, desktop fine.
+  //
+  // Offline display does not depend on it: pa-assignments.js and pa-store.js
+  // keep a small copy of the operator's own schedule and profile in
+  // localStorage and render from it until live data arrives.
   try {
-    _db = initializeFirestore(_app, {
-      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
-    });
+    _db = initializeFirestore(_app, { localCache: memoryLocalCache() });
   } catch (e) {
-    // initializeFirestore throws if Firestore was already started with
-    // different settings (e.g. two modules raced). Fall back to defaults.
-    _db = initializeFirestore(_app, {});
+    // Already initialised in this page (e.g. two modules raced) - reuse it.
+    _db = getFirestore(_app);
   }
 
   return { app: _app, auth: _auth, db: _db };

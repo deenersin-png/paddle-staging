@@ -118,8 +118,14 @@ header{background:var(--ink2);border-bottom:1px solid var(--line2);padding:12px 
 </header>
 
 <div class="wrap">
+  <div class="pa-sync" id="sync-line" hidden></div>
   <div class="gate" id="gate-out">Sign in to see your weekly hours.<br>They follow you to every device.</div>
   <div class="gate" id="gate-setup" hidden>Set your depot and driver type first on <a href="home.html">My run</a>.</div>
+  <div class="gate" id="gate-retry" hidden>
+    <span id="gate-retry-text">Can't reach the server to load your account.</span><br>
+    Check your signal, then try again.
+    <br><button class="wk-btn" id="gate-retry-btn" type="button" style="margin-top:12px">TRY AGAIN</button>
+  </div>
 
   <section id="view" hidden>
     <div class="weeknav">
@@ -145,39 +151,91 @@ header{background:var(--ink2);border-bottom:1px solid var(--line2);padding:12px 
   </section>
 </div>
 
+<script>
+// If this page's modules fail to link - an update landed and the browser
+// mixed old and new files - reload once to fetch a consistent set, and if
+// that doesn't fix it, say so instead of leaving a blank screen.
+window.addEventListener('error', function (e) {
+  var m = String((e && (e.message || (e.error && e.error.message))) || '');
+  if (!/does not provide an export|doesn't provide an export|Importing binding name|Importing a module script failed|dynamically imported module/i.test(m)) return;
+  var again = false;
+  try { again = !!sessionStorage.getItem('pa_update_reload'); sessionStorage.setItem('pa_update_reload', '1'); } catch (_) {}
+  if (!again) { location.reload(); return; }
+  var w = document.querySelector('.wrap');
+  if (w) w.innerHTML = '<div class="gate">The app was just updated and this page could not finish loading.<br>Close this tab and open the app again.</div>';
+}, true);
+</script>
 <script type="module" src="assets/pa-account-ui.js"></script>
 <script type="module">
 import * as S from './assets/pa-schedule.js';
 import * as A from './assets/pa-assignments.js';
 import * as E from './assets/pa-edit-sheet.js';
-import { loadProfile, ensureUser } from './assets/pa-store.js';
+import { loadProfile, loadProfileSafe, ensureUser } from './assets/pa-store.js';
 
 const $ = id => document.getElementById(id);
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
 
-const ctx = { user: null, profile: null, overrides: {}, seasons: [], weekStart: null, subscribed: false, token: 0 };
+const ctx = { user: null, profile: null, overrides: {}, seasons: [], seasonsLoaded: false, weekStart: null, subscribed: false, token: 0, authToken: 0, drawnVersion: -1, redrawTimer: null };
 
-function showOnly(id) { ['gate-out', 'gate-setup', 'view'].forEach(x => { $(x).hidden = x !== id; }); }
+function showOnly(id) { ['gate-out', 'gate-retry', 'gate-setup', 'view'].forEach(x => { $(x).hidden = x !== id; }); }
 
-window.addEventListener('pa:auth', async e => {
+window.addEventListener('pa:auth', e => {
   ctx.user = e.detail.user;
-  if (!ctx.user) { A.detach(); ctx.profile = null; showOnly('gate-out'); $('hd-ctx').textContent = ''; return; }
-  ensureUser(ctx.user.uid);
-  try { ctx.profile = await loadProfile(); } catch (_) { ctx.profile = null; }
-  if (!ctx.profile || !ctx.profile.depotKey) { showOnly('gate-setup'); return; }
-  await boot();
+  if (!ctx.user) {
+    ctx.authToken++;
+    A.detach(); ctx.profile = null;
+    showOnly('gate-out'); $('hd-ctx').textContent = ''; renderSyncLine();
+    return;
+  }
+  start();
 });
+$('gate-retry-btn').addEventListener('click', () => start());
+
+async function start() {
+  const token = ++ctx.authToken;
+  ensureUser(ctx.user.uid);
+  // Same rule as My run: a slow or failed read uses this device's copy and
+  // is never mistaken for an account without a depot.
+  const res = await loadProfileSafe();
+  if (token !== ctx.authToken) return;
+  ctx.profile = res.profile;
+  if (!ctx.profile) {
+    if (res.source === 'server') { showOnly('gate-setup'); return; }
+    $('gate-retry-text').textContent = 'Can’t load your account right now (' + res.error + ').';
+    showOnly('gate-retry');
+    return;
+  }
+  if (!ctx.profile.depotKey) { showOnly('gate-setup'); return; }
+  await boot();
+  if (res.source === 'device') {
+    loadProfile().then(p => { if (p && token === ctx.authToken) { ctx.profile = p; E.configure({ profile: p }); renderWeek(); } }).catch(() => {});
+  }
+}
+
+function renderSyncLine() { E.renderSync($('sync-line'), A.getState(), () => A.retryNow()); }
 
 async function boot() {
   const today = S.todayIso();
-  const [ov, seasons] = await Promise.all([S.loadCalendarOverrides(), S.loadSeasons()]);
-  ctx.overrides = ov || {}; ctx.seasons = seasons || [];
   $('hd-ctx').textContent = ' · ' + (ctx.profile.depotLabel || ctx.profile.depotKey);
   E.configure({ profile: ctx.profile, onSaved: () => renderWeek() });
   if (!ctx.weekStart) ctx.weekStart = S.weekStartOf(today);
-  await A.attach(ctx.user.uid);
-  if (!ctx.subscribed) { ctx.subscribed = true; A.onChange(() => renderWeek()); }
+  // Season list and holidays arrive in the background; the week renders
+  // from the operator's own schedule without waiting for them.
+  S.loadSeasons().then(s => { ctx.seasons = s || []; ctx.seasonsLoaded = true; renderWeek(); }).catch(() => {});
+  S.loadCalendarOverrides().then(ov => { ctx.overrides = ov || {}; renderWeek(); }).catch(() => {});
+  if (!ctx.subscribed) {
+    ctx.subscribed = true;
+    A.onChange(() => {
+      renderSyncLine();
+      if (A.getState().version === ctx.drawnVersion) return;   // connection-only update
+      clearTimeout(ctx.redrawTimer);
+      ctx.redrawTimer = setTimeout(() => { ctx.drawnVersion = A.getState().version; renderWeek(); }, 150);
+    });
+  }
   showOnly('view');
+  await A.attach(ctx.user.uid);
+  renderSyncLine();
+  ctx.drawnVersion = A.getState().version;
   renderWeek();
 }
 
@@ -215,7 +273,7 @@ async function renderWeek() {
   if (season) {
     pick.textContent = season.label + ' pick' + (seasonEnd && seasonEnd.id !== season.id ? ' → ' + seasonEnd.label : '');
     pick.className = 'wk-pick';
-  } else { pick.textContent = 'before any pick on record'; pick.className = 'wk-pick none'; }
+  } else { pick.textContent = ctx.seasonsLoaded ? 'before any pick on record' : ''; pick.className = 'wk-pick none'; }
 
   const resolved = A.resolveRange(ws, we, ctx.overrides);
   const days = await Promise.all(resolved.map(async r => {
@@ -265,12 +323,17 @@ async function renderWeek() {
   const whole = we < today;
   $('t-act-s').textContent = whole ? 'full week' : (ws > today ? 'not started' : 'through today');
   $('t-days-s').textContent = $('t-act-s').textContent;
+  const sync = A.getState().sync;
   $('hint').textContent = anyRegistered
     ? 'Tap a day to swap the run, mark it off, sick, vacation or holiday, or add overtime and bonuses. Hours come from the paddle for the run number; you never type them. Amber-edged days have something extra on them.'
+    : sync.status === 'connecting' ? 'Loading your schedule…'
+    : sync.status === 'error' && !A.getState().patterns.length ? 'Can’t load your schedule right now (' + sync.error + '). It will retry by itself.'
     : 'Nothing is registered for this week. Set up your pick on My run and every week from its start date fills in by itself.';
 }
 
 window.PA_HOURS = { S, A, E, ctx, renderWeek };
+// Modules linked fine: allow a future update to trigger one reload again.
+try { sessionStorage.removeItem('pa_update_reload'); } catch (_) {}
 </script>
 </body>
 </html>

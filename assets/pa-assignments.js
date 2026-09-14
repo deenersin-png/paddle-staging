@@ -61,9 +61,27 @@ export const PRESETS = {
 };
 
 let db = null, uid = null;
-const state = { patterns: [], assignments: new Map(), ready: false };
+
+// sync.status says where the schedule on screen came from:
+//   'saved'      this device's copy, server not reached yet
+//   'live'       confirmed by the server
+//   'offline'    was live, connection since dropped (still showing that data)
+//   'connecting' nothing on this device yet, waiting for the server
+//   'error'      the server refused or failed (code in sync.error); retrying
+// `version` changes only when the schedule itself changes, so pages can
+// skip redrawing on connection-only updates.
+const state = {
+  patterns: [], assignments: new Map(), ready: false, version: 0,
+  sync: { status: 'idle', savedAt: null, lastServerAt: null, error: null }
+};
 const subs = new Set();
 const unsubs = [];
+const live = { patterns: null, assignments: null };
+let listenRange = null, retryTimer = null, retryDelay = 3000, lastSig = '';
+
+// How long a first visit on a device waits for the server before rendering
+// anyway. A device with a saved copy never waits.
+export const FIRST_LOAD_WAIT_MS = 6000;
 
 function emit() { subs.forEach(f => { try { f(state); } catch (_) {} }); }
 export function onChange(fn) { subs.add(fn); return () => subs.delete(fn); }
@@ -73,50 +91,180 @@ export function isAttached() { return !!(db && uid); }
 const patRef = id   => doc(db, 'users', uid, 'patterns', id);
 const asgRef = date => doc(db, 'users', uid, 'assignments', date);
 
-function stopListeners() { unsubs.splice(0).forEach(u => { try { u(); } catch (_) {} }); }
+function stopListeners() {
+  unsubs.splice(0).forEach(u => { try { u(); } catch (_) {} });
+  clearTimeout(retryTimer); retryTimer = null;
+}
+
+const sortPatterns = list => list.filter(p => p && p.effectiveFrom)
+  .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+
+// ---- this device's copy ---------------------------------------------------
+// The operator's own schedule is small (a few patterns, a few months of
+// edited days), so a copy lives in localStorage. It is what the screen shows
+// the instant the page opens, with or without signal, and it is replaced by
+// the server's version as soon as that arrives.
+
+const COPY_PREFIX = 'pa_schedule_v1_';
+const plain = o => { const c = { ...o }; delete c.createdAt; delete c.updatedAt; return c; };
+
+function saveCopy() {
+  if (!uid) return;
+  try {
+    const savedAt = Date.now();
+    localStorage.setItem(COPY_PREFIX + uid, JSON.stringify({
+      savedAt,
+      patterns: state.patterns.map(plain),
+      assignments: [...state.assignments.values()].map(plain)
+    }));
+    state.sync.savedAt = savedAt;
+  } catch (_) { /* storage full or blocked: live data still works */ }
+}
+
+function loadCopy(userId) {
+  try {
+    const j = JSON.parse(localStorage.getItem(COPY_PREFIX + userId) || 'null');
+    if (!j || !Array.isArray(j.patterns)) return false;
+    state.patterns = sortPatterns(j.patterns);
+    state.assignments = new Map((j.assignments || []).map(a => [a.id || a.date, a]));
+    state.sync.savedAt = j.savedAt || null;
+    state.ready = true;
+    return true;
+  } catch (_) { return false; }
+}
+
+function markVersion() {
+  let sig = '';
+  try { sig = JSON.stringify([state.patterns.map(plain), [...state.assignments.values()].map(plain)]); } catch (_) {}
+  if (sig !== lastSig) { lastSig = sig; state.version++; }
+}
+
+function updateStatus() {
+  const s = state.sync, ls = [live.patterns, live.assignments];
+  if (s.error) s.status = 'error';
+  else if (ls.every(l => l && l.synced && !l.fromCache)) s.status = 'live';
+  else if (ls.some(l => l && l.synced)) s.status = 'offline';
+  else s.status = s.savedAt ? 'saved' : 'connecting';
+}
+
+// ---- listeners ------------------------------------------------------------
+
+function listen(key, ref, apply) {
+  const l = { synced: false, fromCache: true };
+  live[key] = l;
+  unsubs.push(onSnapshot(ref, { includeMetadataChanges: true }, snap => {
+    l.fromCache = snap.metadata.fromCache;
+    if (!snap.metadata.fromCache) {
+      l.synced = true;
+      state.sync.lastServerAt = Date.now();
+      state.sync.error = null;
+      retryDelay = 3000;
+    }
+    if (l.synced) {
+      // Confirmed by the server at least once, so this listener's view is the
+      // whole truth - including blocks or days deleted on another device.
+      apply.replace(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } else {
+      // Not confirmed yet (still connecting, or no signal). The client holds
+      // nothing but this session's own edits, so fold those into the saved
+      // copy instead of replacing the operator's schedule with an empty list.
+      snap.docChanges().forEach(ch => apply.merge(ch.type, { id: ch.doc.id, ...ch.doc.data() }));
+    }
+    state.ready = true;
+    markVersion();
+    updateStatus();
+    if (l.synced) saveCopy();
+    emit();
+  }, err => {
+    // Firestore ends a listener after an error; it does not retry by itself.
+    console.warn('[pa] ' + key + ' listener', err.code || err.message);
+    state.sync.error = err.code || err.message || 'error';
+    updateStatus();
+    emit();
+    scheduleRetry();
+  }));
+}
+
+function startListeners() {
+  unsubs.splice(0).forEach(u => { try { u(); } catch (_) {} });
+  listen('patterns', collection(db, 'users', uid, 'patterns'), {
+    replace: docs => { state.patterns = sortPatterns(docs); },
+    merge: (type, d) => {
+      const rest = state.patterns.filter(p => p.id !== d.id);
+      state.patterns = sortPatterns(type === 'removed' ? rest : rest.concat(d));
+    }
+  });
+  listen('assignments', query(collection(db, 'users', uid, 'assignments'),
+                              where('date', '>=', listenRange.from), where('date', '<=', listenRange.to)), {
+    replace: docs => { state.assignments = new Map(docs.map(d => [d.id, d])); },
+    merge: (type, d) => {
+      const m = new Map(state.assignments);
+      if (type === 'removed') m.delete(d.id); else m.set(d.id, d);
+      state.assignments = m;
+    }
+  });
+}
+
+function scheduleRetry() {
+  if (retryTimer || !uid) return;
+  retryTimer = setTimeout(() => { retryTimer = null; if (uid) { state.sync.error = null; startListeners(); } }, retryDelay);
+  retryDelay = Math.min(retryDelay * 3, 60000);
+}
+
+/** Reconnect now (a Retry button, the phone regaining signal). */
+export function retryNow() {
+  if (!uid || !db) return;
+  clearTimeout(retryTimer); retryTimer = null; retryDelay = 3000;
+  state.sync.error = null;
+  startListeners();
+  updateStatus();
+  emit();
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => { if (uid && state.sync.status !== 'live') retryNow(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && uid && state.sync.status === 'error') retryNow();
+  });
+}
 
 /**
- * Subscribe to this user's patterns and a window of assignments. Resolves
- * once patterns have been delivered (from cache or server).
+ * Subscribe to this user's patterns and a window of assignments.
+ *
+ * Returns immediately when this device has a saved copy (it is shown at
+ * once, live data follows). On a first visit it waits for the server for at
+ * most FIRST_LOAD_WAIT_MS, then returns anyway - it never hangs the page.
  */
 export async function attach(userId, opts = {}) {
   const fb = initFirebase();
   if (!fb) return;
+  if (uid === userId && unsubs.length) return;          // already attached
+  if (uid && uid !== userId) detach({ keepCopy: true });
   db = fb.db; uid = userId;
-  stopListeners();
   const today = todayIso();
-  const from = opts.from || addDays(today, -120);   // wide enough for a whole pick
-  const to   = opts.to   || addDays(today,  60);
-
+  listenRange = { from: opts.from || addDays(today, -120), to: opts.to || addDays(today, 60) };
+  const hadCopy = loadCopy(userId);
+  markVersion();
+  updateStatus();
+  emit();
+  startListeners();
+  if (hadCopy) return;
   await new Promise(res => {
-    let first = true;
-    unsubs.push(onSnapshot(collection(db, 'users', uid, 'patterns'), snap => {
-      state.patterns = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-        .filter(p => p.effectiveFrom)
-        .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
-      state.ready = true;
-      emit();
-      if (first) { first = false; res(); }
-    }, err => {
-      console.warn('[pa] patterns listener', err.code || err.message);
-      if (first) { first = false; res(); }
-    }));
+    let off = () => {};
+    const done = () => { clearTimeout(t); off(); res(); };
+    const t = setTimeout(done, FIRST_LOAD_WAIT_MS);
+    off = onChange(() => { if (['live', 'error'].includes(state.sync.status)) done(); });
   });
-
-  const q = query(collection(db, 'users', uid, 'assignments'),
-                  where('date', '>=', from), where('date', '<=', to));
-  unsubs.push(onSnapshot(q, snap => {
-    const m = new Map();
-    snap.docs.forEach(d => m.set(d.id, { id: d.id, ...d.data() }));
-    state.assignments = m;
-    emit();
-  }, err => console.warn('[pa] assignments listener', err.code || err.message)));
 }
 
-export function detach() {
+/** Stop listening. On sign-out the device's copy is removed too. */
+export function detach(opts = {}) {
   stopListeners();
-  db = null; uid = null;
-  state.patterns = []; state.assignments = new Map(); state.ready = false;
+  if (uid && !opts.keepCopy) { try { localStorage.removeItem(COPY_PREFIX + uid); } catch (_) {} }
+  db = null; uid = null; listenRange = null; lastSig = '';
+  live.patterns = null; live.assignments = null;
+  state.patterns = []; state.assignments = new Map(); state.ready = false; state.version++;
+  state.sync = { status: 'idle', savedAt: null, lastServerAt: null, error: null };
   emit();
 }
 
@@ -178,21 +326,43 @@ export async function savePattern(p) {
     updatedAt: serverTimestamp(),
     schemaVersion: 1
   });
-  await batch.commit();
+  await confirmed(batch.commit(), 'patterns');
   return id;
+}
+
+/**
+ * A rejected write must not leave its change on screen. While a listener is
+ * live, Firestore delivers the rollback itself. When it isn't (no signal, or
+ * the listener already failed), restore that collection from this device's
+ * copy, which only ever holds server-confirmed data.
+ */
+function rollbackUnconfirmed(key) {
+  const l = live[key];
+  if (!uid || (l && l.synced)) return;
+  let copy = null;
+  try { copy = JSON.parse(localStorage.getItem(COPY_PREFIX + uid) || 'null'); } catch (_) {}
+  if (key === 'patterns') state.patterns = sortPatterns((copy && copy.patterns) || []);
+  else state.assignments = new Map(((copy && copy.assignments) || []).map(a => [a.id || a.date, a]));
+  markVersion();
+  emit();
+}
+
+async function confirmed(promise, key) {
+  try { return await promise; }
+  catch (e) { rollbackUnconfirmed(key); throw e; }
 }
 
 /** Close the current pattern so nothing is registered after `lastDate`. */
 export async function endPattern(id, lastDate) {
   if (!db) throw new Error('not signed in');
-  await setDoc(patRef(id), { effectiveTo: lastDate, updatedAt: serverTimestamp() }, { merge: true });
+  await confirmed(setDoc(patRef(id), { effectiveTo: lastDate, updatedAt: serverTimestamp() }, { merge: true }), 'patterns');
 }
 
 /** Remove a saved block. Explicit days inside it are kept; the weeks it
  *  covered simply become unregistered again. */
 export async function deletePattern(id) {
   if (!db) throw new Error('not signed in');
-  await deleteDoc(patRef(id));
+  await confirmed(deleteDoc(patRef(id)), 'patterns');
 }
 
 export function activePattern(patterns, date) {
@@ -206,13 +376,13 @@ export function activePattern(patterns, date) {
 /** Write (merge) one explicit day. */
 export async function saveAssignment(date, data) {
   if (!db) throw new Error('not signed in');
-  await setDoc(asgRef(date), { ...data, date, updatedAt: serverTimestamp(), schemaVersion: 2 }, { merge: true });
+  await confirmed(setDoc(asgRef(date), { ...data, date, updatedAt: serverTimestamp(), schemaVersion: 2 }, { merge: true }), 'assignments');
 }
 
 /** Remove an explicit day so the date falls back to the pattern. */
 export async function clearAssignment(date) {
   if (!db) throw new Error('not signed in');
-  await deleteDoc(asgRef(date));
+  await confirmed(deleteDoc(asgRef(date)), 'assignments');
 }
 
 /** Write several days at once (a holdowner / slate week). */
@@ -226,7 +396,7 @@ export async function saveDays(entries) {
     batch.set(asgRef(e.date), { ...e, updatedAt: serverTimestamp(), schemaVersion: 2 }, { merge: true });
     n++;
   }
-  if (n) await batch.commit();
+  if (n) await confirmed(batch.commit(), 'assignments');
   return n;
 }
 
