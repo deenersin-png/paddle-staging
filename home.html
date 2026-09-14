@@ -95,17 +95,17 @@ header{background:var(--ink2);border-bottom:1px solid var(--line2);padding:12px 
 .lookup{font-family:var(--mono);font-size:11px;color:var(--dim);margin-top:5px;line-height:1.5;min-height:16px}
 .lookup.ok{color:var(--green)}.lookup.warn{color:var(--amber)}
 .preview{margin-top:12px;border:1px solid var(--line);border-radius:4px;overflow:hidden}
-.row{display:grid;grid-template-columns:92px 1fr auto auto;gap:10px;align-items:center;padding:9px 12px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:12px;background:var(--ink)}
+.row{display:grid;grid-template-columns:92px 1fr auto;gap:10px;align-items:center;padding:9px 12px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:12px;background:var(--ink);cursor:pointer}
 .row:last-child{border-bottom:none}
+.row:hover{background:var(--ink2)}
+.row:focus-visible{outline:1px solid var(--amber);outline-offset:-1px}
 .row.today{background:var(--amber-dim)}
 .row .d{color:var(--bright);font-weight:600}.row .d small{display:block;color:var(--dim);font-weight:400;font-size:10px}
-.row .run{color:var(--text)}.row .run.off{color:var(--dim)}
+.row .d.src-pattern{color:var(--blue)}
+.row .d.src-edit{color:var(--violet)}
+.row .d.src-manual{color:var(--green)}
+.row .run{color:var(--text);min-width:0;overflow-wrap:anywhere}.row .run.off{color:var(--dim)}
 .row .t{color:var(--mid);white-space:nowrap}
-.badge{font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;padding:3px 7px;border-radius:3px;border:1px solid var(--line2);color:var(--dim)}
-.badge.pattern{color:var(--blue);border-color:rgba(77,159,255,.35)}
-.badge.manual{color:var(--green);border-color:rgba(61,214,140,.35)}
-.badge.edit{color:var(--violet);border-color:rgba(167,139,250,.35)}
-.badge.holiday{color:var(--amber);border-color:rgba(245,166,35,.35)}
 .rowbtn{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.06em;padding:6px 10px;background:none;border:1px solid var(--line2);border-radius:3px;color:var(--mid);cursor:pointer}
 .rowbtn:hover{color:var(--amber);border-color:var(--line3)}
 .week-nav{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
@@ -137,8 +137,9 @@ h2.k{margin-bottom:10px}
 @media (max-width:640px){
   .cd-digits{font-size:44px}
   .stats{grid-template-columns:repeat(2,1fr)}
-  .row{grid-template-columns:78px 1fr auto;grid-template-areas:"d run b" "d t b"}
-  .row .d{grid-area:d}.row .run{grid-area:run}.row .t{grid-area:t}.row .acts{grid-area:b}
+  .row{grid-template-columns:64px 1fr;grid-template-areas:"d run" "d t";row-gap:2px}
+  .row .d{grid-area:d}.row .run{grid-area:run}.row .t{grid-area:t;white-space:normal}
+  .dchip{min-width:0}
 }
 </style>
 </head>
@@ -186,7 +187,7 @@ h2.k{margin-bottom:10px}
     <div class="card sect">
       <h2 class="k">Next 4 weeks</h2>
       <div class="preview" id="sch-list"></div>
-      <div class="hint">Tap EDIT on any day to change the run, mark it off, or record a holiday or overtime. Past days are editable too.</div>
+      <div class="hint" id="sch-legend">Tap a day to change it. Past days are editable too.</div>
     </div>
   </section>
 
@@ -958,18 +959,24 @@ async function renderUpcoming() {
   const today = S.todayIso();
   const rows = A.resolveRange(today, S.addDays(today, 27), ctx.overrides);
   for (const r of rows) {
+    // The day letters say where the day came from: blue = your pick, purple =
+    // edited, green = entered as a week (holdowner / slate). The whole line
+    // opens the day; there is no separate EDIT button.
+    const src = r.source === 'assignment'
+      ? (r.assignment && r.assignment.source === 'edit' ? ' src-edit' : ' src-manual')
+      : r.source === 'pattern' ? ' src-pattern' : '';
     const row = el('div', 'row' + (r.date === today ? ' today' : ''));
-    const d = el('div', 'd', S.DAY_SHORT[S.dowOf(r.date)].toUpperCase()); d.appendChild(el('small', null, S.fmtDate(r.date).slice(4)));
+    row.setAttribute('role', 'button'); row.tabIndex = 0;
+    row.setAttribute('aria-label', 'Edit ' + S.fmtDate(r.date));
+    row.addEventListener('click', () => openEdit(r));
+    row.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openEdit(r); } });
+    const d = el('div', 'd' + src, S.DAY_SHORT[S.dowOf(r.date)].toUpperCase()); d.appendChild(el('small', null, S.fmtDate(r.date).slice(4)));
     const runCell = el('div', 'run' + (r.off ? ' off' : ''));
     const t = el('div', 't', '');
-    const acts = el('div', 'acts');
-    const badge = el('span', 'badge ' + (r.holiday && r.holiday.isHoliday ? 'holiday' : r.source === 'assignment' ? (r.assignment && r.assignment.source === 'edit' ? 'edit' : 'manual') : r.source === 'pattern' ? 'pattern' : ''),
-      r.holiday && r.holiday.isHoliday ? 'holiday' : r.source === 'assignment' ? (r.assignment && r.assignment.source === 'edit' ? 'edited' : 'manual') : r.source === 'pattern' ? 'pattern' : 'none');
-    const btn = el('button', 'rowbtn', 'EDIT'); btn.type = 'button';
-    btn.addEventListener('click', () => openEdit(r));
-    acts.append(badge, btn);
     if (r.off) {
-      runCell.textContent = r.unregistered ? '—' : (r.status === 'holiday' ? 'OFF · holiday' : r.status.toUpperCase());
+      runCell.textContent = r.unregistered ? '—'
+        : (r.kind && A.KIND_LABELS[r.kind]) ? A.KIND_LABELS[r.kind].toUpperCase()
+        : (r.status === 'holiday' ? 'OFF · holiday' : r.status.toUpperCase());
     } else {
       runCell.textContent = 'RUN ' + r.runNo + (r.flags && r.flags.overtime ? ' · OT' : '');
       runFor(r, r.date).then(run => {
@@ -977,8 +984,14 @@ async function renderUpcoming() {
         else t.textContent = 'not in paddle';
       }).catch(() => {});
     }
-    row.append(d, runCell, t, acts);
+    row.append(d, runCell, t);
     list.appendChild(row);
+  }
+  const legend = $('sch-legend');
+  if (legend) {
+    legend.textContent = 'Tap a day to change it. Past days are editable too. Day colors: blue = from your pick'
+      + (ctx.profile && ctx.profile.driverType !== 'regular' ? ', green = entered by week' : '')
+      + ', purple = edited.';
   }
 }
 
