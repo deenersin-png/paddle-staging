@@ -24,14 +24,11 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&am
 
 export const KINDS = [
   ['normal',         'Normal hours worked'],
-  ['late',           'Late arrival'],
+  ['late',           'Late allowance'],
   ['holiday-off',    'Holiday, not worked (8 h)'],
-  ['holiday-worked', 'Holiday, worked (8 h + hours worked)'],
-  ['called-out',     'Not worked / called out'],
-  ['sick',           'Sick'],
+  ['holiday-worked', 'Holiday, worked (12 h + hours worked)'],
   ['paid-off',       'Paid day off'],
-  ['unpaid-off',     'Unpaid day off'],
-  ['unpaid-excused', 'Unpaid excused day']
+  ['unpaid-off',     'Unpaid day off']
 ];
 const WORKING = new Set(['normal', 'late', 'holiday-worked']);
 const DAY_TYPES = [['weekday', 'Weekday schedule'], ['saturday', 'Saturday schedule'], ['sunday', 'Sunday schedule']];
@@ -52,7 +49,8 @@ export async function runFor(r, iso, depotKey) {
   const { slug } = await slugForDate(depot, iso);
   const dt = r.runDayType || r.dayType;
   let run = slug ? await S.getRun(slug, dt, r.runNo) : null;
-  if (run && r.reportMin != null) run = { ...run, reportMin: r.reportMin, overridden: true };
+  // Keep the paddle's start: the Slate report time is paid against it.
+  if (run && r.reportMin != null) run = { ...run, paddleStartMin: run.reportMin, reportMin: r.reportMin, overridden: true };
   if (!run && r.reportMin != null) {
     run = { runNo: r.runNo, dayType: dt, reportMin: r.reportMin, finishMin: null,
             pullOutMin: r.reportMin, pullInMin: null, payHours: 0, pieces: [], routes: [], blocks: [], synthetic: true };
@@ -74,7 +72,7 @@ export function lookupLine(node, dayType, runNo, iso, depotKey) {
         node.className = 'lookup warn';
         return null;
       }
-      node.textContent = run.payHours.toFixed(1) + ' hrs · Report ' + S.fmtClock(run.reportMin) + ' · Finish ' + S.fmtClock(run.finishMin) + ' · ' + run.pieces.map(p => p.routeLabel).join(' / ');
+      node.textContent = run.payHours.toFixed(1) + ' hrs · Start ' + S.fmtClock(run.reportMin) + ' · Finish ' + S.fmtClock(run.finishMin) + ' · ' + run.pieces.map(p => p.routeLabel).join(' / ');
       node.className = 'lookup ok';
       return run;
     });
@@ -107,11 +105,13 @@ function showMsg(text, kind) {
 
 /** Best guess of the kind for a day that predates the dropdown. */
 function kindOf(r) {
-  if (r.kind) return r.kind;
+  if (r.kind && KINDS.some(([v]) => v === r.kind)) return r.kind;
+  // Kinds no longer offered (called out, sick, unpaid excused) were all
+  // zero-hour days; they open as an unpaid day off.
+  if (r.kind) return 'unpaid-off';
   if (r.status === 'holiday') return 'holiday-off';
-  if (r.status === 'sick') return 'sick';
   if (r.status === 'vacation') return 'paid-off';
-  if (r.status === 'off') return (r.source === 'assignment' && r.patternRunNo) ? 'called-out' : 'unpaid-off';
+  if (r.status === 'off' || r.status === 'sick') return 'unpaid-off';
   if (r.extras && r.extras.some(x => x.kind === 'holiday')) return 'holiday-worked';
   if (r.extras && r.extras.some(x => x.kind === 'late')) return 'late';
   return 'normal';
@@ -159,9 +159,12 @@ export function openEdit(r) {
   const sK = el('select', 'pa-select');
   KINDS.forEach(([v, l]) => { const oo = el('option', null, l); oo.value = v; if (v === st.kind) oo.selected = true; sK.appendChild(oo); });
   sK.addEventListener('change', () => {
+    const was = st.kind;
     st.kind = sK.value;
-    if (st.kind !== 'paid-off' && st.kind !== 'normal' && st.kind !== 'holiday-worked') st.hoursMin = null;
-    if (st.kind === 'paid-off') st.hoursMin = st.hoursMin != null ? st.hoursMin : 480;
+    // Worked hours and paid-day-off hours mean different things; don't carry
+    // one into the other when switching between a working and a day-off kind.
+    if (WORKING.has(was) !== WORKING.has(st.kind)) st.hoursMin = null;
+    if (st.kind === 'paid-off' && st.hoursMin == null) st.hoursMin = 480;
     drawFields(); drawPay();
   });
   fK.appendChild(sK); body.appendChild(fK);
@@ -202,18 +205,23 @@ export function openEdit(r) {
       fields.appendChild(fH);
 
       if (st.kind === 'late') {
-        const fL = el('div', 'pa-field'); fL.appendChild(el('label', 'pa-label', 'Minutes late'));
+        const fL = el('div', 'pa-field'); fL.appendChild(el('label', 'pa-label', 'Late allowance (minutes)'));
         const iL = el('input', 'pa-input'); iL.type = 'number'; iL.step = '5'; iL.min = '0'; iL.inputMode = 'numeric'; iL.placeholder = 'e.g. 30';
         if (st.lateMin != null) iL.value = st.lateMin;
         iL.addEventListener('input', () => { const n = parseInt(iL.value, 10); st.lateMin = Number.isFinite(n) && n > 0 ? n : null; drawPay(); });
-        fL.appendChild(iL); fields.appendChild(fL);
+        fL.appendChild(iL);
+        fL.appendChild(el('div', 'hint', 'Paid at time and a half and added to the day: 30 min adds 0.75 h.'));
+        fields.appendChild(fL);
       }
 
-      const fRep = el('div', 'pa-field'); fRep.appendChild(el('label', 'pa-label', 'Report time override (optional)'));
+      const fRep = el('div', 'pa-field'); fRep.appendChild(el('label', 'pa-label', 'Report time (Slate)'));
       const iRep = el('input', 'pa-input'); iRep.type = 'time';
       if (st.reportMin != null) iRep.value = S.pad2(Math.floor((st.reportMin % 1440) / 60)) + ':' + S.pad2(st.reportMin % 60);
-      iRep.addEventListener('input', () => { const m = iRep.value.match(/^(\d{2}):(\d{2})$/); st.reportMin = m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : null; });
-      fRep.appendChild(iRep); fields.appendChild(fRep);
+      iRep.addEventListener('input', () => { const m = iRep.value.match(/^(\d{2}):(\d{2})$/); st.reportMin = m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : null; drawPay(); });
+      fRep.appendChild(iRep);
+      const repHint = el('div', 'hint'); repHint.id = 'pa-edit-rephint';
+      fRep.appendChild(repHint);
+      fields.appendChild(fRep);
 
       if (st.runNo) doLookup();
     } else if (st.kind === 'paid-off') {
@@ -253,20 +261,34 @@ export function openEdit(r) {
     const runMin = st.run ? Math.round(st.run.payHours * 60) : 0;
     const workedMin = working ? (st.hoursMin != null ? st.hoursMin : runMin) : 0;
     const extras = [];
-    if (st.kind === 'late' && st.lateMin) extras.push({ kind: 'late', min: -st.lateMin, note: '' });
-    if (st.kind === 'holiday-off' || st.kind === 'holiday-worked') extras.push({ kind: 'holiday', min: A.HOLIDAY_PAY_MIN, note: '' });
+    // Late allowance is stored as the minutes held late; the 1.5x is applied
+    // when hours are read (A.extraPayMin), so the rule lives in one place.
+    if (st.kind === 'late' && st.lateMin) extras.push({ kind: 'late', min: st.lateMin, note: '' });
+    if (st.kind === 'holiday-off') extras.push({ kind: 'holiday', min: A.HOLIDAY_PAY_MIN, note: '' });
+    if (st.kind === 'holiday-worked') extras.push({ kind: 'holiday', min: A.HOLIDAY_WORKED_PAY_MIN, note: '' });
     if (st.kind === 'paid-off') extras.push({ kind: 'other', min: st.hoursMin != null ? st.hoursMin : 480, note: 'paid day off' });
+    // Slate report time against the run's scheduled start (the paddle's).
+    const earlyMin = working ? A.earlyReportMin(st.reportMin, st.run ? st.run.reportMin : null) : 0;
     const status = working ? 'scheduled'
       : st.kind === 'holiday-off' ? 'holiday'
-      : st.kind === 'sick' ? 'sick'
       : st.kind === 'paid-off' ? 'vacation' : 'off';
-    return { working, runMin, workedMin, extras, status };
+    return { working, runMin, workedMin, extras, earlyMin, status };
+  }
+  function drawReportHint(b) {
+    const h = document.getElementById('pa-edit-rephint');
+    if (!h) return;
+    if (st.reportMin == null) { h.textContent = 'If dispatch had you report before the run’s start, enter the time. The difference is added to the day.'; return; }
+    if (!st.run) { h.textContent = 'Run start unknown (not in the paddle), so nothing is added.'; return; }
+    h.textContent = 'Run starts ' + S.fmtClock(st.run.reportMin) + ' · reporting ' + S.fmtClock(st.reportMin)
+      + (b.earlyMin ? ' adds ' + (b.earlyMin / 60).toFixed(2) + ' h.' : ' adds nothing (not before the start).');
   }
   function drawPay() {
     const b = build();
+    drawReportHint(b);
     const parts = [];
     if (b.working) parts.push(['Worked', b.workedMin]);
-    b.extras.forEach(x => parts.push([A.EXTRA_KINDS[x.kind] || 'Extra', x.min]));
+    b.extras.forEach(x => parts.push([A.EXTRA_KINDS[x.kind] || 'Extra', A.extraPayMin(x)]));
+    if (b.earlyMin) parts.push(['Early report', b.earlyMin]);
     const total = parts.reduce((s, p) => s + p[1], 0);
     pay.innerHTML = parts.length
       ? parts.map(([k, v]) => esc(k) + ' ' + (v / 60).toFixed(2)).join(' + ') + ' = <b>' + (total / 60).toFixed(2) + ' hrs</b>'

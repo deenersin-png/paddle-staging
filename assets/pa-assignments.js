@@ -33,18 +33,23 @@ import {
 import { initFirebase } from './pa-firebase.js';
 import { dayTypeFor, isHoliday, dowOf, daysBetween, addDays, todayIso } from './pa-schedule.js';
 
-// Holiday pay, per the operator rule: every employee gets 8 hours for a
-// holiday; working it adds a further 4. Both are pre-fills, editable per day.
+// Holiday pay, per the operator rule: 8 hours for a holiday not worked;
+// 12 hours on top of the hours actually worked for a holiday worked.
 export const HOLIDAY_PAY_MIN = 480;
-export const HOLIDAY_WORKED_BONUS_MIN = 240;
+export const HOLIDAY_WORKED_PAY_MIN = 720;
 
-export const EXTRA_KINDS = { ot: 'Overtime', holiday: 'Holiday', late: 'Late arrival', other: 'Other' };
+// Late allowance: minutes held late are paid at time and a half, on top of
+// the day's worked hours (30 min late adds 45 min = 0.75 h).
+export const LATE_ALLOWANCE_RATE = 1.5;
 
-/** Labels for the day kinds the edit sheet writes (assignment.kind). */
+export const EXTRA_KINDS = { ot: 'Overtime', holiday: 'Holiday', late: 'Late allowance', other: 'Other' };
+
+/** Labels for the day kinds the edit sheet writes (assignment.kind). The last
+ *  three are no longer offered; they stay so days saved with them still read. */
 export const KIND_LABELS = {
-  'normal': 'Worked', 'late': 'Late arrival', 'holiday-off': 'Holiday', 'holiday-worked': 'Holiday worked',
-  'called-out': 'Called out', 'sick': 'Sick', 'paid-off': 'Paid day off', 'unpaid-off': 'Unpaid day off',
-  'unpaid-excused': 'Unpaid excused'
+  'normal': 'Worked', 'late': 'Late allowance', 'holiday-off': 'Holiday', 'holiday-worked': 'Holiday worked',
+  'paid-off': 'Paid day off', 'unpaid-off': 'Unpaid day off',
+  'called-out': 'Called out', 'sick': 'Sick', 'unpaid-excused': 'Unpaid excused'
 };
 export const STATUSES = ['scheduled', 'off', 'sick', 'vacation', 'holiday'];
 
@@ -234,23 +239,53 @@ export async function saveDays(entries) {
  */
 export function normalizeExtras(a) {
   if (!a) return [];
+  let out;
   if (Array.isArray(a.extras)) {
-    return a.extras
+    out = a.extras
       .filter(x => x && Number.isFinite(+x.min))
       .map(x => ({ kind: EXTRA_KINDS[x.kind] ? x.kind : 'other', min: Math.round(+x.min), note: x.note || '' }));
-  }
-  const out = [];
-  if (a.holiday && a.holiday.isHoliday) {
-    out.push({ kind: 'holiday', min: Math.round((a.holiday.payHours != null ? a.holiday.payHours : 8) * 60), note: '' });
-    if (a.holiday.worked) {
-      out.push({ kind: 'holiday', min: Math.round((a.holiday.workedBonusHours != null ? a.holiday.workedBonusHours : 4) * 60), note: 'worked' });
+  } else {
+    out = [];
+    if (a.holiday && a.holiday.isHoliday) {
+      out.push({ kind: 'holiday', min: Math.round((a.holiday.payHours != null ? a.holiday.payHours : 8) * 60), note: '' });
+      if (a.holiday.worked) {
+        out.push({ kind: 'holiday', min: Math.round((a.holiday.workedBonusHours != null ? a.holiday.workedBonusHours : 4) * 60), note: 'worked' });
+      }
     }
+    if (a.flags && a.flags.overtime) out.push({ kind: 'ot', min: 0, note: 'amount not recorded' });
   }
-  if (a.flags && a.flags.overtime) out.push({ kind: 'ot', min: 0, note: 'amount not recorded' });
+  // The day's kind decides the holiday amount, so a day saved under an older
+  // rule (holiday worked = 8 h) reads with the current one.
+  if (a.kind === 'holiday-worked' || a.kind === 'holiday-off') {
+    out = out.filter(x => x.kind !== 'holiday');
+    out.unshift({ kind: 'holiday', min: a.kind === 'holiday-worked' ? HOLIDAY_WORKED_PAY_MIN : HOLIDAY_PAY_MIN, note: '' });
+  }
   return out;
 }
 
-export const extrasMin = extras => (extras || []).reduce((s, x) => s + (x.min || 0), 0);
+/** Pay minutes one extra adds. A late allowance is stored as the minutes held
+ *  late and paid at LATE_ALLOWANCE_RATE; every other extra is paid as stored.
+ *  Stored values are whole minutes, but a late allowance can pay a half
+ *  minute (45 min -> 67.5); it is NOT rounded, so weekly totals stay exact. */
+export function extraPayMin(x) {
+  if (!x) return 0;
+  if (x.kind === 'late') return Math.abs(+x.min || 0) * LATE_ALLOWANCE_RATE;
+  return Math.round(+x.min || 0);
+}
+
+export const extrasMin = extras => (extras || []).reduce((s, x) => s + extraPayMin(x), 0);
+
+/**
+ * Slate report time: minutes between reporting and the run's scheduled
+ * start, paid on top of the day. Reporting at 10:00 AM for an 11:00 AM start
+ * adds 60. Wraps midnight (11:45 PM for a 12:29 AM start adds 44). A report
+ * time at or after the start adds nothing.
+ */
+export function earlyReportMin(reportMin, startMin) {
+  if (reportMin == null || startMin == null) return 0;
+  const d = (((startMin - reportMin) % 1440) + 1440) % 1440;
+  return d > 0 && d <= 720 ? d : 0;
+}
 export const hasExtra = (r, kind) => !!(r && r.extras && r.extras.some(x => x.kind === kind));
 
 // ---- resolver -------------------------------------------------------------
@@ -279,13 +314,13 @@ function fromPattern(patterns, date, base) {
     const isPick = p.preset === 'pick' || !!PRESETS[p.preset];
     if (!isPick && slot && slot.runNo) {
       return { ...out, runNo: String(slot.runNo), holiday: { isHoliday: true, worked: true },
-               extras: [{ kind: 'holiday', min: HOLIDAY_PAY_MIN, note: '' }, { kind: 'holiday', min: HOLIDAY_WORKED_BONUS_MIN, note: 'worked' }],
+               extras: [{ kind: 'holiday', min: HOLIDAY_WORKED_PAY_MIN, note: '' }],
                holidayNote: 'Holiday: Sunday schedule. Confirm this run operates.' };
     }
     const sunRun = p.runByDayType && p.runByDayType.sunday;
     if (slot && sunRun) {
       return { ...out, runNo: String(sunRun), dayType: 'sunday', holiday: { isHoliday: true, worked: true },
-               extras: [{ kind: 'holiday', min: HOLIDAY_PAY_MIN, note: '' }, { kind: 'holiday', min: HOLIDAY_WORKED_BONUS_MIN, note: 'worked' }] };
+               extras: [{ kind: 'holiday', min: HOLIDAY_WORKED_PAY_MIN, note: '' }] };
     }
     return { ...out, off: true, status: 'holiday', holiday: { isHoliday: true, worked: false },
              extras: [{ kind: 'holiday', min: HOLIDAY_PAY_MIN, note: '' }] };
@@ -369,12 +404,18 @@ export function dayHours(resolved, run, today) {
   const workedMin = r.payMin != null ? Math.round(r.payMin) : paddleMin;
   const runMin = paddleMin || workedMin;
   const scheduledMin = working ? runMin : 0;
-  const ex = extrasMin(r.extras);
+  // The run's scheduled start is the paddle's; runFor() keeps it as
+  // paddleStartMin when the day's report time replaces run.reportMin.
+  const startMin = !run ? null
+    : run.paddleStartMin != null ? run.paddleStartMin
+    : (run.overridden || run.synthetic) ? null : run.reportMin;
+  const early = working ? earlyReportMin(r.reportMin, startMin) : 0;
+  const ex = extrasMin(r.extras) + early;
   const past = r.date <= t;
   const changedFromPattern = r.source === 'assignment' &&
     (r.extraShift || (!working && !!r.patternRunNo) || (working && r.patternRunNo && r.runNo !== r.patternRunNo));
   return {
-    runMin, scheduledMin, extrasMin: ex, workedMin: working ? workedMin : 0,
+    runMin, scheduledMin, extrasMin: ex, workedMin: working ? workedMin : 0, earlyReportMin: early,
     actualMin: past ? (working ? workedMin : 0) + ex : null,
     working, past,
     flagged: ex > 0 || (r.extras && r.extras.length > 0) || (!r.unregistered && !['scheduled', 'off'].includes(r.status)) || !!changedFromPattern,
@@ -394,13 +435,14 @@ export function weekTotals(days) {
   return { scheduledMin, actualMin, daysWorked };
 }
 
-export const fmtHours = min => (Math.round(min) / 60).toFixed(2);
+export const fmtHours = min => ((+min || 0) / 60).toFixed(2);
 
 /** Pay summary for one day: [[label, hours], ...] and a total. */
 export function payHoursFor(resolved, run) {
   const h = dayHours(resolved, run, '9999-12-31');
   const parts = [];
   if (h.working) parts.push(['Worked', h.workedMin / 60]);
-  (resolved.extras || []).forEach(x => parts.push([EXTRA_KINDS[x.kind] || 'Extra', x.min / 60]));
+  (resolved.extras || []).forEach(x => parts.push([EXTRA_KINDS[x.kind] || 'Extra', extraPayMin(x) / 60]));
+  if (h.earlyReportMin) parts.push(['Early report', h.earlyReportMin / 60]);
   return { total: (h.workedMin + h.extrasMin) / 60, parts };
 }

@@ -191,14 +191,15 @@ function statusLabel(r) {
   return ({ off: 'OFF', sick: 'SICK', vacation: 'PAID DAY OFF', holiday: 'HOLIDAY' })[r.status] || r.status.toUpperCase();
 }
 
-function extrasText(r) {
+function extrasText(r, hours) {
   const bits = [];
   (r.extras || []).forEach(x => {
-    if (x.kind === 'late') { bits.push('Late ' + Math.abs(x.min) + 'm'); return; }
+    if (x.kind === 'late') { bits.push('Late allowance ' + Math.abs(x.min) + 'm (+' + A.fmtHours(A.extraPayMin(x)) + 'h)'); return; }
     if (x.kind === 'ot') { bits.push('OT ' + x.min + 'm'); return; }
     const label = x.kind === 'holiday' ? 'Holiday' : (x.note || 'Extra');
     bits.push(label + ' +' + (x.min / 60).toFixed(2).replace(/\.?0+$/, '') + 'h');
   });
+  if (hours && hours.earlyReportMin) bits.push('Early report +' + A.fmtHours(hours.earlyReportMin) + 'h');
   if (r.note) bits.push('“' + r.note + '”');
   return bits.join(' · ');
 }
@@ -242,7 +243,7 @@ async function renderWeek() {
     if (hours.unknownRun) rc.appendChild(el('span', 'tag amber', 'not in paddle'));
     const rowSeason = S.seasonFor(ctx.seasons, r.date);
     if (rowSeason && season && rowSeason.id !== season.id) rc.appendChild(el('span', 'tag', rowSeason.label));
-    const ex = extrasText(r);
+    const ex = extrasText(r, hours);
     if (ex) rc.appendChild(el('span', 'ex', ex));
 
     const sc = el('div', 'n' + (hours.scheduledMin ? '' : ' dim') + (hours.unknownRun ? ' warn' : ''), hours.scheduledMin ? A.fmtHours(hours.scheduledMin) : '—');
