@@ -623,6 +623,7 @@ function getCurrentSchedLeader(block, nowMin) {
     for (const t of trips) {
       if (t.direction !== my.direction) continue;
       const s = timeStrToMin(t.start);
+      if (isPhantomTrip(blk, s)) continue; // block already pulled in → not a real leader
       if (s != null && s < myStart && s > bestStart) { bestStart = s; bestBlk = blk; }
     }
   }
@@ -649,6 +650,7 @@ function getCurrentSchedFollower(block, nowMin) {
     for (const t of trips) {
       if (t.direction !== my.direction) continue;
       const s = timeStrToMin(t.start);
+      if (isPhantomTrip(blk, s)) continue; // block already pulled in → not a real follower
       if (s != null && s > myStart && s < bestStart) { bestStart = s; bestBlk = blk; }
     }
   }
@@ -780,8 +782,12 @@ async function loadPaddleData() {
           const pitype = (row['pitype' + i] || '').trim().toUpperCase();
           const pot = (row['pot' + i] || '').trim();
           const pit = (row['pit' + i] || '').trim();
-          if (potype === 'O' && pot) rec.poTime = pot; // depot pull-out
-          if (pitype === 'I' && pit) rec.piTime = pit; // depot pull-in
+          // Some blocks list more than one pull-out / pull-in (29 on a fall-2026
+          // weekday, e.g. 5554: in at 3:23 PM and 4:14 PM). Keep the EARLIEST
+          // pull-out and the LATEST pull-in, so a block is only ever treated as
+          // finished after its last possible pull-in — never too early.
+          if (potype === 'O' && pot && (!rec.poTime || clockToMin(pot) < clockToMin(rec.poTime))) rec.poTime = pot;
+          if (pitype === 'I' && pit && (!rec.piTime || (pullInKey(pit) ?? -1) > (pullInKey(rec.piTime) ?? -1))) rec.piTime = pit;
           if (!rec.runs.some(r => r.runno === runno)) {
             rec.runs.push({ runno, link: runLink.get(runno) || '', sortMin: clockToMin(pot) });
           }
@@ -1003,13 +1009,36 @@ function scheduledBlockStatus(blk, nowMin) {
 // truth, so a passed pull-in overrides a phantom GTFS trip. Pull-in is a
 // wall-clock AM/PM time; an early-AM one is an owl pull-in, so shift it into
 // 24:00+ notation to compare against serviceNowMin.
-function blockPulledIn(blk) {
+// Service-day minute of a pick pull-in time. An early-AM pull-in is an owl
+// pull-in at the end of this service day, so shift it into 24:00+ notation.
+function pullInKey(t) {
+  let m = clockToMin(t);
+  if (m == null || !isFinite(m)) return null;
+  if (m < SERVICE_DAY_START_HR * 60) m += 1440;
+  return m;
+}
+
+// This block's final pull-in (service-day minutes), or null if the pick has none.
+function blockPullInMin(blk) {
   const rec = paddle.byBlock.get(String(blk));
-  if (!rec || !rec.piTime) return false;
-  let pi = clockToMin(rec.piTime);
-  if (pi == null || !isFinite(pi)) return false;
-  if (pi < SERVICE_DAY_START_HR * 60) pi += 1440; // early-AM pull-in = owl (24:00+)
-  return pi <= serviceNowMin();
+  return rec && rec.piTime ? pullInKey(rec.piTime) : null;
+}
+
+function blockPulledIn(blk) {
+  const pi = blockPullInMin(blk);
+  return pi != null && pi <= serviceNowMin();
+}
+
+// A GTFS trip is phantom if it starts at or after its block's pick pull-in:
+// the bus is already back at the depot, so that trip never actually runs.
+// Leader/follower selection must skip these — otherwise a finished block (e.g.
+// route 44 block 9120, pull-in 11:05 AM, phantom 9:18 PM trip) shows up as
+// another bus's scheduled leader. Earlier trips of the same block are real and
+// still count, so it can be a legitimate past leader from the morning.
+function isPhantomTrip(blk, startMin) {
+  if (startMin == null) return false;
+  const pi = blockPullInMin(blk);
+  return pi != null && startMin >= pi;
 }
 
 // Inject a placeholder card for every scheduled block on this route that has
@@ -1600,6 +1629,7 @@ function leaderForTrip(block, dir, startMin) {
     for (const t of trips) {
       if (t.direction !== dir) continue;
       const s = timeStrToMin(t.start);
+      if (isPhantomTrip(blk, s)) continue; // trip after its block pulled in → never ran
       if (s != null && s < startMin && s > bestStart) { bestStart = s; bestBlk = blk; bestTrip = t; }
     }
   }
