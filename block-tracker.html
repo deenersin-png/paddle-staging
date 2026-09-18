@@ -413,8 +413,44 @@ const paddle = { byBlock: new Map(), loaded: false, loading: false };
 // date→daytype map, which we consult before falling back to day-of-week.
 let calendarOverrides = {};
 
-function localISODate() {
+// SEPTA's service day rolls over in the pre-dawn lull, NOT at midnight. Late
+// "owl" trips belong to the PREVIOUS calendar day and are written in GTFS
+// 24:00+ notation (e.g. 25:30 = 1:30 AM the next morning). So before
+// SERVICE_DAY_START_HR we're still in yesterday's service day: use yesterday's
+// date/day-type, and count "now" as wall-clock + 24h so it lines up with those
+// 24:00+ owl trips. (Verified live: at ~1:30 AM Sunday the buses on the street
+// are Saturday blocks running Saturday's owl service — the app must load
+// Saturday, not Sunday. Without this it loaded Sunday and showed the real
+// Saturday buses PLUS phantom Sunday scheduled blocks = "too many buses".)
+const SERVICE_DAY_START_HR = 4;
+
+function inOwlWindow(d) { return d.getHours() < SERVICE_DAY_START_HR; }
+
+// Calendar Date of the current SERVICE day (yesterday during owl hours).
+function serviceDate() {
   const d = new Date();
+  if (inOwlWindow(d)) d.setDate(d.getDate() - 1);
+  return d;
+}
+
+// Minutes since midnight of the current service day. In owl hours this is
+// wall-clock + 1440 so it matches GTFS 24:00+ owl trip times.
+function serviceNowMin() {
+  const d = new Date();
+  const m = d.getHours() * 60 + d.getMinutes();
+  return inOwlWindow(d) ? m + 1440 : m;
+}
+
+// Epoch ms of the current service day's midnight (yesterday's during owl hours)
+// — the base for turning a service-day minute (incl. 24:00+) into a real time.
+function serviceMidnightMs() {
+  const d = serviceDate();
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+function localISODate() {
+  const d = serviceDate();
   return d.getFullYear() + '-' +
     String(d.getMonth() + 1).padStart(2, '0') + '-' +
     String(d.getDate()).padStart(2, '0');
@@ -423,7 +459,7 @@ function localISODate() {
 function getDayType() {
   const ov = calendarOverrides[localISODate()];
   if (ov) return ov;
-  const d = new Date().getDay();
+  const d = serviceDate().getDay();
   if (d === 0) return 'sunday';
   if (d === 6) return 'saturday';
   return 'weekday';
@@ -605,6 +641,7 @@ function getCurrentSchedLeader(block, nowMin) {
     for (const t of trips) {
       if (t.direction !== my.direction) continue;
       const s = timeStrToMin(t.start);
+      if (isPhantomTrip(blk, s)) continue; // block already pulled in → not a real leader
       if (s != null && s < myStart && s > bestStart) { bestStart = s; bestBlk = blk; }
     }
   }
@@ -631,6 +668,7 @@ function getCurrentSchedFollower(block, nowMin) {
     for (const t of trips) {
       if (t.direction !== my.direction) continue;
       const s = timeStrToMin(t.start);
+      if (isPhantomTrip(blk, s)) continue; // block already pulled in → not a real follower
       if (s != null && s > myStart && s < bestStart) { bestStart = s; bestBlk = blk; }
     }
   }
@@ -762,8 +800,12 @@ async function loadPaddleData() {
           const pitype = (row['pitype' + i] || '').trim().toUpperCase();
           const pot = (row['pot' + i] || '').trim();
           const pit = (row['pit' + i] || '').trim();
-          if (potype === 'O' && pot) rec.poTime = pot; // depot pull-out
-          if (pitype === 'I' && pit) rec.piTime = pit; // depot pull-in
+          // Some blocks list more than one pull-out / pull-in (29 on a fall-2026
+          // weekday, e.g. 5554: in at 3:23 PM and 4:14 PM). Keep the EARLIEST
+          // pull-out and the LATEST pull-in, so a block is only ever treated as
+          // finished after its last possible pull-in — never too early.
+          if (potype === 'O' && pot && (!rec.poTime || clockToMin(pot) < clockToMin(rec.poTime))) rec.poTime = pot;
+          if (pitype === 'I' && pit && (!rec.piTime || (pullInKey(pit) ?? -1) > (pullInKey(rec.piTime) ?? -1))) rec.piTime = pit;
           if (!rec.runs.some(r => r.runno === runno)) {
             rec.runs.push({ runno, link: runLink.get(runno) || '', sortMin: clockToMin(pot) });
           }
@@ -830,7 +872,10 @@ function updateCache(liveBuses, routeId) {
     const ex = busCache.get(key) || {};
     busCache.set(key, {
       blockId:      String(bus.BlockID || ''),
-      vehicleId:    String(bus.VehicleID || bus.label || ''),
+      // A bus keeps its logged-in number all day (both directions). If the live
+      // feed momentarily drops the VehicleID (common around login / a terminal
+      // turnaround), keep the last-known number instead of blanking it.
+      vehicleId:    String(bus.VehicleID || bus.label || '').trim() || (ex.vehicleId || ''),
       direction:    bus.Direction || '',
       sequence:     parseInt(bus.next_stop_sequence) || ex.sequence || 0,
       destination:  bus.destination || ex.destination || '',
@@ -973,18 +1018,60 @@ function scheduledBlockStatus(blk, nowMin) {
   return { state: 'done', trip: last };
 }
 
+// True once this block's operator pull-in (from the pick/paddle data) has
+// passed — i.e. it's finished for the day. SEPTA's GTFS can carry PHANTOM late
+// / owl trips for a block that actually pulled in hours earlier (seen live:
+// route 44 block 9655 pulls in 10:27 AM per the pick, yet GTFS gave it a
+// 10:18 PM trip, so a finished run kept showing at 10 PM — while genuine late
+// blocks like 9664 have a matching 12:18 AM pull-in). The operator pick is the
+// truth, so a passed pull-in overrides a phantom GTFS trip. Pull-in is a
+// wall-clock AM/PM time; an early-AM one is an owl pull-in, so shift it into
+// 24:00+ notation to compare against serviceNowMin.
+// Service-day minute of a pick pull-in time. An early-AM pull-in is an owl
+// pull-in at the end of this service day, so shift it into 24:00+ notation.
+function pullInKey(t) {
+  let m = clockToMin(t);
+  if (m == null || !isFinite(m)) return null;
+  if (m < SERVICE_DAY_START_HR * 60) m += 1440;
+  return m;
+}
+
+// This block's final pull-in (service-day minutes), or null if the pick has none.
+function blockPullInMin(blk) {
+  const rec = paddle.byBlock.get(String(blk));
+  return rec && rec.piTime ? pullInKey(rec.piTime) : null;
+}
+
+function blockPulledIn(blk) {
+  const pi = blockPullInMin(blk);
+  return pi != null && pi <= serviceNowMin();
+}
+
+// A GTFS trip is phantom if it starts at or after its block's pick pull-in:
+// the bus is already back at the depot, so that trip never actually runs.
+// Leader/follower selection must skip these — otherwise a finished block (e.g.
+// route 44 block 9120, pull-in 11:05 AM, phantom 9:18 PM trip) shows up as
+// another bus's scheduled leader. Earlier trips of the same block are real and
+// still count, so it can be a legitimate past leader from the morning.
+function isPhantomTrip(blk, startMin) {
+  if (startMin == null) return false;
+  const pi = blockPullInMin(blk);
+  return pi != null && startMin >= pi;
+}
+
 // Inject a placeholder card for every scheduled block on this route that has
 // no live/layover/recovery representation yet — so the operator sees at
 // least "Block #### is scheduled" (plus bus number if we've ever seen it)
 // even with no SEPTA live data. Blocks already covered by real data are
 // skipped, so the moment a bus goes live its real card replaces this one.
 function mergeScheduledBlocks(merged, liveBuses) {
-  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const nowMin = serviceNowMin();
   const known = new Set(merged.map(b => String(b.BlockID || '')));
   const dirMap = buildGtfsDirMap(liveBuses);
 
   for (const blk of sched.blockTrips.keys()) {
     if (known.has(blk)) continue;
+    if (blockPulledIn(blk)) continue; // operator pick says it's already pulled in → done
     const st = scheduledBlockStatus(blk, nowMin);
     if (!st || st.state === 'done') continue;
     if (st.state === 'not_started' && (st.dueOutMin - nowMin) > SCHED_LOOKAHEAD_MIN) continue;
@@ -1001,7 +1088,7 @@ function mergeScheduledBlocks(merged, liveBuses) {
       if (!arrivedMs) {
         const ends = (sched.blockTrips.get(blk) || []).map(t => timeStrToMin(t.end)).filter(x => x != null).sort((a, b) => a - b);
         let lastEnd = null; ends.forEach(e => { if (e <= nowMin) lastEnd = e; });
-        if (lastEnd != null) { const d = new Date(); d.setHours(0, 0, 0, 0); arrivedMs = d.getTime() + lastEnd * 60000; }
+        if (lastEnd != null) arrivedMs = serviceMidnightMs() + lastEnd * 60000;
       }
     }
 
@@ -1048,7 +1135,7 @@ function mergeScheduledBlocks(merged, liveBuses) {
 // about to run, starting from that terminal. Blocks with no next trip today
 // are dropped (done for the day). Live buses pass through untouched.
 function annotateLayovers(merged) {
-  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const nowMin = serviceNowMin();
   const out = [];
   for (const bus of merged) {
     if (!bus._isLayover) { out.push(bus); continue; }
@@ -1156,7 +1243,7 @@ function relevantTripStart(bus, block, nowMin) {
 // only question that's actually answerable — did the follower leave yet —
 // without needing any of this time-math.
 function annotateOvertake(merged) {
-  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const nowMin = serviceNowMin();
   const byBlock = new Map();
   for (const b of merged) { byBlock.set(String(b.BlockID || ''), b); b._overtake = null; b._passedLeader = null; }
 
@@ -1361,7 +1448,7 @@ function annotatePositions(merged) {
   // / location, driver likely not logged in, but the schedule says it's
   // mid-service). Ghosts hold a numbered slot as if running (marked _numGhost
   // → blue "!" rendering). Layover / not-started / done blocks aren't numbered.
-  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const nowMin = serviceNowMin();
   const byDir = {};
   for (const b of merged) {
     const isGhost = b._scheduledOnly && b._schedState === 'in_service_expected';
@@ -1472,7 +1559,7 @@ function passInfoHtml(bus) {
 }
 
 function annotateSchedLeader(merged) {
-  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const nowMin = serviceNowMin();
   const byBlock = new Map();
   for (const b of merged) byBlock.set(String(b.BlockID || ''), b);
 
@@ -1560,6 +1647,7 @@ function leaderForTrip(block, dir, startMin) {
     for (const t of trips) {
       if (t.direction !== dir) continue;
       const s = timeStrToMin(t.start);
+      if (isPhantomTrip(blk, s)) continue; // trip after its block pulled in → never ran
       if (s != null && s < startMin && s > bestStart) { bestStart = s; bestBlk = blk; bestTrip = t; }
     }
   }
@@ -1569,7 +1657,7 @@ function leaderForTrip(block, dir, startMin) {
 // Full leader history for a bus across its day: past / current / next leaders,
 // one row per trip, deduped per section. Attached as bus._leaderTimeline.
 function annotateLeaderTimeline(merged) {
-  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const nowMin = serviceNowMin();
   const byBlock = new Map();
   for (const b of merged) byBlock.set(String(b.BlockID || ''), b);
 
@@ -1825,7 +1913,7 @@ function depArrOf(bus) {
   const tid = bus.trip != null ? String(bus.trip) : null;
   let t = tid ? trips.find(x => String(x.trip_id) === tid) : null;
   if (!t) {
-    const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+    const nowMin = serviceNowMin();
     const sorted = trips.map(x => ({ x, s: timeStrToMin(x.start) }))
       .filter(o => o.s != null).sort((a, b) => a.s - b.s);
     for (const o of sorted) if (o.s <= nowMin) t = o.x;
@@ -1890,8 +1978,13 @@ function buildNode(bus, idx, anim) {
   // Bus number comes only from the live feed; a scheduled-only block may not
   // have one yet (or its only history is from a previous service day). Show it
   // when known from today, otherwise a muted "pending" placeholder.
-  if (vid) {
-    h += '<span class="vehicle-num">' + ICONS.bus + ' ' + esc(vid) + '</span>';
+  // A bus keeps its logged-in number all day, both directions. Prefer the live
+  // VehicleID, but fall back to the number remembered for this block (from an
+  // earlier sighting on either direction) — so a momentary feed drop or a
+  // just-turned-around bus doesn't blank to "—"/"pending".
+  const showVid = vid || knownVehicleFor(String(blk));
+  if (showVid) {
+    h += '<span class="vehicle-num">' + ICONS.bus + ' ' + esc(showVid) + '</span>';
   } else if (isSched) {
     h += '<span class="vehicle-num unknown">' + ICONS.bus + ' Bus# pending</span>';
   } else {
