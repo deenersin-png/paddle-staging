@@ -676,8 +676,14 @@ async function refreshLeader() {
   if (!mine) { if (!ctx.leaderHtml) show(lineHtml('Loading your block’s trips…')); return; }
   if (!mine.length) { show(lineHtml('No GTFS trips found for block ' + p.block + ' on ' + p.routeLabel + ' — leader unknown.')); return; }
   try {
-    const all = await S.routeTrips(p.routes, c.run.dayType);
-    const lb = S.leaderBlock(all, p.block, c.nowMin);
+    // Every district's pull-in times ride along, so a block that has already
+    // pulled in (its later GTFS trips are phantom) is never chosen as leader.
+    const [all, table] = await Promise.all([
+      S.routeTrips(p.routes, c.run.dayType),
+      allBlockPaddles(c).catch(() => null)
+    ]);
+    const pullIns = S.pullInMap(table);
+    const lb = S.leaderBlock(all, p.block, c.nowMin, pullIns);
     if (!lb) { show(lineHtml('No bus is scheduled ahead of you in this direction.')); }
     else {
       const [buses, names, rec] = await Promise.all([
@@ -685,7 +691,7 @@ async function refreshLeader() {
         Promise.all(p.routes.map(rt => S.routeDirectionNames(rt).then(n => [rt, n]))),
         blockPaddle(lb.block, c).catch(() => null)
       ]);
-      const model = C.buildBusModel({ block: lb.block, allTrips: all, buses, nowMin: c.nowMin, dirNamesByRoute: Object.fromEntries(names) });
+      const model = C.buildBusModel({ block: lb.block, allTrips: all, buses, nowMin: c.nowMin, dirNamesByRoute: Object.fromEntries(names), pullIns });
       let html = C.busCardHtml(model, { rec, leadersOpen: !!ctx.leadersOpen });
       if (model._scheduledOnly && !model._doneForDay) html += lineHtml('No live data for block ' + lb.block + ' — it may not be in service.');
       show(html);
@@ -700,14 +706,32 @@ async function refreshLeader() {
 async function blockPaddle(block, c) {
   const { season, district } = await slugForDate(ctx.profile.depotKey, c.date);
   if (!season) return null;
+  const entry = paddleEntry(season, c);
+  if (!entry.own && district) entry.own = await S.loadBlockPaddles([district], c.run.dayType);
+  if (entry.own && entry.own.has(String(block))) return entry.own.get(String(block));
+  const all = await allBlockPaddles(c);
+  return (all && all.get(String(block))) || null;
+}
+
+function paddleEntry(season, c) {
   const key = season.id + '|' + c.run.dayType;
   ctx.blockPaddles = ctx.blockPaddles || new Map();
   let entry = ctx.blockPaddles.get(key);
   if (!entry) { entry = {}; ctx.blockPaddles.set(key, entry); }
-  if (!entry.own && district) entry.own = await S.loadBlockPaddles([district], c.run.dayType);
-  if (entry.own && entry.own.has(String(block))) return entry.own.get(String(block));
-  if (!entry.all) entry.all = await S.loadBlockPaddles(await S.loadManifest(season), c.run.dayType);
-  return entry.all.get(String(block)) || null;
+  return entry;
+}
+
+// Every district's block table for this run's day, loaded once and shared:
+// the leader search needs each candidate block's pull-in time.
+async function allBlockPaddles(c) {
+  const { season } = await slugForDate(ctx.profile.depotKey, c.date);
+  if (!season) return null;
+  const entry = paddleEntry(season, c);
+  if (!entry.allP) {
+    entry.allP = S.loadManifest(season).then(ds => S.loadBlockPaddles(ds, c.run.dayType));
+    entry.allP.catch(() => { entry.allP = null; });   // retry next time instead of caching a failure
+  }
+  return entry.allP;
 }
 
 // The routes a run works, the piece in progress first.

@@ -14,7 +14,7 @@
 // scheduled countdown.
 // ==========================================================================
 
-import { blockStatus } from './pa-schedule.js';
+import { blockStatus, isPhantomTrip } from './pa-schedule.js';
 
 const LATE_BAD = 6;
 
@@ -62,12 +62,14 @@ function seatInfo(v) {
  * trip with the latest start before `startMin`. (block-tracker loads one route
  * at a time, so its candidates are always same-route; an interlined run spans
  * two route files here, and direction 0 on one route is not direction 0 on
- * the other.)
+ * the other.) Phantom trips of blocks that already pulled in are skipped, so
+ * a finished block never shows up as a leader (block-tracker isPhantomTrip).
  */
-export function leaderForTrip(allTrips, block, trip) {
+export function leaderForTrip(allTrips, block, trip, pullIns) {
   let best = null;
   for (const t of allTrips) {
     if (t.block === String(block) || t.route !== trip.route || t.dir !== trip.dir) continue;
+    if (isPhantomTrip(t, pullIns)) continue;
     if (t.s < trip.s && (!best || t.s > best.s)) best = t;
   }
   return best;
@@ -78,10 +80,11 @@ export function leaderForTrip(allTrips, block, trip) {
  * it, otherwise a scheduled-only placeholder drawn from GTFS, exactly as
  * block-tracker.html's mergeScheduledBlocks builds them.
  */
-export function buildBusModel({ block, allTrips, buses, nowMin, dirNamesByRoute = {} }) {
+export function buildBusModel({ block, allTrips, buses, nowMin, dirNamesByRoute = {}, pullIns = null }) {
   const dirName = t => (dirNamesByRoute[t.route] || {})[t.dir];
   const blk = String(block);
-  const trips = allTrips.filter(t => t.block === blk).sort((a, b) => a.s - b.s);
+  // This block's real trips only: a trip after its pick pull-in never runs.
+  const trips = allTrips.filter(t => t.block === blk && !isPhantomTrip(t, pullIns)).sort((a, b) => a.s - b.s);
   const byBlock = new Map(buses.map(b => [String(b.BlockID || ''), b]));
   const live = byBlock.get(blk);
   let bus;
@@ -131,7 +134,7 @@ export function buildBusModel({ block, allTrips, buses, nowMin, dirNamesByRoute 
     if (curIdx < 0) curIdx = trips.length - 1;
     const past = [], next = []; let current = null;
     trips.forEach((t, i) => {
-      const ldr = leaderForTrip(allTrips, blk, t);
+      const ldr = leaderForTrip(allTrips, blk, t, pullIns);
       if (!ldr) return;
       const row = {
         blk: ldr.block,

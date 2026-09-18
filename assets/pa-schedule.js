@@ -335,8 +335,12 @@ export async function loadBlockPaddles(districts, dayType) {
         const pitype = (row['pitype' + i] || '').trim().toUpperCase();
         const pot = (row['pot' + i] || '').trim();
         const pit = (row['pit' + i] || '').trim();
-        if (potype === 'O' && pot) rec.poTime = pot;
-        if (pitype === 'I' && pit) rec.piTime = pit;
+        // Some blocks list more than one pull-out / pull-in (29 on a fall-2026
+        // weekday, e.g. 5554: in at 3:23 PM and 4:14 PM). Keep the EARLIEST
+        // pull-out and the LATEST pull-in, so a block is never treated as
+        // finished before its last possible pull-in.
+        if (potype === 'O' && pot && (!rec.poTime || (clockToMin(pot) ?? Infinity) < (clockToMin(rec.poTime) ?? Infinity))) rec.poTime = pot;
+        if (pitype === 'I' && pit && (!rec.piTime || (pullInKey(pit) ?? -1) > (pullInKey(rec.piTime) ?? -1))) rec.piTime = pit;
         if (!rec.runs.some(r => r.runno === runno)) {
           rec.runs.push({ runno, link: runLink.get(runno) || '', sortMin: clockToMin(pot) ?? Infinity });
         }
@@ -454,12 +458,49 @@ export function relevantTrip(trips, nowMin) {
   return trips[trips.length - 1];
 }
 
+// ---- phantom trips --------------------------------------------------------
+// SEPTA's GTFS gives some blocks trips AFTER the block's real pull-in (seen:
+// route 44 block 9120 pulls in 11:05 AM per the pick, yet GTFS lists it at
+// 9:18 PM). Those trips never run, so a finished block must not be chosen as
+// anyone's leader. The operator pick's pull-in time is the truth. Same rule as
+// block-tracker.html's isPhantomTrip.
+
+/** Hour the service day rolls over; earlier pull-ins are owl (24:00+). */
+export const SERVICE_DAY_START_HR = 4;
+
+/** Pick pull-in "12:18 AM" -> service-day minutes (owl pull-ins shift to 24:00+). */
+export function pullInKey(t) {
+  const m = clockToMin(t);
+  if (m == null) return null;
+  return m < SERVICE_DAY_START_HR * 60 ? m + 1440 : m;
+}
+
+/** loadBlockPaddles() table -> Map block -> final pull-in (service minutes). */
+export function pullInMap(blockPaddles) {
+  const m = new Map();
+  if (!blockPaddles) return m;
+  for (const [b, rec] of blockPaddles) {
+    const k = rec && rec.piTime ? pullInKey(rec.piTime) : null;
+    if (k != null) m.set(String(b), k);
+  }
+  return m;
+}
+
+/** A trip is phantom if it starts at or after its block's pick pull-in. */
+export function isPhantomTrip(t, pullIns) {
+  if (!pullIns || !t) return false;
+  const pi = pullIns.get(String(t.block));
+  return pi != null && t.s >= pi;
+}
+
 /**
  * The block one headway ahead of `myBlock` right now: the trip in the same
  * direction whose start is the latest one before mine. Informational only —
  * the caller renders it in its own panel and never feeds it into a countdown.
+ * `pullIns` (optional, from pullInMap) drops phantom trips of blocks that have
+ * already pulled in, so a finished block is never reported as the leader.
  */
-export function leaderBlock(allTrips, myBlock, nowMin) {
+export function leaderBlock(allTrips, myBlock, nowMin, pullIns) {
   const mine = allTrips.filter(t => t.block === String(myBlock));
   const my = relevantTrip(mine, nowMin);
   if (!my) return null;
@@ -468,6 +509,7 @@ export function leaderBlock(allTrips, myBlock, nowMin) {
     // Same route AND direction: an interlined run loads two route files, and
     // direction 0 on one route is not direction 0 on the other.
     if (t.block === String(myBlock) || t.route !== my.route || t.dir !== my.dir) continue;
+    if (isPhantomTrip(t, pullIns)) continue;
     if (t.s < my.s && (!best || t.s > best.s)) best = t;
   }
   return best ? { block: best.block, trip: best, myTrip: my } : null;
