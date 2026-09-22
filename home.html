@@ -115,6 +115,7 @@ a.chip{text-decoration:none}
 .row .d.src-pattern{color:var(--blue)}
 .row .d.src-edit{color:var(--violet)}
 .row .d.src-manual{color:var(--green)}
+.row .d.src-vac{color:var(--amber)}
 .row .run{color:var(--text);min-width:0;overflow-wrap:anywhere}.row .run.off{color:var(--dim)}
 .row .t{color:var(--mid);white-space:nowrap}
 .rowbtn{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.06em;padding:6px 10px;background:none;border:1px solid var(--line2);border-radius:3px;color:var(--mid);cursor:pointer}
@@ -183,17 +184,9 @@ h2.k{margin-bottom:10px}
     <button class="pa-submit" id="gate-retry-btn" type="button" style="margin-top:14px">Try again</button>
   </div>
 
-  <div class="gate" id="gate-setup" hidden>
-    Tell the app where you work and what kind of driver you are.
-    <div style="text-align:left;margin-top:14px">
-      <label class="pa-label">Home depot</label>
-      <select class="pa-select" id="setup-depot"></select>
-      <label class="pa-label" style="margin-top:12px">Driver type</label>
-      <div class="pa-seg" id="setup-type"></div>
-      <button class="pa-submit" id="setup-save" type="button">Save</button>
-      <div class="msgline" id="setup-msg"></div>
-    </div>
-  </div>
+  <!-- First-run setup: depot and driver type, vacation weeks, runs. Filled
+       by assets/pa-setup.js, which owns everything inside it. -->
+  <div id="gate-setup" hidden></div>
 
   <section id="view-today" hidden>
     <div id="today-body"></div>
@@ -202,6 +195,7 @@ h2.k{margin-bottom:10px}
 
   <section id="view-schedule" hidden>
     <div class="card sect" id="sch-form"></div>
+    <div class="card sect" id="sch-vacation"></div>
     <div class="card sect">
       <h2 class="k">Next 4 weeks</h2>
       <div class="preview" id="sch-list"></div>
@@ -235,13 +229,13 @@ import * as A from './assets/pa-assignments.js';
 import { computeState, phaseLabel } from './assets/pa-countdown.js';
 import * as L from './assets/pa-live.js';
 import * as C from './assets/pa-live-cards.js';
-import { loadProfile, loadProfileSafe, saveProfile, ensureUser } from './assets/pa-store.js';
+import { loadProfile, loadProfileSafe, ensureUser } from './assets/pa-store.js';
 import * as N from './assets/pa-notify.js';
 import * as E from './assets/pa-edit-sheet.js';
+import * as SU from './assets/pa-setup.js';
 
 const $ = id => document.getElementById(id);
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
-const DRIVER_TYPES = [['regular','REGULAR'],['relief','RELIEF'],['slate','SLATE']];
 
 const ctx = {
   user: null, profile: null, overrides: {}, gtfs: {}, view: 'today',
@@ -314,14 +308,13 @@ async function start() {
   const res = await loadProfileSafe();
   if (token !== ctx.authToken) return;                  // signed out / retried meanwhile
   ctx.profile = res.profile;
-  const incomplete = p => !p || !p.depotKey || !p.driverType;
-  if (res.source === 'server' && incomplete(res.profile)) { await renderSetup(); showOnly('gate-setup'); return; }
+  if (res.source === 'server' && SU.needsSetup(res.profile)) { await renderSetup(); return; }
   if (!ctx.profile) {
     $('gate-retry-text').textContent = 'Can’t load your account right now (' + res.error + ').';
     showOnly('gate-retry');
     return;
   }
-  if (incomplete(ctx.profile)) { await renderSetup(); showOnly('gate-setup'); return; }
+  if (SU.needsSetup(ctx.profile)) { await renderSetup(); return; }
   await boot();
   // Showing this device's copy: pick up any change made on another device.
   if (res.source === 'device') {
@@ -369,40 +362,30 @@ async function boot() {
   await refreshToday();
 }
 
-// ---- setup (no depot / driver type yet) -----------------------------------
+// ---- setup (new account: no depot / driver type yet) ----------------------
+// The wizard asks for the depot, the driver type, vacation weeks and runs,
+// and writes the profile last. Once it reports back, the account is complete
+// and the normal screens take over.
 
 async function renderSetup() {
-  const sel = $('setup-depot'); sel.textContent = '';
-  let districts = [];
-  try {
-    const seasons = await S.loadSeasons(); const season = S.seasonFor(seasons, S.todayIso());
-    districts = season ? await S.loadManifest(season) : [];
-  } catch (_) {}
-  const seen = new Map();
-  districts.forEach(d => { const k = S.depotKeyOf(d.name); if (!seen.has(k)) seen.set(k, d.label || d.name); });
-  if (!seen.size) [['callowhillb','Callowhill Bus'],['allegheny','Allegheny'],['victory','Victory Bus'],['frontier','Frontier'],['southern','Southern'],['elmwood','Elmwood'],['comly','Comly'],['frankfordb','Frankford Bus'],['frankford-rail','Frankford Rail'],['midvale','Midvale']].forEach(([k,l]) => seen.set(k,l));
-  for (const [k, l] of seen) { const o = el('option', null, l); o.value = k; if (ctx.profile && ctx.profile.depotKey === k) o.selected = true; sel.appendChild(o); }
-  const seg = $('setup-type'); seg.textContent = '';
-  let dt = (ctx.profile && ctx.profile.driverType) || 'regular';
-  DRIVER_TYPES.forEach(([id, label]) => {
-    const b = el('button', 'pa-seg-btn' + (id === dt ? ' pa-on' : ''), label); b.type = 'button';
-    b.addEventListener('click', () => { dt = id; [...seg.children].forEach(c => c.classList.remove('pa-on')); b.classList.add('pa-on'); });
-    seg.appendChild(b);
+  showOnly('gate-setup');
+  // Holidays decide a day's schedule, so the wizard gets them if they are in
+  // yet; it asks for runs either way.
+  if (!ctx.overrides || !Object.keys(ctx.overrides).length) {
+    S.loadCalendarOverrides().then(ov => { ctx.overrides = ov || {}; }).catch(() => {});
+  }
+  await SU.openSetup($('gate-setup'), {
+    user: ctx.user,
+    profile: ctx.profile,
+    overrides: ctx.overrides,
+    onDone: async saved => {
+      // The wizard hands back what it wrote. Re-reading it here would put a
+      // network call between a finished setup and the first screen.
+      ctx.profile = saved || ctx.profile;
+      if (!ctx.profile) { try { ctx.profile = await loadProfile(); } catch (_) {} }
+      if (ctx.profile) await boot();
+    }
   });
-  $('setup-save').onclick = async () => {
-    const btn = $('setup-save'); btn.disabled = true; $('setup-msg').textContent = 'Saving…'; $('setup-msg').className = 'msgline';
-    try {
-      const opt = sel.selectedOptions[0];
-      await saveProfile({ ...(ctx.profile || {}), email: ctx.user.email || '',
-        displayName: (ctx.profile && ctx.profile.displayName) || ctx.user.displayName || '',
-        badgeNumber: (ctx.profile && ctx.profile.badgeNumber) || '',
-        driverType: dt, depotKey: sel.value, depotLabel: opt ? opt.textContent : '',
-        createdAt: ctx.profile && ctx.profile.createdAt });
-      ctx.profile = await loadProfile();
-      await boot();
-    } catch (err) { $('setup-msg').textContent = 'Could not save: ' + (err.code || err.message); $('setup-msg').className = 'msgline err'; }
-    btn.disabled = false;
-  };
 }
 
 // ---- TODAY ----------------------------------------------------------------
@@ -550,7 +533,9 @@ function renderToday() {
   }
   if (c.mode === 'none') {
     const g = el('div', 'gate');
-    g.append((c.doneToday ? 'Done for today. ' : '') + 'No run registered' + (c.doneToday ? ' in the next three weeks.' : ' for today.'), el('br'));
+    const vac = A.resolve(S.todayIso(), ctx.overrides).source === 'vacation';
+    g.append(vac ? 'You are on vacation this week — 44 hours, no runs.'
+                 : (c.doneToday ? 'Done for today. ' : '') + 'No run registered' + (c.doneToday ? ' in the next three weeks.' : ' for today.'), el('br'));
     const b = el('button', 'pa-submit', 'Set up my schedule'); b.type = 'button'; b.style.marginTop = '14px';
     b.addEventListener('click', () => setView('schedule'));
     g.appendChild(b); body.appendChild(g);
@@ -561,7 +546,11 @@ function renderToday() {
   const run = c.run, r = c.r;
   let phase, at, place;
   if (c.mode === 'next') {
-    phase = (c.doneToday ? 'Done for today · next run ' : 'Next run · ') + S.fmtDate(c.date);
+    // On vacation the countdown still runs to the next registered run, but
+    // the line says why nothing is happening before then.
+    const onVac = A.resolve(S.todayIso(), ctx.overrides).source === 'vacation';
+    phase = onVac ? 'On vacation · next run ' + S.fmtDate(c.date)
+          : (c.doneToday ? 'Done for today · next run ' : 'Next run · ') + S.fmtDate(c.date);
     at = run && run.reportMin != null ? 'Report ' + S.fmtClock(run.reportMin) : 'Report time unknown';
     place = run && run.pieces[0] ? 'Pull-out ' + S.fmtClock(run.pullOutMin) + ' · ' + run.pieces[0].routeLabel + ' · block ' + run.pieces[0].block : '';
     wakeLock(false);
@@ -895,6 +884,7 @@ function renderSchedule() {
   if (!ctx.profile) return;
   const form = $('sch-form'); form.textContent = '';
   if (ctx.profile.driverType === 'regular') renderRegularForm(form); else renderWeekForm(form);
+  SU.renderVacationCard($('sch-vacation'), { onChange: () => renderSchedule() });
   renderUpcoming();
 }
 
@@ -1107,7 +1097,7 @@ function renderWeekForm(form) {
   if (!ctx.weekCursor) ctx.weekCursor = S.weekStartOf(today);
   const ws = ctx.weekCursor;
 
-  form.appendChild(el('h2', 'k', isRelief ? 'My week (relief)' : 'My assignments (slate)'));
+  form.appendChild(el('h2', 'k', isRelief ? 'My week (holddown)' : 'My assignments (slate)'));
   form.appendChild(el('div', 'hint', isRelief
     ? 'Enter the run for each day dispatch gave you. Leave rest days blank. The app fills in the start time when the run is in the paddle.'
     : 'Enter today or tomorrow as dispatch assigns it — or a whole week if they give you one.'));
@@ -1205,7 +1195,8 @@ async function renderUpcoming() {
     // opens the day; there is no separate EDIT button.
     const src = r.source === 'assignment'
       ? (r.assignment && r.assignment.source === 'edit' ? ' src-edit' : ' src-manual')
-      : r.source === 'pattern' ? ' src-pattern' : '';
+      : r.source === 'pattern' ? ' src-pattern'
+      : r.source === 'vacation' ? ' src-vac' : '';
     const row = el('div', 'row' + (r.date === today ? ' today' : ''));
     row.setAttribute('role', 'button'); row.tabIndex = 0;
     row.setAttribute('aria-label', 'Edit ' + S.fmtDate(r.date));
@@ -1218,6 +1209,8 @@ async function renderUpcoming() {
       runCell.textContent = r.unregistered ? '—'
         : (r.kind && A.KIND_LABELS[r.kind]) ? A.KIND_LABELS[r.kind].toUpperCase()
         : (r.status === 'holiday' ? 'OFF · holiday' : r.status.toUpperCase());
+      // The 44 hours are a week figure, so they are named once, on the Sunday.
+      if (r.source === 'vacation' && r.date === r.vacationWeek) t.textContent = A.fmtHours(A.VACATION_WEEK_PAY_MIN) + ' h for the week';
     } else {
       runCell.textContent = 'RUN ' + r.runNo + (r.flags && r.flags.overtime ? ' · OT' : '');
       runFor(r, r.date).then(run => {
@@ -1232,7 +1225,9 @@ async function renderUpcoming() {
   if (legend) {
     legend.textContent = 'Tap a day to change it. Past days are editable too. Day colors: blue = from your pick'
       + (ctx.profile && ctx.profile.driverType !== 'regular' ? ', green = entered by week' : '')
-      + ', purple = edited.';
+      + ', purple = edited'
+      + (A.getState().vacations.size ? ', amber = vacation' : '')
+      + '.';
   }
 }
 

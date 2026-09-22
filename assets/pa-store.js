@@ -13,7 +13,7 @@
 // ==========================================================================
 
 import {
-  doc, getDoc, setDoc, onSnapshot, serverTimestamp, collection, getDocs, runTransaction
+  doc, getDoc, setDoc, onSnapshot, serverTimestamp, collection, getDocs
 } from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore.js';
 
 import { initFirebase } from './pa-firebase.js';
@@ -197,26 +197,11 @@ export async function saveProfile(fields) {
   return payload;
 }
 
-/**
- * Create a default profile ONLY if the account has none. A transaction
- * re-checks on the server before writing, so it can never overwrite a real
- * profile - unlike the blind merge-write it replaces, which wrote an empty
- * depot and badge whenever a read came back empty (e.g. racing the sign-up
- * form's own write). Rejects when offline, which is the safe outcome.
- */
-export async function ensureProfile(defaults) {
-  if (!db || !uid) throw new Error('not signed in');
-  const ref = profileRef();
-  const result = await runTransaction(db, async tx => {
-    const snap = await tx.get(ref);
-    if (snap.exists()) return snap.data();
-    const payload = { ...profilePayload(defaults), createdAt: serverTimestamp() };
-    tx.set(ref, payload);
-    return payload;
-  });
-  rememberProfile(result);
-  return result;
-}
+// There is deliberately no "create a default profile" helper. The first
+// profile is written by setup (assets/pa-setup.js) once the operator has
+// answered for their depot and driver type, because a profile carrying those
+// two fields is what the app reads as "this account is set up". A default one
+// written at sign-in would say setup was finished when it had not started.
 
 // ---- settings sync --------------------------------------------------------
 

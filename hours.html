@@ -120,7 +120,7 @@ header{background:var(--ink2);border-bottom:1px solid var(--line2);padding:12px 
 <div class="wrap">
   <div class="pa-sync" id="sync-line" hidden></div>
   <div class="gate" id="gate-out">Sign in to see your weekly hours.<br>They follow you to every device.</div>
-  <div class="gate" id="gate-setup" hidden>Set your depot and driver type first on <a href="home.html">My run</a>.</div>
+  <div class="gate" id="gate-setup" hidden>Finish setting up your account on <a href="home.html">My run</a> — depot, runs and vacation.</div>
   <div class="gate" id="gate-retry" hidden>
     <span id="gate-retry-text">Can't reach the server to load your account.</span><br>
     Check your signal, then try again.
@@ -316,7 +316,22 @@ async function renderWeek() {
     rows.appendChild(row);
   }
 
-  const t = A.weekTotals(days);
+  // Vacation is paid by the week, not by the day, so it is stated once
+  // rather than smeared across seven rows that each read "VACATION".
+  const t = A.weekTotals(days, today);
+  if (t.vacationWeeks) {
+    const vr = el('div', 'row flag');
+    const vd = el('div', 'd', 'VAC');
+    vd.appendChild(el('small', null, 'week'));
+    const vc = el('div', 'run');
+    vc.appendChild(document.createTextNode('VACATION WEEK'));
+    vc.appendChild(el('span', 'ex', 'Paid by the week, whatever the pick says.'));
+    const started = ws <= today;
+    vr.append(vd, vc,
+      el('div', 'n', A.fmtHours(t.vacationMin)),
+      el('div', 'n' + (started ? '' : ' dim'), started ? A.fmtHours(t.vacationMin) : '—'));
+    rows.appendChild(vr);
+  }
   $('t-sch').textContent = A.fmtHours(t.scheduledMin);
   $('t-act').textContent = A.fmtHours(t.actualMin);
   $('t-days').textContent = String(t.daysWorked);

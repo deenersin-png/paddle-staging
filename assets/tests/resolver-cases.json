@@ -1,5 +1,5 @@
 {
- "note": "Pure resolver cases for pa-assignments.resolvePure(), plus the pay formulas. Run hours are intentionally excluded (they come from the paddle). Regenerated 2026-09-14 with today=2026-09-14. A Dart port must reproduce every `expect` exactly. extrasMin = sum of extraPayMin(): late allowance pays stored minutes x1.5 (unrounded), holiday amount comes from the day's kind (worked 720, not worked 480).",
+ "note": "Pure resolver cases for pa-assignments.resolvePure(), plus the pay formulas. Run hours are intentionally excluded (they come from the paddle). Regenerated 2026-09-14 with today=2026-09-14; vacation added 2026-09-22. fixture.vacations are vacation WEEKS (week-start Sundays): a week in that list turns every untouched day in it into a vacation day, and pays 44 h once for the week (formulas.weekTotals.vacation), never per day. An explicit day still outranks it. A Dart port must reproduce every `expect` exactly. extrasMin = sum of extraPayMin(): late allowance pays stored minutes x1.5 (unrounded), holiday amount comes from the day's kind (worked 720, not worked 480).",
  "fixture": {
   "overrides": {
    "2026-09-07": "sunday"
@@ -142,8 +142,18 @@
      }
     ],
     "note": "saved under the old 8 h rule"
+   },
+   "2026-10-07": {
+    "runNo": "209",
+    "status": "scheduled",
+    "source": "edit",
+    "kind": "normal",
+    "payMin": 540
    }
-  }
+  },
+  "vacations": [
+   "2026-10-04"
+  ]
  },
  "cases": [
   {
@@ -430,6 +440,71 @@
     "unregistered": false,
     "extrasMin": 720
    }
+  },
+  {
+   "date": "2026-10-05",
+   "why": "Monday inside a vacation week: the pick says run 209, the vacation outranks it",
+   "expect": {
+    "source": "vacation",
+    "runNo": null,
+    "dayType": "weekday",
+    "status": "vacation",
+    "off": true,
+    "kind": "vacation",
+    "vacationWeek": "2026-10-04",
+    "extrasMin": 0,
+    "patternRunNo": "209",
+    "unregistered": false
+   }
+  },
+  {
+   "date": "2026-10-04",
+   "why": "the Sunday that names the vacation week; the 5-day pick is off Sundays anyway",
+   "expect": {
+    "source": "vacation",
+    "runNo": null,
+    "dayType": "sunday",
+    "status": "vacation",
+    "off": true,
+    "kind": "vacation",
+    "vacationWeek": "2026-10-04",
+    "extrasMin": 0,
+    "patternRunNo": null,
+    "unregistered": false
+   }
+  },
+  {
+   "date": "2026-10-07",
+   "why": "a day WORKED during vacation: the explicit day wins, and the week is still vacation",
+   "expect": {
+    "source": "assignment",
+    "runNo": "209",
+    "dayType": "weekday",
+    "status": "scheduled",
+    "off": false,
+    "kind": "normal",
+    "vacationWeek": "2026-10-04",
+    "extrasMin": 0,
+    "patternRunNo": "209",
+    "extraShift": false,
+    "unregistered": false
+   }
+  },
+  {
+   "date": "2026-10-11",
+   "why": "the Sunday after the vacation week: back to the pick, which is off Sundays",
+   "expect": {
+    "source": "pattern",
+    "runNo": null,
+    "dayType": "sunday",
+    "status": "off",
+    "off": true,
+    "vacationWeek": null,
+    "extrasMin": 0,
+    "patternRunNo": null,
+    "extraShift": false,
+    "unregistered": false
+   }
   }
  ],
  "formulas": {
@@ -498,6 +573,109 @@
       "min": 720
      },
      "expect": 720
+    }
+   ]
+  },
+  "weekTotals.vacation": {
+   "why": "A vacation week pays VACATION_WEEK_PAY_MIN (2640 = 44 h) ONCE for the week, never per day, on top of anything actually worked that week. It is scheduled always, and actual from the Sunday it starts. daysWorked counts days actually worked, so vacation days are not among them.",
+   "weekStart": "2026-10-04",
+   "cases": [
+    {
+     "today": "2026-10-12",
+     "expectScheduledMin": 3180,
+     "expectActualMin": 3180,
+     "expectDaysWorked": 1,
+     "why": "week gone: 44 h plus the 9 h day worked inside it"
+    },
+    {
+     "today": "2026-10-06",
+     "expectScheduledMin": 3180,
+     "expectActualMin": 2640,
+     "expectDaysWorked": 0,
+     "why": "Tuesday of it: paid from its Sunday; the Wednesday worked has not happened yet"
+    },
+    {
+     "today": "2026-09-22",
+     "expectScheduledMin": 3180,
+     "expectActualMin": 0,
+     "expectDaysWorked": 0,
+     "why": "before it starts: planned, nothing accrued"
+    }
+   ]
+  },
+  "parseWeekInput": {
+   "why": "A week the operator typed, read against today. Both orders are accepted: a part over 12 must be the day, and when both readings are real dates the one landing on a Sunday wins, else month/day (US). The answer is the SUNDAY the week starts. With the year left out it is the one putting the date inside [today - 90 days, today + 274 days].",
+   "today": "2026-09-22",
+   "cases": [
+    {
+     "input": "27/9",
+     "expectWeekStart": "2026-09-27",
+     "why": "day/month, the operator example for \"next week\""
+    },
+    {
+     "input": "10/18",
+     "expectWeekStart": "2026-10-18",
+     "why": "month/day, 18 cannot be a month"
+    },
+    {
+     "input": "9/27",
+     "expectWeekStart": "2026-09-27",
+     "why": "month/day, same week"
+    },
+    {
+     "input": "sep 27",
+     "expectWeekStart": "2026-09-27",
+     "why": "month name"
+    },
+    {
+     "input": "27 september",
+     "expectWeekStart": "2026-09-27",
+     "why": "day first, month name"
+    },
+    {
+     "input": "2026-09-27",
+     "expectWeekStart": "2026-09-27",
+     "why": "ISO"
+    },
+    {
+     "input": "27/9/26",
+     "expectWeekStart": "2026-09-27",
+     "why": "two-digit year"
+    },
+    {
+     "input": "9/30",
+     "expectWeekStart": "2026-09-27",
+     "why": "a Wednesday snaps back to the Sunday of its week"
+    },
+    {
+     "input": "10/11",
+     "expectWeekStart": "2026-10-11",
+     "why": "ambiguous: Oct 11 is a Sunday, Nov 10 is not"
+    },
+    {
+     "input": "1/3",
+     "expectWeekStart": "2027-01-03",
+     "why": "next year, because January 2026 is long past"
+    },
+    {
+     "input": "this week",
+     "expectWeekStart": "2026-09-20",
+     "why": "words"
+    },
+    {
+     "input": "next",
+     "expectWeekStart": "2026-09-27",
+     "why": "words"
+    },
+    {
+     "input": "13/13",
+     "expectWeekStart": null,
+     "why": "no such date either way"
+    },
+    {
+     "input": "nonsense",
+     "expectWeekStart": null,
+     "why": "rejected"
     }
    ]
   }

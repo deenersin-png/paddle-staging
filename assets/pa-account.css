@@ -310,6 +310,15 @@
 .pa-ghost:hover { color: var(--pa-bright); border-color: var(--pa-line3); }
 .pa-ghost.pa-danger:hover { color: var(--pa-red); border-color: rgba(255,107,107,0.35); }
 
+/* One line of guidance under a form, e.g. what happens after sign-up. */
+.pa-hint {
+  font-family: var(--pa-sans);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--pa-dim);
+  margin-top: 10px;
+}
+
 .pa-linkrow {
   margin-top: 12px;
   text-align: center;

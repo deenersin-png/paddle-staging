@@ -19,6 +19,16 @@
 //                      Nothing is ever materialised: an untouched pattern day
 //                      is computed on demand by resolvePure().
 //
+//   vacations/{sunday} One vacation WEEK, id = the Sunday it starts. Vacation
+//                      is picked by the week and paid by the week (44 hours),
+//                      so it is held as a week rather than seven days: the
+//                      resolver turns every untouched day in it into a
+//                      vacation day, and the 44 hours land once, in
+//                      weekTotals. The document `allowance` in the same
+//                      collection is not a week; it holds how many vacation
+//                      days the operator has this year, which is theirs to
+//                      plan with and never enters an hours total.
+//
 // Hours are never stored. A day's scheduled hours come from the paddle's pay
 // column for the resolved run; actual hours are scheduled + extras. Both are
 // derived at read time by dayHours(), the one formula Flutter reimplements.
@@ -42,13 +52,20 @@ export const HOLIDAY_WORKED_PAY_MIN = 720;
 // the day's worked hours (30 min late adds 45 min = 0.75 h).
 export const LATE_ALLOWANCE_RATE = 1.5;
 
+// A vacation week pays 44 hours. It is a WEEK figure, not a day one: it does
+// not depend on how many days the operator would have worked that week, so it
+// is added once per vacation week in weekTotals and never split across days.
+export const VACATION_WEEK_PAY_MIN = 2640;
+/** Doc id in users/{uid}/vacations that holds the yearly allowance, not a week. */
+export const VACATION_ALLOWANCE_ID = 'allowance';
+
 export const EXTRA_KINDS = { ot: 'Overtime', holiday: 'Holiday', late: 'Late allowance', other: 'Other' };
 
 /** Labels for the day kinds the edit sheet writes (assignment.kind). The last
  *  three are no longer offered; they stay so days saved with them still read. */
 export const KIND_LABELS = {
   'normal': 'Worked', 'late': 'Late allowance', 'holiday-off': 'Holiday', 'holiday-worked': 'Holiday worked',
-  'paid-off': 'Paid day off', 'unpaid-off': 'Unpaid day off',
+  'paid-off': 'Paid day off', 'unpaid-off': 'Unpaid day off', 'vacation': 'Vacation',
   'called-out': 'Called out', 'sick': 'Sick', 'unpaid-excused': 'Unpaid excused'
 };
 export const STATUSES = ['scheduled', 'off', 'sick', 'vacation', 'holiday'];
@@ -71,12 +88,13 @@ let db = null, uid = null;
 // `version` changes only when the schedule itself changes, so pages can
 // skip redrawing on connection-only updates.
 const state = {
-  patterns: [], assignments: new Map(), ready: false, version: 0,
+  patterns: [], assignments: new Map(), vacations: new Map(), vacationDays: null,
+  ready: false, version: 0,
   sync: { status: 'idle', savedAt: null, lastServerAt: null, error: null }
 };
 const subs = new Set();
 const unsubs = [];
-const live = { patterns: null, assignments: null };
+const live = { patterns: null, assignments: null, vacations: null };
 let listenRange = null, retryTimer = null, retryDelay = 3000, lastSig = '';
 
 // How long a first visit on a device waits for the server before rendering
@@ -90,6 +108,7 @@ export function isAttached() { return !!(db && uid); }
 
 const patRef = id   => doc(db, 'users', uid, 'patterns', id);
 const asgRef = date => doc(db, 'users', uid, 'assignments', date);
+const vacRef = id   => doc(db, 'users', uid, 'vacations', id);
 
 function stopListeners() {
   unsubs.splice(0).forEach(u => { try { u(); } catch (_) {} });
@@ -115,7 +134,9 @@ function saveCopy() {
     localStorage.setItem(COPY_PREFIX + uid, JSON.stringify({
       savedAt,
       patterns: state.patterns.map(plain),
-      assignments: [...state.assignments.values()].map(plain)
+      assignments: [...state.assignments.values()].map(plain),
+      vacations: [...state.vacations.values()].map(plain),
+      vacationDays: state.vacationDays
     }));
     state.sync.savedAt = savedAt;
   } catch (_) { /* storage full or blocked: live data still works */ }
@@ -127,6 +148,8 @@ function loadCopy(userId) {
     if (!j || !Array.isArray(j.patterns)) return false;
     state.patterns = sortPatterns(j.patterns);
     state.assignments = new Map((j.assignments || []).map(a => [a.id || a.date, a]));
+    state.vacations = new Map((j.vacations || []).map(v => [v.id || v.weekStart, v]));
+    state.vacationDays = j.vacationDays != null ? j.vacationDays : null;
     state.sync.savedAt = j.savedAt || null;
     state.ready = true;
     return true;
@@ -135,12 +158,15 @@ function loadCopy(userId) {
 
 function markVersion() {
   let sig = '';
-  try { sig = JSON.stringify([state.patterns.map(plain), [...state.assignments.values()].map(plain)]); } catch (_) {}
+  try {
+    sig = JSON.stringify([state.patterns.map(plain), [...state.assignments.values()].map(plain),
+                          [...state.vacations.keys()].sort(), state.vacationDays]);
+  } catch (_) {}
   if (sig !== lastSig) { lastSig = sig; state.version++; }
 }
 
 function updateStatus() {
-  const s = state.sync, ls = [live.patterns, live.assignments];
+  const s = state.sync, ls = [live.patterns, live.assignments, live.vacations];
   if (s.error) s.status = 'error';
   else if (ls.every(l => l && l.synced && !l.fromCache)) s.status = 'live';
   else if (ls.some(l => l && l.synced)) s.status = 'offline';
@@ -203,7 +229,29 @@ function startListeners() {
       state.assignments = m;
     }
   });
+  // Every vacation week, unbounded: there are a handful a year, and a week
+  // outside the assignments window still belongs on next year's calendar.
+  listen('vacations', collection(db, 'users', uid, 'vacations'), {
+    replace: docs => {
+      state.vacations = new Map(docs.filter(isWeekDoc).map(d => [d.id, d]));
+      const a = docs.find(d => d.id === VACATION_ALLOWANCE_ID);
+      state.vacationDays = a && Number.isFinite(+a.days) ? +a.days : null;
+    },
+    merge: (type, d) => {
+      if (d.id === VACATION_ALLOWANCE_ID) {
+        state.vacationDays = type === 'removed' || !Number.isFinite(+d.days) ? null : +d.days;
+        return;
+      }
+      if (!isWeekDoc(d)) return;
+      const m = new Map(state.vacations);
+      if (type === 'removed') m.delete(d.id); else m.set(d.id, d);
+      state.vacations = m;
+    }
+  });
 }
+
+/** A vacations/{id} document that is a week (id = the Sunday), not the allowance. */
+const isWeekDoc = d => /^\d{4}-\d{2}-\d{2}$/.test(d.id || '');
 
 function scheduleRetry() {
   if (retryTimer || !uid) return;
@@ -262,8 +310,10 @@ export function detach(opts = {}) {
   stopListeners();
   if (uid && !opts.keepCopy) { try { localStorage.removeItem(COPY_PREFIX + uid); } catch (_) {} }
   db = null; uid = null; listenRange = null; lastSig = '';
-  live.patterns = null; live.assignments = null;
-  state.patterns = []; state.assignments = new Map(); state.ready = false; state.version++;
+  live.patterns = null; live.assignments = null; live.vacations = null;
+  state.patterns = []; state.assignments = new Map();
+  state.vacations = new Map(); state.vacationDays = null;
+  state.ready = false; state.version++;
   state.sync = { status: 'idle', savedAt: null, lastServerAt: null, error: null };
   emit();
 }
@@ -342,7 +392,10 @@ function rollbackUnconfirmed(key) {
   let copy = null;
   try { copy = JSON.parse(localStorage.getItem(COPY_PREFIX + uid) || 'null'); } catch (_) {}
   if (key === 'patterns') state.patterns = sortPatterns((copy && copy.patterns) || []);
-  else state.assignments = new Map(((copy && copy.assignments) || []).map(a => [a.id || a.date, a]));
+  else if (key === 'vacations') {
+    state.vacations = new Map(((copy && copy.vacations) || []).map(v => [v.id || v.weekStart, v]));
+    state.vacationDays = copy && copy.vacationDays != null ? copy.vacationDays : null;
+  } else state.assignments = new Map(((copy && copy.assignments) || []).map(a => [a.id || a.date, a]));
   markVersion();
   emit();
 }
@@ -398,6 +451,52 @@ export async function saveDays(entries) {
   }
   if (n) await confirmed(batch.commit(), 'assignments');
   return n;
+}
+
+// ---- vacation weeks -------------------------------------------------------
+
+/** The Sunday that starts the vacation week `date` falls in, else null. */
+export function vacationWeekOf(st, date) {
+  const ws = addDays(date, -dowOf(date));
+  return st && st.vacations && st.vacations.has(ws) ? ws : null;
+}
+export const isVacationWeek = date => !!vacationWeekOf(state, date);
+/** Every vacation week on record, earliest first. */
+export const vacationWeeks = () => [...state.vacations.keys()].sort();
+
+/**
+ * Replace the set of vacation weeks, and record how many vacation days the
+ * operator has. `weeks` are week-start Sundays; anything on record and not in
+ * the list is removed. `days` null leaves the allowance alone.
+ */
+export async function saveVacation(weeks, days) {
+  if (!db) throw new Error('not signed in');
+  const want = new Set((weeks || []).map(w => addDays(w, -dowOf(w))));
+  const batch = writeBatch(db);
+  let n = 0;
+  for (const w of want) {
+    if (state.vacations.has(w)) continue;
+    batch.set(vacRef(w), { weekStart: w, createdAt: serverTimestamp(), updatedAt: serverTimestamp(), schemaVersion: 1 });
+    n++;
+  }
+  for (const w of state.vacations.keys()) {
+    if (!want.has(w)) { batch.delete(vacRef(w)); n++; }
+  }
+  if (days != null) {
+    batch.set(vacRef(VACATION_ALLOWANCE_ID), { days: Math.max(0, Math.round(+days) || 0), updatedAt: serverTimestamp() }, { merge: true });
+    n++;
+  }
+  if (n) await confirmed(batch.commit(), 'vacations');
+  return n;
+}
+
+/** Add or remove one vacation week. */
+export async function setVacationWeek(weekStart, on) {
+  if (!db) throw new Error('not signed in');
+  const w = addDays(weekStart, -dowOf(weekStart));
+  await confirmed(on
+    ? setDoc(vacRef(w), { weekStart: w, createdAt: serverTimestamp(), updatedAt: serverTimestamp(), schemaVersion: 1 })
+    : deleteDoc(vacRef(w)), 'vacations');
 }
 
 // ---- extras ---------------------------------------------------------------
@@ -514,12 +613,22 @@ export function resolvePure(st, date, overrides) {
   const base = { date, dayType: dayTypeFor(date, overrides), holidayDate: isHoliday(date, overrides) };
   const pat = fromPattern(st.patterns, date, base);
   const a = st.assignments.get(date);
-  if (!a) return pat;
+  // A vacation week outranks the pattern — the pick still says "run 209 on a
+  // Tuesday", but the operator is away — while an explicit day still outranks
+  // the vacation, so a day worked during vacation reads as worked.
+  const vacationWeek = vacationWeekOf(st, date);
+  if (!a) {
+    if (!vacationWeek) return pat;
+    return { ...base, source: 'vacation', vacationWeek, off: true, status: 'vacation', kind: 'vacation',
+             runNo: null, flags: {}, holiday: null, extras: [], reportMin: null, payMin: null,
+             unregistered: false, patternRunNo: pat.runNo || null, patternOff: !!pat.off };
+  }
 
   const status = a.status || (a.runNo ? 'scheduled' : 'off');
   const working = status === 'scheduled' && !!a.runNo;
   return {
     ...base,
+    vacationWeek,
     source: 'assignment',
     assignment: a,
     runNo: a.runNo ? String(a.runNo) : null,
@@ -593,16 +702,31 @@ export function dayHours(resolved, run, today) {
   };
 }
 
-export function weekTotals(days) {
+/**
+ * Week totals for the days of one week. Vacation is a WEEK figure: each
+ * vacation week these days belong to adds VACATION_WEEK_PAY_MIN once, on top
+ * of anything actually worked, and counts as actual from the Sunday it
+ * starts — the operator is paid for the week, not per day of it.
+ */
+export function weekTotals(days, today) {
+  const t = today || todayIso();
   let scheduledMin = 0, actualMin = 0, daysWorked = 0;
+  const vacWeeks = new Set();
   for (const d of days) {
     scheduledMin += d.hours.scheduledMin;
+    if (d.r && d.r.vacationWeek) vacWeeks.add(d.r.vacationWeek);
     if (d.hours.past) {
       actualMin += d.hours.actualMin || 0;
-      if (d.hours.scheduledMin > 0) daysWorked++;
+      if (d.hours.working) daysWorked++;
     }
   }
-  return { scheduledMin, actualMin, daysWorked };
+  let vacationMin = 0;
+  for (const w of vacWeeks) {
+    scheduledMin += VACATION_WEEK_PAY_MIN;
+    vacationMin += VACATION_WEEK_PAY_MIN;
+    if (w <= t) actualMin += VACATION_WEEK_PAY_MIN;
+  }
+  return { scheduledMin, actualMin, daysWorked, vacationMin, vacationWeeks: vacWeeks.size };
 }
 
 export const fmtHours = min => ((+min || 0) / 60).toFixed(2);

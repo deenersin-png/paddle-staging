@@ -20,10 +20,16 @@
 const SIGNED_IN_FLAG = 'pa_signed_in';
 
 const DRIVER_TYPES = [
-  { id: 'regular', label: 'REGULAR' },
-  { id: 'relief',  label: 'RELIEF'  },
-  { id: 'slate',   label: 'SLATE'   }
+  { id: 'regular', label: 'REGULAR'  },
+  { id: 'relief',  label: 'HOLDDOWN' },
+  { id: 'slate',   label: 'SLATE'    }
 ];
+
+// Where an account finishes being set up. Creating one asks for an email and
+// a password only; the depot, driver type, vacation and runs are asked there,
+// on a page that already has the schedule modules loaded.
+const SETUP_PAGE = 'home.html';
+const onSetupPage = () => /(^|\/)home\.html$/.test(location.pathname);
 
 // Depot slugs carry the season ("callowhillb-summer2026") because they double
 // as directory paths under data/. A profile must store the season-independent
@@ -76,14 +82,11 @@ async function onAuthChange(e) {
     renderButton();
     try {
       await store.attach(user.uid);
-      const fresh = await store.loadProfile();
-      // Only a brand-new account gets a default profile, and ensureProfile
-      // re-checks on the server so it cannot overwrite a real one.
-      profile = fresh || await store.ensureProfile({
-        email:       user.email || '',
-        displayName: user.displayName || '',
-        driverType:  'regular'
-      });
+      // A new account has no profile, and none is invented here: the setup
+      // wizard writes the first one, and a profile with a depot and a driver
+      // type is exactly what says setup is finished. A default written here
+      // would claim an account was set up when it was not.
+      profile = await store.loadProfile();
     } catch (err) {
       // Offline or refused: keep the copy saved on this device.
       console.warn('[pa] profile load failed', err.code || err.message);
@@ -242,40 +245,6 @@ function buildSignedOut(body) {
     autocomplete: mode === 'signup' ? 'new-password' : 'current-password'
   });
 
-  let name, badge, depot, driverType = 'regular';
-  if (mode === 'signup') {
-    name  = field(form, 'Display name', 'name', { type: 'text', autocomplete: 'name' });
-    badge = field(form, 'Badge number', 'badge', { type: 'text', inputmode: 'numeric' });
-
-    const dtWrap = el('div', 'pa-field');
-    dtWrap.appendChild(labelNode('Driver type'));
-    const seg = el('div', 'pa-seg');
-    DRIVER_TYPES.forEach(dt => {
-      const b = el('button', 'pa-seg-btn' + (dt.id === driverType ? ' pa-on' : ''));
-      b.type = 'button';
-      b.textContent = dt.label;
-      b.addEventListener('click', () => {
-        driverType = dt.id;
-        [...seg.children].forEach(c => c.classList.remove('pa-on'));
-        b.classList.add('pa-on');
-      });
-      seg.appendChild(b);
-    });
-    dtWrap.appendChild(seg);
-    form.appendChild(dtWrap);
-
-    const dWrap = el('div', 'pa-field');
-    dWrap.appendChild(labelNode('Home depot'));
-    depot = el('select', 'pa-select');
-    depotOptions().forEach(d => {
-      const o = el('option');
-      o.value = d.key; o.textContent = d.label;
-      depot.appendChild(o);
-    });
-    dWrap.appendChild(depot);
-    form.appendChild(dWrap);
-  }
-
   const submit = el('button', 'pa-submit');
   submit.type = 'submit';
   submit.textContent = mode === 'signup' ? 'Create account' : 'Sign in';
@@ -287,26 +256,12 @@ function buildSignedOut(body) {
     busy(form, true, submit, mode === 'signup' ? 'Create account' : 'Sign in');
     try {
       if (mode === 'signup') {
-        await auth.signUp({
-          email: email.value.trim(),
-          password: pass.value,
-          displayName: name.value.trim()
-        });
-        const opt = depot.selectedOptions[0];
-        await store.saveProfile({
-          email:       email.value.trim(),
-          displayName: name.value.trim(),
-          badgeNumber: badge.value.trim(),
-          driverType,
-          depotKey:    depot.value,
-          depotLabel:  opt ? opt.textContent : ''
-        });
-        profile = await store.loadProfile();
-        renderButton();
+        await auth.signUp({ email: email.value.trim(), password: pass.value });
       } else {
         await auth.signIn({ email: email.value.trim(), password: pass.value });
       }
       closeModal();
+      goToSetupIfNew();
     } catch (err) {
       showMsg(auth.errText(err), 'err');
     } finally {
@@ -315,6 +270,11 @@ function buildSignedOut(body) {
   });
 
   body.appendChild(form);
+
+  if (mode === 'signup') {
+    body.appendChild(el('div', 'pa-hint')).textContent =
+      'That is all we need. A few quick questions next set up your depot, your runs and your vacation.';
+  }
 
   // Google sits BELOW the email form, not above it and not behind a tab.
   // QR codes routinely open in in-app browsers (iOS Camera, Instagram,
@@ -334,6 +294,7 @@ function buildSignedOut(body) {
     try {
       await auth.signInWithGoogle();
       closeModal();
+      goToSetupIfNew();
     } catch (err) {
       showMsg(auth.errText(err), 'err');
     } finally {
@@ -358,6 +319,27 @@ function buildSignedOut(body) {
     row.appendChild(link);
     body.appendChild(row);
   }
+}
+
+/** An account still missing its depot or driver type has not been set up. */
+const incomplete = p => !p || !p.depotKey || !p.driverType;
+
+/**
+ * Someone who has just signed in or created an account and has no schedule
+ * yet belongs in setup, so send them there — but only on the way in, never on
+ * a page they merely happen to be reading. The tools stay open to everyone,
+ * signed in or not.
+ */
+async function goToSetupIfNew() {
+  if (onSetupPage()) return;                 // home.html shows setup by itself
+  try {
+    const u = auth.getUser();
+    if (!u) return;
+    store.ensureUser(u.uid);
+    const res = await store.loadProfileSafe(6000);
+    // Only the SERVER's word sends someone away from the page they are on.
+    if (res.source === 'server' && incomplete(res.profile)) location.href = SETUP_PAGE;
+  } catch (_) { /* offline: leave them where they are */ }
 }
 
 // ---- signed-in -------------------------------------------------------------
@@ -388,6 +370,18 @@ function buildSignedIn(body) {
   body.appendChild(grid);
 
   const stack = el('div', 'pa-stack');
+
+  // An account that never finished setup gets one thing to do, said plainly.
+  if (incomplete(profile)) {
+    const go = el('a', 'pa-submit');
+    go.href = SETUP_PAGE;
+    go.textContent = 'Finish setting up';
+    go.style.textAlign = 'center';
+    go.style.textDecoration = 'none';
+    stack.appendChild(go);
+    stack.appendChild(el('div', 'pa-hint')).textContent =
+      'Your depot, your runs and your vacation — a couple of minutes, and the app can start counting down.';
+  }
 
   const myrun = el('a', 'pa-ghost');
   myrun.href = 'home.html';

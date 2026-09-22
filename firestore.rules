@@ -120,11 +120,23 @@ service cloud.firestore {
         allow read, write: if isOwner(uid);
       }
 
+      // patterns/{id}, assignments/{date} and vacations/{sunday} are the
+      // operator's own schedule and fall through to the catch-all below.
+
       // Anything new under users/{uid} defaults to owner-only rather than
       // denied, so shipping a new subcollection never requires a rules deploy
       // to land first. Still scoped to the owner, so it grants nothing wider.
-      match /{doc=**} {
-        allow read, write: if isOwner(uid);
+      //
+      // The {sub} segment is load-bearing. In rules version 2 a recursive
+      // wildcard also matches ZERO segments, so a bare {doc=**} here would
+      // match users/{uid} itself — and because rules are OR'd, that quietly
+      // granted every owner a way round validProfile() above: arbitrary keys
+      // in their own profile, and the settings allowlist bypassed the same
+      // way. Requiring one named subcollection keeps this rule on
+      // subcollection documents only. The two that validate their contents
+      // are excluded so their own rules are the only ones that apply to them.
+      match /{sub}/{doc=**} {
+        allow read, write: if isOwner(uid) && !(sub in ['settings', 'favorites']);
       }
     }
 

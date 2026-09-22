@@ -180,6 +180,7 @@ function showMsg(text, kind) {
 
 /** Best guess of the kind for a day that predates the dropdown. */
 function kindOf(r) {
+  if (r.source === 'vacation') return 'vacation';
   if (r.kind && KINDS.some(([v]) => v === r.kind)) return r.kind;
   // Kinds no longer offered (called out, sick, unpaid excused) were all
   // zero-hour days; they open as an unpaid day off.
@@ -226,13 +227,20 @@ export function openEdit(r) {
     st.hoursMin = other ? other.min : null;
   }
 
-  if (r.source === 'pattern' && r.runNo) body.appendChild(el('div', 'hint', 'From your pattern. Changes here affect this day only.'));
+  if (r.vacationWeek) {
+    body.appendChild(el('div', 'hint', 'In your vacation week of ' + S.fmtDate(r.vacationWeek)
+      + ' — 44 hours for the week, whatever this day says. Change this day only if you worked it. '
+      + 'The week itself is on My run → Schedule.'));
+  } else if (r.source === 'pattern' && r.runNo) body.appendChild(el('div', 'hint', 'From your pattern. Changes here affect this day only.'));
   else if (r.unregistered) body.appendChild(el('div', 'hint', 'Nothing registered for this day.'));
 
   // ---- kind
+  // A day inside a vacation week can say so; that is the absence of an
+  // explicit day rather than a kind of its own, so saving it clears the day.
+  const kinds = r.vacationWeek ? [['vacation', 'On vacation'], ...KINDS] : KINDS;
   const fK = el('div', 'pa-field'); fK.appendChild(el('label', 'pa-label', 'This day'));
   const sK = el('select', 'pa-select');
-  KINDS.forEach(([v, l]) => { const oo = el('option', null, l); oo.value = v; if (v === st.kind) oo.selected = true; sK.appendChild(oo); });
+  kinds.forEach(([v, l]) => { const oo = el('option', null, l); oo.value = v; if (v === st.kind) oo.selected = true; sK.appendChild(oo); });
   sK.addEventListener('change', () => {
     const was = st.kind;
     st.kind = sK.value;
@@ -250,6 +258,11 @@ export function openEdit(r) {
   function drawFields() {
     fields.textContent = '';
     const working = WORKING.has(st.kind);
+
+    if (st.kind === 'vacation') {
+      fields.appendChild(el('div', 'hint', 'Left as a vacation day. The week pays 44 hours.'));
+      return;
+    }
 
     if (working) {
       const row = el('div', 'form-row');
@@ -358,6 +371,10 @@ export function openEdit(r) {
       + (b.earlyMin ? ' adds ' + (b.earlyMin / 60).toFixed(2) + ' h.' : ' adds nothing (not before the start).');
   }
   function drawPay() {
+    if (st.kind === 'vacation') {
+      pay.innerHTML = 'Vacation week <b>' + (A.VACATION_WEEK_PAY_MIN / 60).toFixed(2) + ' hrs</b> · paid once for the week, not per day';
+      return;
+    }
     const b = build();
     drawReportHint(b);
     const parts = [];
@@ -375,6 +392,17 @@ export function openEdit(r) {
   const save = el('button', 'pa-submit', 'Save day'); save.type = 'button';
   save.addEventListener('click', async () => {
     const b = build();
+    // "On vacation" is the day having nothing of its own: clear any explicit
+    // day so the vacation week shows through again.
+    if (st.kind === 'vacation') {
+      save.disabled = true;
+      try {
+        if (r.source === 'assignment') await confirmWrite(A.clearAssignment(r.date), () => showMsg(WAITING_FOR_SIGNAL, 'warn'));
+        closeEdit();
+        if (cfg.onSaved) cfg.onSaved(r.date);
+      } catch (err) { showMsg('Could not save: ' + (err.code || err.message), 'err'); save.disabled = false; }
+      return;
+    }
     if (b.working && !st.runNo) { showMsg('Enter the run number, or choose a day-off kind.', 'err'); return; }
     if (b.working && !st.run && st.hoursMin == null) { showMsg('That run is not in the paddle. Enter the hours.', 'err'); return; }
     save.disabled = true; msgEl.hidden = true;
