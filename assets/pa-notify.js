@@ -101,10 +101,39 @@ export async function senderStatus() {
   try {
     const snap = await getDoc(doc(fb.db, 'config', 'emailSender'));
     if (!snap.exists()) return null;
-    const at = snap.data().lastRunAt;
-    const ms = at && at.toMillis ? at.toMillis() : 0;
-    return { lastRunAt: ms, ok: ms > 0 && Date.now() - ms < 10 * 60000 };
+    const d = snap.data();
+    const ms = t => (t && t.toMillis ? t.toMillis() : 0);
+    const last = ms(d.lastRunAt);
+    return {
+      lastRunAt: last,
+      ok: last > 0 && Date.now() - last < 10 * 60000,
+      problem: d.problem || null,               // why the last sweep could not find anyone
+      sendProblem: d.sendProblem || null,       // why the last email could not be sent
+      sendProblemAt: ms(d.sendProblemAt)
+    };
   } catch (_) { return null; }
+}
+
+/**
+ * What the ALERTS screen says about the sender: { kind, text }, kind being
+ * 'ok' | 'warn' | 'err'. Pure, so it can be checked without a database.
+ * `st` is senderStatus()'s answer (null = the sender has never run).
+ */
+export function senderMessage(st) {
+  const clock = ms => new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  if (!st) return { kind: 'err', text: 'No emails yet: the sender is not switched on for this app. Nothing else on this screen is affected.' };
+  if (!st.ok) return { kind: 'err', text: 'The sender has not run since ' + clock(st.lastRunAt) + ' — emails may be delayed.' };
+  if (st.problem === 'INDEX_BUILDING') {
+    return { kind: 'warn', text: 'The sender is running, but the database index it searches with is still being built. That takes a few minutes after a deploy; emails start on their own once it is ready.' };
+  }
+  if (st.problem) return { kind: 'err', text: 'The sender is running but hit a database error, so it cannot find who to email. It tries again every minute.' };
+  if (st.sendProblem === 'EAUTH') {
+    return { kind: 'err', text: 'The last email could not be sent (' + clock(st.sendProblemAt) + '): Gmail refused the sender’s login. The Gmail address or app password stored for the sender needs checking.' };
+  }
+  if (st.sendProblem) {
+    return { kind: 'err', text: 'The last email could not be sent (' + clock(st.sendProblemAt) + '). The sender tries again the next minute while the run is still due.' };
+  }
+  return { kind: 'ok', text: 'Sender is running · last checked ' + clock(st.lastRunAt) };
 }
 
 // ---- capability -----------------------------------------------------------

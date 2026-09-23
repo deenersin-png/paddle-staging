@@ -101,6 +101,8 @@ export function buildEmail({ resolved, run, reportMin, minutesAway, live, profil
         Not sending live data right now — it may not be in service yet.</td></tr>`;
     }
     leaderInner = `<table cellpadding="0" cellspacing="0" border="0">${rows}</table>`;
+  } else if (live.leaderUnavailable) {
+    leaderInner = `<div style="font:400 13px ${SANS};color:${DIM}">Could not load the bus ahead of you in time — open the app to see it.</div>`;
   } else {
     leaderInner = `<div style="font:400 13px ${SANS};color:${DIM}">No bus is scheduled ahead of you in this direction.</div>`;
   }
@@ -167,6 +169,8 @@ function plainText({ resolved, run, reportMin, away, depot, live }) {
     const lt = lateText(live.leader.late);
     out.push(`  Block ${live.leader.block}${live.leader.vehicleId ? ' · bus ' + live.leader.vehicleId : ''}${lt ? ' · ' + lt : ''}`);
     if (live.leader.nextStop) out.push(`  Next stop ${live.leader.nextStop}`);
+  } else if (live.leaderUnavailable) {
+    out.push('  Could not load the bus ahead of you in time — open the app to see it.');
   } else {
     out.push('  No bus is scheduled ahead of you in this direction.');
   }

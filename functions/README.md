@@ -20,8 +20,15 @@ any project reach the internet or run on a schedule.
 - This job runs about **43,000 times a month**. The free allowance is
   **2,000,000**. Running memory, the emails themselves and the SEPTA lookups are
   all well inside their free allowances too.
-- So the expected bill is **$0.00/month**. Set a budget alert anyway (step 1)
-  and Google will email you if anything ever changes.
+- The one thing that grows with use is **database reads**. Every minute the
+  sender re-reads each subscriber's schedule — deliberately fresh, so a run
+  entered five minutes before reporting is never missed. That is roughly
+  **14,000 reads a day for each person** who turns the email on, against a free
+  **50,000 a day**: the first three or so cost nothing, and each further person
+  adds about **20 cents a month**.
+- So for a few colleagues the bill is **$0.00**, and for a whole depot it is a
+  few dollars. Set a budget alert anyway (step 1) and Google will email you if
+  anything ever changes.
 
 The card is needed for one specific reason: the free plan blocks outgoing
 internet calls, and this has to call SEPTA.
@@ -72,16 +79,23 @@ npm --prefix functions install
 It downloads into `functions/node_modules` and finishes with a line like
 `added 420 packages`. Nothing is committed to git; the folder is ignored.
 
-**6. Give it the Gmail details.** These are stored by Google as secrets, not in
-the repo:
+**6. Give it the Gmail details.** These are stored by Google as secrets, never
+in the repo, and each command asks for its value and hides what you type. Run
+them in your own terminal:
 
 ```bash
 firebase functions:secrets:set GMAIL_USER
+```
+
+```bash
 firebase functions:secrets:set GMAIL_APP_PASSWORD
 ```
 
 The first asks for the Gmail address to send from; the second for the
-16-character app password from step 2.
+16-character app password from step 2 (it makes no difference whether you paste
+it with its spaces). Nobody else needs to see either one — including whoever is
+helping with this project. If you skip this step, the deploy asks for the same
+two values itself, the same way.
 
 **7. Deploy:**
 
@@ -108,7 +122,13 @@ Nothing here touches the website — that stays on GitHub Pages exactly as it is
 ## Checking it works
 
 - Open **My run → ALERTS**. Under "Email before my run" it says
-  *Sender is running · last checked …* within a minute of deploying.
+  *Sender is running · last checked …* within a minute of deploying. If
+  something is wrong it says what, in words:
+  - *the database index … is still being built* — normal for the first few
+    minutes after a deploy; nothing to do.
+  - *Gmail refused the sender's login* — the Gmail address or app password
+    stored in step 6 is wrong. Set that secret again and redeploy.
+  - *has not run since …* — the sender is not running at all; see the logs.
 - Turn the switch on, set the minutes, and check the address it sends to.
 - To try it without waiting for a real run: on My run → SCHEDULE, tap today and
   give yourself a run with a report time a few minutes from now. The email
@@ -123,11 +143,21 @@ Nothing here touches the website — that stays on GitHub Pages exactly as it is
   the same rule the countdown follows.
 - **One email per run.** The claim is written to Firestore before sending, so
   two copies of the job cannot both send. If sending fails, the claim is
-  dropped and the next minute tries again.
+  dropped and the next minute tries again. Once mail has gone out the claim is
+  never removed, whatever else goes wrong, so a database hiccup cannot cause a
+  second email.
 - **A missed minute still sends**, up to 3 minutes late, and the email says how
   far off the report time actually is.
-- **Missing live data never stops the email.** No leader, no detour feed, or a
-  run the paddle does not know each degrade to a line saying so.
+- **The email is never held up by live data.** SEPTA gets 20 seconds; whatever
+  has not arrived by then is left out and the email says so. No leader, no
+  detour feed, or a run the paddle does not know each degrade to a line saying
+  so.
+- **Schedules are read fresh every minute**, so a run given to a Slate operator
+  five minutes before reporting is not missed. The paddle, pick and holiday
+  files it consults are re-fetched every 10 minutes, because this server stays
+  warm for days and a new pick must not be ignored.
+- **Everyone reporting at the same minute** (a shift change) is handled five at a
+  time, and one person's failure never stops the others.
 - **Vacation weeks, days off and edited days** are all honoured, because the
   resolver is the app's own (`vendor/pa-resolve.js`).
 - **Only a plain address is accepted.** The address and the run number are typed
@@ -137,6 +167,19 @@ Nothing here touches the website — that stays on GitHub Pages exactly as it is
 - **Times are Philadelphia's**, asked for explicitly rather than taken from the
   server's clock (Google's servers run on UTC). Tested with the machine clock set
   to UTC and to Tokyo, across both daylight-saving changes.
+
+## Tests
+
+```bash
+npm --prefix functions test
+```
+
+39 tests, offline, under a second. They run the sender against an in-memory
+database, a fake mailer and stubbed live data: when it sends and when it must
+not, no double emails, a failed send retrying, a slow SEPTA, a shift change,
+the midnight case, the status messages, and the timezone and address rules. The
+deploy runs them first, so a sender that fails its own tests cannot be deployed
+by accident.
 
 ## Dependencies
 
@@ -153,9 +196,11 @@ decommissioned on 2026-10-30, after which nothing on it can be deployed.
 
 | | |
 |---|---|
-| `index.js` | the every-minute job: who is due, claim, send |
-| `lib/plan.js` | works out the run, the leader and the detours |
+| `index.js` | the wiring only: schedule, secrets, the real mail transport |
+| `lib/sender.js` | every decision: who is due, the claim, retries, the heartbeat |
+| `lib/plan.js` | works out the run, the leader and the detours; timing and address rules |
 | `lib/email.js` | the email itself (subject, HTML, plain text) |
+| `test/` | the tests, plus `fake-db.mjs`, an in-memory Firestore |
 | `vendor/` | **generated** — copies of `assets/pa-schedule.js`, `pa-resolve.js`, `pa-live.js`. Never edit; edit the originals |
 | `scripts/sync.js` | makes those copies (`npm run sync`, and the deploy does it) |
 | `../firebase.json`, `../.firebaserc` | which project, which runtime (Node 24), what the deploy uploads |

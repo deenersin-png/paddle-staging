@@ -388,6 +388,14 @@ export async function loadGtfsManifest() {
 }
 
 const tripsMem = new Map();
+
+/**
+ * Forget everything fetched so far (paddles, picks, GTFS trips, holidays). A
+ * page never lives long enough to need this. The email sender's server
+ * instance stays warm for days, and would otherwise keep serving last week's
+ * picks and holidays, so it calls this on a timer.
+ */
+export function clearCaches() { mem.clear(); tripsMem.clear(); }
 /**
  * All trips on one route for a day type, normalised to minutes. Route files
  * are 110-150 KB; the browser HTTP cache handles repeat loads, and we only

@@ -8,8 +8,15 @@
       "source": "functions",
       "codebase": "default",
       "runtime": "nodejs24",
-      "predeploy": ["npm --prefix \"$RESOURCE_DIR\" run sync"],
-      "ignore": ["node_modules", ".git", "*.log"]
+      "predeploy": [
+        "npm --prefix \"$RESOURCE_DIR\" run sync",
+        "npm --prefix \"$RESOURCE_DIR\" test"
+      ],
+      "ignore": [
+        "node_modules",
+        ".git",
+        "*.log"
+      ]
     }
   ]
 }

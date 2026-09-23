@@ -4,11 +4,13 @@
   "private": true,
   "type": "module",
   "main": "index.js",
-  "engines": { "node": "24" },
+  "engines": {
+    "node": "24"
+  },
   "scripts": {
     "sync": "node scripts/sync.js",
-    "check": "node scripts/check.js",
-    "logs": "firebase functions:log --only preRunEmail"
+    "logs": "firebase functions:log --only preRunEmail",
+    "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
     "firebase-admin": "^12.6.0",
