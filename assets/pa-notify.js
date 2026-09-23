@@ -28,7 +28,14 @@ export const DEFAULTS = {
   shiftLeadMin: 30,
   quietEnabled: false,
   quietStart: '22:00',
-  quietEnd: '05:00'
+  quietEnd: '05:00',
+  // Tier 2, and the only alert that survives the app being closed: an email
+  // sent from the server (functions/) a couple of minutes before reporting,
+  // carrying the bus ahead and the detours. These three fields are read by
+  // that function; nothing in this module acts on them.
+  emailEnabled: false,
+  emailLeadMin: 2,
+  emailTo: ''
 };
 const LS_SETTINGS = 'pa_notify';
 const LS_FIRED    = 'pa_notify_fired';
@@ -80,6 +87,24 @@ export async function save(patch) {
     } catch (e) { console.warn('[pa] notify save', e.code || e.message); }
   }
   if (lastInput) schedule(lastInput);
+}
+
+/**
+ * When the email sender last ran, from the heartbeat it writes each minute.
+ * Resolves { lastRunAt, ok } — ok false means it has not run in a while, and
+ * null means it has never run, so the screen can say so rather than leave an
+ * operator waiting for an email that nothing is sending.
+ */
+export async function senderStatus() {
+  const fb = initFirebase();
+  if (!fb) return null;
+  try {
+    const snap = await getDoc(doc(fb.db, 'config', 'emailSender'));
+    if (!snap.exists()) return null;
+    const at = snap.data().lastRunAt;
+    const ms = at && at.toMillis ? at.toMillis() : 0;
+    return { lastRunAt: ms, ok: ms > 0 && Date.now() - ms < 10 * 60000 };
+  } catch (_) { return null; }
 }
 
 // ---- capability -----------------------------------------------------------

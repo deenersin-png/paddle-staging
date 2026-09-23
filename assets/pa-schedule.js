@@ -20,8 +20,16 @@
 // numbers work in Dart.
 // ==========================================================================
 
-export const PADDLE_BASE = new URL('data/', document.baseURI).href;   // same origin
-export const PICKS_URL   = new URL('picks.csv', document.baseURI).href;
+// In a page these resolve against the page itself, so a fork or a staging
+// copy reads its own data. Off a page — the email sender in functions/ runs
+// this same module in Node — there is no document, so the published site is
+// the source; PA_SITE overrides it for a staging run.
+const SITE_BASE = typeof document !== 'undefined'
+  ? document.baseURI
+  : (globalThis.PA_SITE || 'https://deenersin-png.github.io/septa-scheduler/');
+
+export const PADDLE_BASE = new URL('data/', SITE_BASE).href;
+export const PICKS_URL   = new URL('picks.csv', SITE_BASE).href;
 export const GTFS_BASE   = 'https://deenersin-png.github.io/septa-gtfs/data';
 
 // ---- time helpers ---------------------------------------------------------

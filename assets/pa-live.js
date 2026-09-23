@@ -43,6 +43,28 @@ const ROUTE_ALIASES = {
 };
 export const aliasesOf = route => ROUTE_ALIASES[route] || [route];
 
+/**
+ * Off a page — the email sender runs this module in Node — there is no
+ * document to hang a script tag on, and no CORS rule to dodge either, so the
+ * endpoints are simply fetched. Everything below this line (the parsing, the
+ * aliases, the detour cards) is then shared by the app and the sender.
+ */
+async function httpJson(endpoints, arg, idx = 0) {
+  if (idx >= endpoints.length) throw new Error('All endpoints failed');
+  try {
+    const url = endpoints[idx](arg).replace(/[?&]callback=$/, '');
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
+    try {
+      const res = await fetch(url, { signal: ctl.signal });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return await res.json();
+    } finally { clearTimeout(timer); }
+  } catch (_) {
+    return httpJson(endpoints, arg, idx + 1);
+  }
+}
+
 /** Try each endpoint in turn until one calls back. Rejects if all fail. */
 function jsonp(endpoints, arg, idx = 0) {
   return new Promise((resolve, reject) => {
@@ -63,6 +85,9 @@ function jsonp(endpoints, arg, idx = 0) {
     document.head.appendChild(el);
   });
 }
+
+/** JSONP in a page, a plain fetch anywhere else. */
+const request = typeof document !== 'undefined' ? jsonp : httpJson;
 
 // ---- TransitView -----------------------------------------------------------
 
@@ -98,7 +123,7 @@ function parseTVData(raw) {
 export async function fetchRoute(route) {
   for (const name of aliasesOf(route)) {
     try {
-      const buses = parseTVData(await jsonp(TV_ENDPOINTS, name));
+      const buses = parseTVData(await request(TV_ENDPOINTS, name));
       if (buses.length) return buses;
     } catch (_) { /* try the next alias */ }
   }
@@ -167,7 +192,7 @@ export async function fetchDetours(routes) {
       let answered = false;
       for (const name of aliasesOf(route)) {
         let data;
-        try { data = await jsonp(DETOUR_ENDPOINTS, name); answered = true; } catch (_) { continue; }
+        try { data = await request(DETOUR_ENDPOINTS, name); answered = true; } catch (_) { continue; }
         if (!Array.isArray(data)) continue;
         for (const group of data) {
           const rid = String(group.route_id || name);

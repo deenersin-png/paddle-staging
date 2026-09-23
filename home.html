@@ -876,6 +876,57 @@ function renderAlerts() {
   body.appendChild(test);
 
   body.appendChild(el('div', 'hint', 'Alerts fire while this page is open or in the background. If the app is fully closed nothing fires — that needs push notifications, which come later. The alert time is the scheduled time; it never moves with the bus ahead of you.'));
+
+  renderEmailAlerts(body, s);
+}
+
+// The one alert that survives the app being closed: the server emails the
+// operator before they report, with the bus ahead and the detours in it.
+function renderEmailAlerts(body, s) {
+  body.appendChild(el('h2', 'k', 'Email before my run')).style.marginTop = '22px';
+
+  const box = el('label', 'check');
+  const cb = el('input'); cb.type = 'checkbox'; cb.checked = !!s.emailEnabled;
+  cb.addEventListener('change', async () => { await N.save({ emailEnabled: cb.checked }); renderAlerts(); });
+  box.append(cb, document.createTextNode('Email me before my run starts'));
+  body.appendChild(box);
+
+  if (!s.emailEnabled) {
+    body.appendChild(el('div', 'hint', 'Sent whether or not the app is open — your run, the bus ahead of you, and any detour on your routes, as they are at that minute.'));
+    return;
+  }
+
+  const row = el('div', 'form-row');
+  row.appendChild(selectField('Sent before report time', [2, 5, 10, 15, 30], s.emailLeadMin || 2,
+    v => N.save({ emailLeadMin: v }).then(renderAlerts), ' min'));
+  body.appendChild(row);
+
+  const f = el('div', 'pa-field');
+  f.appendChild(el('label', 'pa-label', 'Send it to'));
+  const addr = el('input', 'pa-input');
+  addr.type = 'email'; addr.autocomplete = 'email';
+  addr.value = s.emailTo || (ctx.profile && ctx.profile.email) || (ctx.user && ctx.user.email) || '';
+  addr.placeholder = 'you@example.com';
+  let t;
+  addr.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => N.save({ emailTo: addr.value.trim() }), 700); });
+  f.appendChild(addr);
+  body.appendChild(f);
+
+  body.appendChild(el('div', 'hint', 'The email carries the run, the bus one headway ahead of you and the detours on your routes, looked up the moment it is sent. The time it goes out is the scheduled report time — a late leader never moves it.'));
+
+  const status = el('div', 'msgline');
+  body.appendChild(status);
+  status.textContent = 'Checking the sender…';
+  N.senderStatus().then(st => {
+    if (!st) {
+      status.textContent = 'No emails yet: the sender is not switched on for this app. Nothing else on this screen is affected.';
+      status.className = 'msgline err';
+      return;
+    }
+    const when = new Date(st.lastRunAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    status.textContent = st.ok ? 'Sender is running · last checked ' + when : 'Sender has not run since ' + when + ' — emails may be delayed.';
+    status.className = 'msgline ' + (st.ok ? 'ok' : 'err');
+  }).catch(() => { status.textContent = ''; });
 }
 
 // ---- SCHEDULE -------------------------------------------------------------

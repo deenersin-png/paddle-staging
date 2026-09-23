@@ -1,0 +1,4 @@
+node_modules/
+# Copied from ../assets by `npm run sync` (and by the deploy itself), so the
+# app's own modules are the only copy that is ever edited.
+vendor/

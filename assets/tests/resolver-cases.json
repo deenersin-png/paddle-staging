@@ -1,5 +1,5 @@
 {
- "note": "Pure resolver cases for pa-assignments.resolvePure(), plus the pay formulas. Run hours are intentionally excluded (they come from the paddle). Regenerated 2026-09-14 with today=2026-09-14; vacation added 2026-09-22. fixture.vacations are vacation WEEKS (week-start Sundays): a week in that list turns every untouched day in it into a vacation day, and pays 44 h once for the week (formulas.weekTotals.vacation), never per day. An explicit day still outranks it. A Dart port must reproduce every `expect` exactly. extrasMin = sum of extraPayMin(): late allowance pays stored minutes x1.5 (unrounded), holiday amount comes from the day's kind (worked 720, not worked 480).",
+ "note": "Pure resolver cases for pa-assignments.resolvePure(), plus the pay formulas. Run hours are intentionally excluded (they come from the paddle). Regenerated 2026-09-14 with today=2026-09-14; vacation added 2026-09-22. fixture.vacations are vacation WEEKS (week-start Sundays): a week in that list turns every untouched day in it into a vacation day, and pays 44 h once for the week (formulas.weekTotals.vacation), never per day. An explicit day still outranks it. A Dart port must reproduce every `expect` exactly. extrasMin = sum of extraPayMin(): late allowance pays stored minutes x1.5 (unrounded), holiday amount comes from the day's kind (worked 720, not worked 480). formulas.isDue belongs to the email sender in functions/, not to the app, and is kept here so every timing rule sits in one file.",
  "fixture": {
   "overrides": {
    "2026-09-07": "sunday"
@@ -600,6 +600,88 @@
      "expectActualMin": 0,
      "expectDaysWorked": 0,
      "why": "before it starts: planned, nothing accrued"
+    }
+   ]
+  },
+  "isDue": {
+   "why": "When the pre-run email goes out. Implemented in functions/lib/plan.js (isDue), not in the app. The moment is reportMin - lead, from the SCHEDULE only; a late leader never moves it. A minute that was missed still sends for up to catchUp minutes, and dayOffsetMin 1440 is how a run reporting after midnight is sent for the night before.",
+   "catchUp": 3,
+   "cases": [
+    {
+     "reportMin": 869,
+     "nowMin": 866,
+     "lead": 2,
+     "expectDue": false,
+     "why": "a minute early"
+    },
+    {
+     "reportMin": 869,
+     "nowMin": 867,
+     "lead": 2,
+     "expectDue": true,
+     "expectMinutesAway": 2,
+     "why": "the minute itself: 2:27 PM for a 2:29 PM report"
+    },
+    {
+     "reportMin": 869,
+     "nowMin": 868,
+     "lead": 2,
+     "expectDue": true,
+     "expectMinutesAway": 1,
+     "why": "a missed minute still sends"
+    },
+    {
+     "reportMin": 869,
+     "nowMin": 869,
+     "lead": 2,
+     "expectDue": true,
+     "expectMinutesAway": 0,
+     "why": "at the report time: sends, saying \"now\""
+    },
+    {
+     "reportMin": 869,
+     "nowMin": 870,
+     "lead": 2,
+     "expectDue": true,
+     "why": "three minutes late is the last chance"
+    },
+    {
+     "reportMin": 869,
+     "nowMin": 871,
+     "lead": 2,
+     "expectDue": false,
+     "why": "beyond catch-up: better nothing than a wrong warning"
+    },
+    {
+     "reportMin": 869,
+     "nowMin": 839,
+     "lead": 30,
+     "expectDue": true,
+     "why": "a 30-minute lead"
+    },
+    {
+     "reportMin": 5,
+     "nowMin": 1435,
+     "lead": 10,
+     "dayOffsetMin": 1440,
+     "expectDue": true,
+     "expectMinutesAway": 10,
+     "why": "12:05 AM report, sent at 11:55 PM the night before"
+    },
+    {
+     "reportMin": 5,
+     "nowMin": 1430,
+     "lead": 10,
+     "dayOffsetMin": 1440,
+     "expectDue": false,
+     "why": "not yet at 11:50 PM"
+    },
+    {
+     "reportMin": 5,
+     "nowMin": 3,
+     "lead": 2,
+     "expectDue": true,
+     "why": "with the default 2-minute lead the same run sends at 12:03 AM, in its own day"
     }
    ]
   }
