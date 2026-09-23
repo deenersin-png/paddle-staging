@@ -16,6 +16,43 @@ import * as R from '../vendor/pa-resolve.js';
 import * as L from '../vendor/pa-live.js';
 
 /**
+ * The address to send to, or '' when what was given is not one.
+ *
+ * It is typed by the operator into a document they can write, and it goes
+ * straight into an SMTP library, so it is checked here instead of trusted: ONE
+ * plain address — no lists, quotes, angle brackets or line breaks — of a
+ * sensible length. The length check comes first, so a megabyte of junk is
+ * rejected without being parsed.
+ */
+export function cleanAddress(v) {
+  const s = String(v == null ? '' : v).trim();
+  return s.length <= 254 && /^[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/.test(s) ? s : '';
+}
+
+/** The one timezone this whole app lives in. */
+export const ZONE = 'America/New_York';
+
+/**
+ * The date and the minute-of-day in PHILADELPHIA, whatever the container's
+ * clock is set to. A paddle's "2:29 PM" is 2:29 PM in Philadelphia, and a
+ * server that thinks in UTC would send every email four or five hours out —
+ * so the timezone is asked for explicitly rather than inherited from the
+ * machine. `now` is a parameter only so this can be tested at fixed instants.
+ */
+export function philadelphiaNow(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: ZONE, hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+  }).formatToParts(now);
+  const at = t => parts.find(p => p.type === t).value;
+  const hour = at('hour') === '24' ? '00' : at('hour');        // midnight, some ICU builds
+  return {
+    date: at('year') + '-' + at('month') + '-' + at('day'),
+    nowMin: parseInt(hour, 10) * 60 + parseInt(at('minute'), 10)
+  };
+}
+
+/**
  * The operator's run on `date`, or null when they are off / nothing is
  * registered / there is no time to count down to.
  *

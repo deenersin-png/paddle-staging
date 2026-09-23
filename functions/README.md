@@ -89,8 +89,17 @@ The first asks for the Gmail address to send from; the second for the
 firebase deploy --only functions,firestore:indexes
 ```
 
-The deploy copies the app's own schedule modules into `functions/vendor/`
-first, so the email can never disagree with the app.
+The project (`paddle-app-3e565`) is already chosen by `.firebaserc`, so there is
+nothing to select. The first deploy asks to switch on a few Google services
+(Cloud Functions, Cloud Build, Cloud Scheduler, Secret Manager) — say yes to
+each; it happens once and takes several minutes. It also copies the app's own
+schedule modules into `functions/vendor/` first, so the email can never
+disagree with the app.
+
+**Then give it about five minutes before testing.** The sender finds who to
+email using a small database index that Google builds in the background after
+the first deploy. Until it is ready the sender is running but can find nobody,
+so an early test can look as if nothing is happening.
 
 Nothing here touches the website — that stays on GitHub Pages exactly as it is.
 
@@ -121,6 +130,24 @@ Nothing here touches the website — that stays on GitHub Pages exactly as it is
   run the paddle does not know each degrade to a line saying so.
 - **Vacation weeks, days off and edited days** are all honoured, because the
   resolver is the app's own (`vendor/pa-resolve.js`).
+- **Only a plain address is accepted.** The address and the run number are typed
+  by the operator into documents they can write, so both are checked before they
+  go anywhere near the mail library: one address, no lists, brackets or line
+  breaks. An address that fails falls back to the account's own email.
+- **Times are Philadelphia's**, asked for explicitly rather than taken from the
+  server's clock (Google's servers run on UTC). Tested with the machine clock set
+  to UTC and to Tokyo, across both daylight-saving changes.
+
+## Dependencies
+
+`npm audit` reports advisories, almost all in `nodemailer` 6. They concern
+features this job never uses (custom envelopes, list headers, OAuth2, raw
+messages) or input it now checks itself. The fix is a major upgrade (nodemailer
+10, firebase-admin 14) that cannot be tested end to end without sending real
+mail, so it is left for a deliberate upgrade rather than done blind.
+
+The function runs on **Node 24**. Firebase's own runtime table lists Node 20 as
+decommissioned on 2026-10-30, after which nothing on it can be deployed.
 
 ## Files
 
@@ -131,3 +158,4 @@ Nothing here touches the website — that stays on GitHub Pages exactly as it is
 | `lib/email.js` | the email itself (subject, HTML, plain text) |
 | `vendor/` | **generated** — copies of `assets/pa-schedule.js`, `pa-resolve.js`, `pa-live.js`. Never edit; edit the originals |
 | `scripts/sync.js` | makes those copies (`npm run sync`, and the deploy does it) |
+| `../firebase.json`, `../.firebaserc` | which project, which runtime (Node 24), what the deploy uploads |

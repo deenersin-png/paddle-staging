@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "main": "index.js",
-  "engines": { "node": "20" },
+  "engines": { "node": "24" },
   "scripts": {
     "sync": "node scripts/sync.js",
     "check": "node scripts/check.js",

@@ -33,7 +33,9 @@ export function lateText(late) {
 
 /** Subject line: the three things worth seeing on a lock screen. */
 export function subjectFor({ resolved, run, reportMin, minutesAway, live }) {
-  const bits = ['Run ' + resolved.runNo];
+  // The run number is typed by the operator and this is an email HEADER, where
+  // a line break would start a new header. Keep to what a run number is.
+  const bits = ['Run ' + String(resolved.runNo).replace(/[^A-Za-z0-9 -]/g, '').slice(0, 12)];
   bits.push('report ' + S.fmtClock(reportMin) + (minutesAway > 0 ? ' · in ' + minutesAway + ' min' : ' · now'));
   const lt = live && live.leader ? lateText(live.leader.late) : null;
   if (lt && lt !== 'on time') bits.push('leader ' + lt);

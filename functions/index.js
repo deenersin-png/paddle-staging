@@ -26,33 +26,13 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import nodemailer from 'nodemailer';
 
 import * as S from './vendor/pa-schedule.js';
-import { runOnDate, liveContext, loadOverrides, isDue } from './lib/plan.js';
+import { runOnDate, liveContext, loadOverrides, isDue, philadelphiaNow, cleanAddress, ZONE } from './lib/plan.js';
 import { buildEmail } from './lib/email.js';
 
 const GMAIL_USER = defineSecret('GMAIL_USER');
 const GMAIL_APP_PASSWORD = defineSecret('GMAIL_APP_PASSWORD');
 
 const APP_URL = 'https://deenersin-png.github.io/septa-scheduler/home.html';
-const ZONE = 'America/New_York';
-
-/**
- * The date and the minute-of-day in PHILADELPHIA, whatever the container's
- * clock is set to. A paddle's "2:29 PM" is 2:29 PM in Philadelphia, and a
- * server that thinks in UTC would send every email four or five hours out —
- * so the timezone is asked for explicitly rather than inherited.
- */
-function philadelphiaNow() {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: ZONE, hour12: false,
-    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
-  }).formatToParts(new Date());
-  const at = t => parts.find(p => p.type === t).value;
-  const hour = at('hour') === '24' ? '00' : at('hour');        // midnight, some ICU builds
-  return {
-    date: at('year') + '-' + at('month') + '-' + at('day'),
-    nowMin: parseInt(hour, 10) * 60 + parseInt(at('minute'), 10)
-  };
-}
 
 // How many minutes before the report time an operator is asked for by
 // default, and the limits the settings screen offers.
@@ -66,7 +46,7 @@ initializeApp();
 const db = getFirestore();
 
 export const preRunEmail = onSchedule({
-  schedule: 'every 1 minutes',
+  schedule: '* * * * *',            // every minute, in the one form every scheduler accepts
   timeZone: ZONE,
   region: 'us-east1',
   memory: '512MiB',
@@ -135,7 +115,9 @@ async function handle(sub, today, nowMin, overrides) {
   const profile = profSnap.exists ? profSnap.data() : null;
   if (!profile || !profile.depotKey) return false;
 
-  const to = (settings.emailTo || profile.email || '').trim();
+  // The address the operator chose, else the account's own. Both are checked:
+  // this is text from documents the operator can write.
+  const to = cleanAddress(settings.emailTo) || cleanAddress(profile.email);
   if (!to) return false;
 
   let date = today;
@@ -190,14 +172,18 @@ function clampLead(v) {
 
 let transport = null;
 async function send(to, mail) {
+  // Secrets can arrive with a stray newline or space, and Google shows an app
+  // password in four groups ("abcd efgh ijkl mnop"). Neither is part of the
+  // password, and either would surface as "535 authentication failed".
+  const user = GMAIL_USER.value().trim();
   if (!transport) {
     transport = nodemailer.createTransport({
       service: 'gmail',
-      auth: { user: GMAIL_USER.value(), pass: GMAIL_APP_PASSWORD.value() }
+      auth: { user, pass: GMAIL_APP_PASSWORD.value().replace(/\s+/g, '') }
     });
   }
   await transport.sendMail({
-    from: 'Paddle App <' + GMAIL_USER.value() + '>',
+    from: 'Paddle App <' + user + '>',
     to,
     subject: mail.subject,
     text: mail.text,
