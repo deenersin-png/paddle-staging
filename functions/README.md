@@ -41,20 +41,38 @@ Google account → **Security** → 2-Step Verification must be on → **App pas
 → create one called "Paddle App". You get a 16-character password. It is not
 your Gmail password and can be revoked at any time.
 
-**3. Install the tools** (once, on your PC):
+**3. Install Node.js** (once, on your PC). It is what runs this code, and `npm`
+— the command in the next steps — comes with it:
+
+```bash
+winget install OpenJS.NodeJS.LTS
+```
+
+Then **close the terminal and open a new one**, or Windows will not have picked
+up the new command yet. `node --version` should answer with a version number.
+
+**4. Install the Firebase tools** (once):
 
 ```bash
 npm install -g firebase-tools
+```
+
+```bash
 firebase login
 ```
 
-**4. Install this folder's dependencies:**
+**5. Install this folder's dependencies.** Run this from the project folder
+(`septa-scheduler`), not from inside `functions` — the `--prefix` is what says
+which folder to install into:
 
 ```bash
 npm --prefix functions install
 ```
 
-**5. Give it the Gmail details.** These are stored by Google as secrets, not in
+It downloads into `functions/node_modules` and finishes with a line like
+`added 420 packages`. Nothing is committed to git; the folder is ignored.
+
+**6. Give it the Gmail details.** These are stored by Google as secrets, not in
 the repo:
 
 ```bash
@@ -65,7 +83,7 @@ firebase functions:secrets:set GMAIL_APP_PASSWORD
 The first asks for the Gmail address to send from; the second for the
 16-character app password from step 2.
 
-**6. Deploy:**
+**7. Deploy:**
 
 ```bash
 firebase deploy --only functions,firestore:indexes
