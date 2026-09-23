@@ -69,13 +69,30 @@ function css() {
   .pa-su-day small{display:block;font-size:9px;font-weight:400;letter-spacing:.06em;color:var(--pa-dim);margin-top:3px}
   .pa-su-day.off{border-color:rgba(245,166,35,.35);background:var(--pa-amber-dim);color:var(--pa-amber)}
   .pa-su-day.off small{color:var(--pa-amber)}
-  .pa-su-wk{display:flex;gap:8px;align-items:flex-start;margin-bottom:8px}
-  .pa-su-wk .pa-input{flex:1 1 auto}
-  .pa-su-x{flex:0 0 auto;width:38px;height:38px;background:none;border:1px solid var(--pa-line2);border-radius:var(--pa-radius);
-    color:var(--pa-dim);font-size:16px;line-height:1;cursor:pointer}
-  .pa-su-x:hover{color:var(--pa-red);border-color:rgba(255,107,107,.35)}
-  .pa-su-read{font-family:var(--pa-mono);font-size:11px;color:var(--pa-dim);margin:-4px 0 10px;line-height:1.5;min-height:15px}
-  .pa-su-read.ok{color:var(--pa-green)}.pa-su-read.warn{color:var(--pa-amber)}
+  /* week calendar: only the Sundays are buttons */
+  .pa-cal{border:1px solid var(--pa-line);border-radius:var(--pa-radius);padding:10px}
+  .pa-cal-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+  .pa-cal-title{font-family:var(--pa-mono);font-size:13px;font-weight:600;letter-spacing:.04em;color:var(--pa-bright)}
+  .pa-cal-nav{width:34px;height:34px;background:none;border:1px solid var(--pa-line2);border-radius:var(--pa-radius);
+    color:var(--pa-mid);font-size:18px;line-height:1;cursor:pointer}
+  .pa-cal-nav:hover:not(:disabled){color:var(--pa-amber);border-color:var(--pa-line3)}
+  .pa-cal-nav:disabled{opacity:.3;cursor:default}
+  .pa-cal-dow{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px}
+  .pa-cal-dow span{text-align:center;font-family:var(--pa-mono);font-size:9px;font-weight:600;letter-spacing:.08em;color:var(--pa-dim)}
+  .pa-cal-dow span.sun{color:var(--pa-amber)}
+  .pa-cal-row{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;border-radius:var(--pa-radius);margin-bottom:2px}
+  .pa-cal-row.on{background:var(--pa-amber-dim)}
+  .pa-cal-d{text-align:center;padding:10px 0;font-family:var(--pa-mono);font-size:12px;color:var(--pa-mid)}
+  .pa-cal-d.out{opacity:.35}
+  .pa-cal-d.today{color:var(--pa-bright);font-weight:600}
+  .pa-cal-sun{padding:10px 0;font-family:var(--pa-mono);font-size:12px;font-weight:600;color:var(--pa-text);
+    background:var(--pa-ink);border:1px solid var(--pa-line2);border-radius:var(--pa-radius);cursor:pointer}
+  .pa-cal-sun:hover:not(:disabled){border-color:var(--pa-amber);color:var(--pa-amber)}
+  .pa-cal-sun.out{opacity:.5}
+  .pa-cal-sun.today{border-color:var(--pa-line3)}
+  .pa-cal-sun:disabled{opacity:.25;cursor:default}
+  .pa-cal-row.on .pa-cal-sun{background:var(--pa-amber);border-color:var(--pa-amber);color:var(--pa-ink)}
+  .pa-cal-row.on .pa-cal-d{color:var(--pa-amber)}
   .pa-su-nav{display:flex;gap:8px;margin-top:18px}
   .pa-su-nav .pa-submit{margin-top:0}
   .pa-su-nav .pa-ghost{width:auto;flex:0 0 auto;padding-left:18px;padding-right:18px}
@@ -134,7 +151,7 @@ export async function openSetup(node, { user, profile, overrides, onDone }) {
     depotLabel: draft.depotLabel || (profile && profile.depotLabel) || '',
     driverType: draft.driverType || '',
     vacDays:    draft.vacDays != null ? draft.vacDays : null,
-    vacWeeks:   Array.isArray(draft.vacWeeks) ? draft.vacWeeks : [''],
+    vacWeeks:   (Array.isArray(draft.vacWeeks) ? draft.vacWeeks : []).filter(v => /^\d{4}-\d{2}-\d{2}$/.test(v)),
     offDays:    draft.offDays instanceof Set ? draft.offDays : new Set([0, 6]),
     runs:       draft.runs || { weekday: '', saturday: '', sunday: '' },
     perDay:     draft.perDay || null,
@@ -252,55 +269,48 @@ export async function openSetup(node, { user, profile, overrides, onDone }) {
     parent.appendChild(fd);
 
     parent.appendChild(el('label', 'pa-label', 'Which weeks?'));
-    parent.appendChild(el('div', 'hint', 'Type the Sunday the week starts — 27/9 and 9/27 both work, so does Sep 27.'));
-    const list = el('div'); list.style.marginTop = '8px';
-    parent.appendChild(list);
+    parent.appendChild(el('div', 'hint', 'Tap the Sunday that starts each week you are off.'));
 
-    function drawWeeks() {
+    const cal = el('div'); cal.style.marginTop = '8px';
+    const list = el('div');
+    parent.append(cal, list);
+
+    const picker = weekCalendar(cal, {
+      today,
+      selected: () => w.vacWeeks,
+      onToggle: ws => {
+        const i = w.vacWeeks.indexOf(ws);
+        if (i >= 0) w.vacWeeks.splice(i, 1); else w.vacWeeks.push(ws);
+        w.vacWeeks.sort();
+        picker.redraw(); drawList(); drawTotal(); saveDraft(user.uid, w);
+      }
+    });
+
+    function drawList() {
       list.textContent = '';
-      w.vacWeeks.forEach((val, i) => {
-        const row = el('div', 'pa-su-wk');
-        const inp = el('input', 'pa-input');
-        inp.type = 'text'; inp.placeholder = i === 0 ? 'e.g. 27/9' : 'another week';
-        inp.value = val || '';
-        inp.setAttribute('aria-label', 'Vacation week ' + (i + 1));
-        const read = el('div', 'pa-su-read');
-        const x = el('button', 'pa-su-x', '×'); x.type = 'button';
-        x.setAttribute('aria-label', 'Remove this week');
+      if (!w.vacWeeks.length) return;
+      const wrap = el('div', 'wins'); wrap.style.marginTop = '10px';
+      w.vacWeeks.forEach(ws => {
+        const row = el('div', 'win');
+        const d = el('div', 'win-d', weekLabel(ws));
+        d.appendChild(el('small', null, A.fmtHours(A.VACATION_WEEK_PAY_MIN) + ' h'));
+        const x = el('button', 'rowbtn rm', 'REMOVE'); x.type = 'button';
         x.addEventListener('click', () => {
-          w.vacWeeks.splice(i, 1);
-          if (!w.vacWeeks.length) w.vacWeeks = [''];
-          drawWeeks(); drawTotal(); saveDraft(user.uid, w);
+          w.vacWeeks = w.vacWeeks.filter(v => v !== ws);
+          picker.redraw(); drawList(); drawTotal(); saveDraft(user.uid, w);
         });
-        inp.addEventListener('input', () => {
-          w.vacWeeks[i] = inp.value;
-          showRead(read, inp.value);
-          drawTotal(); saveDraft(user.uid, w);
-        });
-        showRead(read, val);
-        row.append(inp, x);
-        list.append(row, read);
+        const acts = el('div', 'win-acts'); acts.appendChild(x);
+        row.append(d, acts);
+        wrap.appendChild(row);
       });
-      const add = el('button', 'pa-ghost', '+ Add another week'); add.type = 'button';
-      add.addEventListener('click', () => { w.vacWeeks.push(''); drawWeeks(); saveDraft(user.uid, w); });
-      list.appendChild(add);
-    }
-
-    function showRead(node, text) {
-      const t = String(text || '').trim();
-      if (!t) { node.textContent = ''; node.className = 'pa-su-read'; return; }
-      const p = S.parseWeekInput(t, today);
-      if (!p) { node.textContent = 'Not a date I can read — try 27/9 or Sep 27.'; node.className = 'pa-su-read warn'; return; }
-      node.textContent = weekLabel(p.weekStart) + ' · 44 h'
-        + (p.ambiguous ? ' · read as ' + S.fmtDate(p.date) : '');
-      node.className = 'pa-su-read ok';
+      list.appendChild(wrap);
     }
 
     const total = el('div', 'pa-su-note');
     function drawTotal() {
-      const weeks = pickedWeeks(w, today);
+      const weeks = w.vacWeeks;
       const bits = [];
-      bits.push(weeks.length ? weeks.length + (weeks.length === 1 ? ' week' : ' weeks') + ' · ' + A.fmtHours(weeks.length * A.VACATION_WEEK_PAY_MIN) + ' h' : 'No weeks entered yet.');
+      bits.push(weeks.length ? weeks.length + (weeks.length === 1 ? ' week' : ' weeks') + ' · ' + A.fmtHours(weeks.length * A.VACATION_WEEK_PAY_MIN) + ' h' : 'No weeks picked yet.');
       if (w.vacDays) {
         const full = Math.floor(w.vacDays / 5), left = w.vacDays % 5;
         bits.push(w.vacDays + ' days is ' + full + (full === 1 ? ' full week' : ' full weeks')
@@ -309,7 +319,7 @@ export async function openSetup(node, { user, profile, overrides, onDone }) {
       total.textContent = bits.join(' · ');
     }
 
-    drawWeeks(); drawTotal();
+    drawList(); drawTotal();
     parent.appendChild(total);
 
     nav(parent, { back: () => { w.step = 0; draw(); }, next: () => { w.step = 2; draw(); } });
@@ -603,16 +613,94 @@ export async function openSetup(node, { user, profile, overrides, onDone }) {
   draw();
 }
 
+// ---- the week calendar ----------------------------------------------------
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+                     'August', 'September', 'October', 'November', 'December'];
+
+/**
+ * Pick whole weeks off a month calendar. A vacation week IS a week, so only
+ * the Sundays are buttons — the other days are there to find your place by,
+ * and tapping one does nothing. A picked week is filled across the row, which
+ * is what a week off looks like on paper.
+ *
+ * @param node      container, owned by the calendar
+ * @param today     ISO date "now"
+ * @param selected  () => array of week-start Sundays currently picked
+ * @param onToggle  (weekStart) => void, called when a Sunday is tapped
+ * @param from/to   optional ISO bounds (default: 2 months back, 13 forward)
+ * @returns { redraw }
+ */
+export function weekCalendar(node, { today, selected, onToggle, from, to }) {
+  css();
+  const first = iso => iso.slice(0, 8) + '01';
+  const monthOf = iso => iso.slice(0, 7);
+  const shift = (iso, months) => {
+    const d = S.fromIso(first(iso));
+    d.setMonth(d.getMonth() + months);
+    return S.isoDate(d);
+  };
+  const lo = from || shift(today, -2);
+  const hi = to || shift(today, 13);
+  let cursor = first(today);
+
+  function draw() {
+    node.textContent = '';
+    const cal = el('div', 'pa-cal');
+    const picked = new Set(selected() || []);
+
+    const head = el('div', 'pa-cal-head');
+    const prev = el('button', 'pa-cal-nav', '‹'); prev.type = 'button';
+    prev.setAttribute('aria-label', 'Previous month');
+    prev.disabled = monthOf(cursor) <= monthOf(lo);
+    prev.addEventListener('click', () => { cursor = shift(cursor, -1); draw(); });
+    const next = el('button', 'pa-cal-nav', '›'); next.type = 'button';
+    next.setAttribute('aria-label', 'Next month');
+    next.disabled = monthOf(cursor) >= monthOf(hi);
+    next.addEventListener('click', () => { cursor = shift(cursor, 1); draw(); });
+    const d0 = S.fromIso(cursor);
+    head.append(prev, el('div', 'pa-cal-title', MONTH_NAMES[d0.getMonth()] + ' ' + d0.getFullYear()), next);
+    cal.appendChild(head);
+
+    const dow = el('div', 'pa-cal-dow');
+    S.DAY_SHORT.forEach((n, i) => dow.appendChild(el('span', i === 0 ? 'sun' : null, n[0])));
+    cal.appendChild(dow);
+
+    const month = monthOf(cursor);
+    const lastOfMonth = S.addDays(shift(cursor, 1), -1);
+    for (let ws = S.weekStartOf(cursor); ws <= lastOfMonth; ws = S.addDays(ws, 7)) {
+      const on = picked.has(ws);
+      const row = el('div', 'pa-cal-row' + (on ? ' on' : ''));
+      for (let i = 0; i < 7; i++) {
+        const date = S.addDays(ws, i);
+        const num = String(+date.slice(8, 10));
+        const outside = monthOf(date) !== month;
+        if (i === 0) {
+          const b = el('button', 'pa-cal-sun' + (outside ? ' out' : '') + (date === today ? ' today' : ''), num);
+          b.type = 'button';
+          b.disabled = ws < S.weekStartOf(lo) || ws > hi;
+          b.setAttribute('aria-pressed', on ? 'true' : 'false');
+          b.setAttribute('aria-label', (on ? 'Remove vacation week ' : 'Take vacation the week of ') + weekLabel(ws));
+          b.addEventListener('click', () => onToggle(ws));
+          row.appendChild(b);
+        } else {
+          row.appendChild(el('div', 'pa-cal-d' + (outside ? ' out' : '') + (date === today ? ' today' : ''), num));
+        }
+      }
+      cal.appendChild(row);
+    }
+    node.appendChild(cal);
+  }
+
+  draw();
+  return { redraw: draw };
+}
+
 // ---- pure helpers ---------------------------------------------------------
 
-/** Vacation weeks the operator typed, as week-start Sundays, deduped. */
-export function pickedWeeks(w, today) {
-  const out = [];
-  (w.vacWeeks || []).forEach(t => {
-    const p = S.parseWeekInput(t, today);
-    if (p && !out.includes(p.weekStart)) out.push(p.weekStart);
-  });
-  return out.sort();
+/** The vacation weeks picked, as week-start Sundays, deduped. */
+export function pickedWeeks(w) {
+  return [...new Set(w.vacWeeks || [])].sort();
 }
 
 /** What is missing before setup can be saved, or '' when it is complete. */
@@ -682,7 +770,7 @@ function summaryHtml(w, today) {
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const dt = DRIVER_TYPES.find(d => d.id === w.driverType);
   const rows = [['Depot', w.depotLabel || w.depotKey], ['Type', dt ? dt.label : w.driverType]];
-  const weeks = pickedWeeks(w, today);
+  const weeks = pickedWeeks(w);
   rows.push(['Vacation', weeks.length
     ? weeks.length + (weeks.length === 1 ? ' week' : ' weeks') + ' · ' + A.fmtHours(weeks.length * A.VACATION_WEEK_PAY_MIN) + ' h'
     : 'none yet']);
@@ -729,7 +817,7 @@ async function commit(w, user, profile, today, ov, say) {
   if (!A.isAttached()) { say('Connecting…'); await A.attach(user.uid); }
 
   say('Saving your vacation weeks…');
-  await E.confirmWrite(A.saveVacation(pickedWeeks(w, today), w.vacDays), slow('saving vacation'));
+  await E.confirmWrite(A.saveVacation(pickedWeeks(w), w.vacDays), slow('saving vacation'));
 
   const hasWeek = w.driverType !== 'slate' || w.slate.week !== 'none';
   if (hasWeek) {
@@ -781,9 +869,9 @@ async function commit(w, user, profile, today, ov, say) {
 // ---- vacation, after setup ------------------------------------------------
 
 /**
- * The "My vacation" card on the schedule tab: the weeks on record, a box to
- * add one, and how many days are still unspoken for. Same input rules as
- * setup, so an operator learns them once.
+ * The "My vacation" card on the schedule tab: the same calendar setup uses,
+ * the weeks on record, and how many days are still unspoken for. Tapping a
+ * Sunday adds or removes that week straight away.
  */
 export function renderVacationCard(node, { onChange } = {}) {
   css();
@@ -794,6 +882,32 @@ export function renderVacationCard(node, { onChange } = {}) {
   const st = A.getState();
   const weeks = A.vacationWeeks();
   const msg = el('div', 'msgline');
+
+  node.appendChild(el('div', 'hint', weeks.length
+    ? 'Tap a Sunday to add or drop a week. Each one is paid 44 hours and clears your runs for that week.'
+    : 'No vacation weeks yet. Tap the Sunday that starts a week you are off — each one is paid 44 hours and clears your runs for that week.'));
+
+  const cal = el('div'); cal.style.margin = '10px 0';
+  node.appendChild(cal);
+  let busy = false;
+  const picker = weekCalendar(cal, {
+    today,
+    selected: () => A.vacationWeeks(),
+    onToggle: async ws => {
+      if (busy) return;
+      busy = true;
+      const on = !A.getState().vacations.has(ws);
+      try {
+        await E.confirmWrite(A.setVacationWeek(ws, on), () => { msg.textContent = E.WAITING_FOR_SIGNAL; msg.className = 'msgline'; });
+        msg.textContent = (on ? 'Added ' : 'Removed ') + weekLabel(ws) + '.'; msg.className = 'msgline ok';
+        picker.redraw();
+        if (onChange) onChange();
+      } catch (err) {
+        msg.textContent = 'Could not save: ' + (err.code || err.message); msg.className = 'msgline err';
+      }
+      busy = false;
+    }
+  });
 
   if (weeks.length) {
     const list = el('div', 'wins');
@@ -825,41 +939,7 @@ export function renderVacationCard(node, { onChange } = {}) {
       list.appendChild(row);
     });
     node.appendChild(list);
-  } else {
-    node.appendChild(el('div', 'hint', 'No vacation weeks on record. Each one you add is paid 44 hours and clears your runs for that week.'));
   }
-
-  const f = el('div', 'pa-field'); f.style.marginTop = '12px';
-  f.appendChild(el('label', 'pa-label', 'Add a week'));
-  const row = el('div', 'pa-su-wk');
-  const inp = el('input', 'pa-input');
-  inp.type = 'text'; inp.placeholder = 'e.g. 27/9'; inp.setAttribute('aria-label', 'Vacation week to add');
-  const add = el('button', 'pa-ghost', 'ADD'); add.type = 'button'; add.style.width = 'auto'; add.style.flex = '0 0 auto';
-  const read = el('div', 'pa-su-read');
-  inp.addEventListener('input', () => {
-    const p = S.parseWeekInput(inp.value, today);
-    read.className = 'pa-su-read' + (p ? ' ok' : inp.value.trim() ? ' warn' : '');
-    read.textContent = !inp.value.trim() ? ''
-      : p ? weekLabel(p.weekStart) + ' · 44 h' : 'Not a date I can read — try 27/9 or Sep 27.';
-  });
-  add.addEventListener('click', async () => {
-    const p = S.parseWeekInput(inp.value, today);
-    if (!p) { msg.textContent = 'Type the week first, for example 27/9.'; msg.className = 'msgline err'; return; }
-    if (A.getState().vacations.has(p.weekStart)) { msg.textContent = 'That week is already on your vacation.'; msg.className = 'msgline err'; return; }
-    add.disabled = true;
-    try {
-      await E.confirmWrite(A.setVacationWeek(p.weekStart, true), () => { msg.textContent = E.WAITING_FOR_SIGNAL; msg.className = 'msgline'; });
-      msg.textContent = 'Added ' + weekLabel(p.weekStart) + '.'; msg.className = 'msgline ok';
-      inp.value = ''; read.textContent = '';
-      if (onChange) onChange();
-    } catch (err) {
-      msg.textContent = 'Could not add: ' + (err.code || err.message); msg.className = 'msgline err';
-    }
-    add.disabled = false;
-  });
-  row.append(inp, add);
-  f.append(row, read);
-  node.appendChild(f);
 
   if (st.vacationDays != null) {
     const left = st.vacationDays - weeks.length * 5;

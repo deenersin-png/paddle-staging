@@ -107,14 +107,14 @@ const clock = ms => {
 };
 
 /**
- * One line saying where the schedule on screen came from, with Retry when
- * it isn't live, and a Details panel an operator can screenshot when
- * something is wrong. `st` is pa-assignments getState().
+ * One line saying where the schedule on screen came from, with Retry when it
+ * isn't live. Deliberately just the line: an operator wants to know whether
+ * what they are looking at is current, not to read a diagnostics panel.
+ * `st` is pa-assignments getState().
  */
 export function renderSync(node, st, onRetry) {
   if (!node || !st) return;
   const s = st.sync || {};
-  const wasOpen = !!(node.querySelector('details') && node.querySelector('details').open);
   node.textContent = '';
   if (s.status === 'idle') { node.hidden = true; return; }
   node.hidden = false;
@@ -136,22 +136,6 @@ export function renderSync(node, st, onRetry) {
     line.appendChild(b);
   }
   node.appendChild(line);
-
-  const det = el('details', 'pa-sync-details');
-  det.open = wasOpen;
-  det.appendChild(el('summary', null, 'Details'));
-  const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
-  [
-    ['Status', s.status + (s.error ? ' (' + s.error + ')' : '')],
-    ['Last server sync', clock(s.lastServerAt) || 'not this session'],
-    ['Device copy', clock(s.savedAt) || 'none'],
-    ['Pick blocks', String(st.patterns.length)],
-    ['Edited days', String(st.assignments.size)],
-    ['Network', navigator.onLine ? 'online' : 'offline'],
-    ['Opened as', standalone ? 'installed app' : 'browser tab'],
-    ['Page updater', navigator.serviceWorker && navigator.serviceWorker.controller ? 'active' : 'not active']
-  ].forEach(([k, v]) => { const r = el('div', 'pa-sync-kv'); r.append(el('span', null, k), el('b', null, v)); det.appendChild(r); });
-  node.appendChild(det);
 }
 
 // ---- the sheet ------------------------------------------------------------

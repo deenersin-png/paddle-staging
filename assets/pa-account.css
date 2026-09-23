@@ -421,11 +421,6 @@
   color: var(--pa-mid); padding: 4px 9px; cursor: pointer; line-height: 1;
 }
 .pa-sync-retry:hover { color: var(--pa-amber); border-color: var(--pa-line3); }
-.pa-sync-details { margin-top: 4px; }
-.pa-sync-details summary { cursor: pointer; color: var(--pa-dim); font-size: 10px; letter-spacing: .06em; }
-.pa-sync-kv { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0;
-              border-bottom: 1px solid var(--pa-line); font-size: 11px; color: var(--pa-dim); }
-.pa-sync-kv b { color: var(--pa-text); font-weight: 500; text-align: right; overflow-wrap: anywhere; }
 
 /* ---- signed-in panel ----------------------------------------------------- */
 

@@ -356,10 +356,10 @@ function buildSignedIn(body) {
   const grid = el('div', 'pa-grid');
   const dt = DRIVER_TYPES.find(d => d.id === profile?.driverType);
   [
-    ['Badge',  profile?.badgeNumber || '—'],
-    ['Depot',  profile?.depotLabel || profile?.depotKey || '—'],
-    ['Type',   dt ? dt.label : '—'],
-    ['Season', profile?.defaultSeasonId || currentSeason() || '—']
+    ['Account #', profile?.badgeNumber || '—'],
+    ['Depot',     profile?.depotLabel || profile?.depotKey || '—'],
+    ['Type',      dt ? dt.label : '—'],
+    ['Picking',   profile?.defaultSeasonId || currentSeason() || '—']
   ].forEach(([k, v]) => {
     const cell = el('div', 'pa-cell');
     const kk = el('div', 'pa-cell-k'); kk.textContent = k;
@@ -423,7 +423,7 @@ function buildEditProfile(body) {
   const form = el('form');
   form.noValidate = true;
   const name  = field(form, 'Display name', 'name', { type: 'text', value: profile?.displayName || '' });
-  const badge = field(form, 'Badge number', 'badge', { type: 'text', inputmode: 'numeric',
+  const badge = field(form, 'Account #', 'badge', { type: 'text', inputmode: 'numeric',
                                                        value: profile?.badgeNumber || '' });
 
   let driverType = profile?.driverType || 'regular';
