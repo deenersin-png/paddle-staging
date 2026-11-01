@@ -480,6 +480,14 @@ function serviceMidnightMs() {
   d.setHours(0, 0, 0, 0);
   return d.getTime();
 }
+// Schedule minutes <-> real time on the wall clock. "Midnight + N minutes" is
+// an hour off after 2 AM the day the clocks change; these are not.
+function serviceMinToMs(min) {
+  const d = serviceDate();
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, Math.round(min * 60000)).getTime();
+}
+const wallMs = ms => ms - new Date(ms).getTimezoneOffset() * 60000;
+function msToServiceMin(ms, midnightMs = serviceMidnightMs()) { return (wallMs(ms) - wallMs(midnightMs)) / 60000; }
 
 function localISODate() {
   const d = serviceDate();
@@ -1111,7 +1119,7 @@ function loadPairs() {
 // Is this route's block mid-trip at epoch `ts`? Then a bus seen on the same
 // block number elsewhere at that moment is a different bus.
 function blockBusyHereAt(blk, ts) {
-  const m = (ts - serviceMidnightMs()) / 60000;
+  const m = msToServiceMin(ts);
   if (m < 0) return false; // before today's service day — nothing to compare
   return (sched.blockTrips.get(String(blk)) || []).some(t => {
     const s = timeStrToMin(t.start), e = timeStrToMin(t.end);
@@ -1136,7 +1144,7 @@ function blockLoginFromMs(blk, nowMs = Date.now()) {
   const pi = rec.piTime ? clockToMin(rec.piTime) : null;
   const latest = (min, notAfter) => {
     const d = new Date(notAfter);
-    const t = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() + min * 60000;
+    const t = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, min).getTime();
     return t <= notAfter ? t : t - 86400000;
   };
   const out = latest(po, nowMs + PAIR_LOGIN_SLACK_MIN * 60000);
@@ -1347,7 +1355,7 @@ function mergeScheduledBlocks(merged, liveBuses) {
       if (!arrivedMs) {
         const ends = (sched.blockTrips.get(blk) || []).map(t => timeStrToMin(t.end)).filter(x => x != null).sort((a, b) => a - b);
         let lastEnd = null; ends.forEach(e => { if (e <= nowMin) lastEnd = e; });
-        if (lastEnd != null) arrivedMs = serviceMidnightMs() + lastEnd * 60000;
+        if (lastEnd != null) arrivedMs = serviceMinToMs(lastEnd);
       }
     }
 
@@ -2845,7 +2853,7 @@ function lastSeenParts(row) {
   if (rec && rec.runs.length && dayTypeOfDate(day) === getDayType()) {
     // The run out at that moment: the last to have pulled out by then. A
     // relief run has no pull-out time, so with one of those, list them all.
-    const m = (ms - day.getTime()) / 60000;
+    const m = msToServiceMin(ms, day.getTime());
     const out = rec.runs.every(r => r.sortMin !== Infinity) && rec.runs.filter(r => r.sortMin <= m).pop();
     parts.push(out ? 'Run ' + out.runno : 'Run' + (rec.runs.length > 1 ? 's ' : ' ') + rec.runs.map(r => r.runno).join(' & '));
   }

@@ -190,3 +190,12 @@ test('upcomingRuns marks a day partial when the trips or the paddle did not load
     tripsOf: async () => [] });
   assert.equal(ok[0].partial, undefined);
 });
+
+test('times are wall-clock times on the days the clocks change', () => {
+  const at = (iso, min) => { const d = new Date(minToMs(iso, min)); return [d.getDate(), d.getHours(), d.getMinutes()]; };
+  assert.deepEqual(at('2026-11-01', 330), [1, 5, 30]);        // fall back: 5:30 AM, not 4:30
+  assert.deepEqual(at('2026-11-01', 1425), [1, 23, 45]);
+  assert.deepEqual(at('2026-03-08', 330), [8, 5, 30]);         // spring forward
+  assert.deepEqual(at('2026-11-02', -6), [1, 23, 54]);         // night liner, the evening before
+  assert.deepEqual(at('2026-10-31', 1450), [1, 0, 10]);        // past midnight on the run's clock
+});
