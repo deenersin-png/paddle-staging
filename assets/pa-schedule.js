@@ -85,8 +85,16 @@ export function daysBetween(a, b) { return Math.round((fromIso(b) - fromIso(a)) 
 export function todayIso() { return isoDate(new Date()); }
 /** Minutes since local midnight right now (0..1439). */
 export function nowMinutes() { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); }
-/** Absolute ms for `min` minutes after `iso`'s local midnight. */
-export function minToMs(iso, min) { return fromIso(iso).getTime() + min * 60000; }
+/**
+ * Absolute ms of the wall-clock time `min` minutes into `iso` (5:30 AM is 330,
+ * 11:54 PM the evening before is -6). The Date constructor reads the minutes
+ * as wall-clock time, so the day the clocks change (25 or 23 hours long) is
+ * right: "midnight + 330 minutes" was 4:30 AM after the fall-back.
+ */
+export function minToMs(iso, min) {
+  const p = String(iso).split('-').map(Number);
+  return new Date(p[0], p[1] - 1, p[2], 0, 0, 0, Math.round(min * 60000)).getTime();
+}
 /** Sunday on or before `iso`. */
 export function weekStartOf(iso) { return addDays(iso, -dowOf(iso)); }
 
@@ -621,7 +629,7 @@ export function blockOutSince(poMin, piMin, nowMs = Date.now(), slackMin = 30) {
   // The latest moment at this clock time that is not after `notAfter`.
   const latest = (min, notAfter) => {
     const d = new Date(notAfter);
-    const t = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() + (((min % 1440) + 1440) % 1440) * 60000;
+    const t = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, (((min % 1440) + 1440) % 1440)).getTime();   // wall clock, right on clock-change days
     return t <= notAfter ? t : t - 86400000;
   };
   const out = latest(poMin, nowMs + slackMin * 60000);
