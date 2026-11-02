@@ -34,12 +34,13 @@ const db = getFirestore();
 const philadelphiaDate = () => new Intl.DateTimeFormat('en-CA', { timeZone: ZONE }).format(new Date());
 
 // Data-only web push: sw.js shows it, so the page needs no second worker.
-// Every data value must be a string.
+// Every data value must be a string. TTL: how long the push service holds it
+// for a phone that is offline; a run alert sets its own (lib/run-alerts.js).
 async function sendPush(token, p) {
   await getMessaging().send({
     token,
     data: { title: p.title, body: p.body, url: p.url, tag: p.tag },
-    webpush: { headers: { Urgency: 'high', TTL: '1800' } }
+    webpush: { headers: { Urgency: 'high', TTL: String(p.ttlSec || 1800) } }
   });
 }
 

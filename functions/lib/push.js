@@ -17,7 +17,7 @@ const DEAD_TOKEN = new Set([
 /**
  * Send one message to every registered phone of each uid.
  * deps: { db, sendPush(token, payload) -> Promise, appUrl, log }
- * msg:  { title, body, tag?, url? }
+ * msg:  { title, body, tag?, url?, ttlSec? }
  * Resolves the number of phones reached.
  */
 export async function notify(deps, uids, msg) {
@@ -29,9 +29,12 @@ export async function notify(deps, uids, msg) {
       const dev = d.data();
       if (!dev.fcmToken) continue;
       try {
-        // Cloud Messaging data values must all be strings.
-        await sendPush(dev.fcmToken, { title: String(msg.title || 'Paddle App'), body: String(msg.body || ''),
-                                       url: String(msg.url || appUrl), tag: String(msg.tag || 'pa') });
+        // Cloud Messaging data values must all be strings. ttlSec: how long the
+        // push service may hold it for a phone that is offline (sendPush's default otherwise).
+        const p = { title: String(msg.title || 'Paddle App'), body: String(msg.body || ''),
+                    url: String(msg.url || appUrl), tag: String(msg.tag || 'pa') };
+        if (msg.ttlSec) p.ttlSec = msg.ttlSec;
+        await sendPush(dev.fcmToken, p);
         sent++;
       } catch (e) {
         const code = e && (e.code || (e.errorInfo && e.errorInfo.code));

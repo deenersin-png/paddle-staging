@@ -11,7 +11,7 @@
 // app added to the Home Screen (iOS 16.4 and later).
 // ==========================================================================
 
-import { doc, setDoc, getDoc, deleteDoc, serverTimestamp }
+import { doc, setDoc, getDoc, updateDoc, deleteDoc, serverTimestamp }
   from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore.js';
 
 import { initFirebase, firebaseConfig } from './pa-firebase.js';
@@ -108,6 +108,8 @@ export async function refreshPush(uid) {
     if (!fresh) {
       const snap = await getDoc(doc(fb.db, 'users', uid, 'devices', d.id));
       if (snap.exists() && snap.data().fcmToken === token && token === d.token) {
+        // Still good: stamp it, so the server's copy shows when this phone last checked in.
+        await updateDoc(doc(fb.db, 'users', uid, 'devices', d.id), { seenAt: serverTimestamp() }).catch(() => {});
         writeDevice({ ...d, checkedAt: Date.now() });
         return 'ok';
       }
