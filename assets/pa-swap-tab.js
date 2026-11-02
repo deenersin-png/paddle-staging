@@ -792,7 +792,19 @@ export function mount(root, deps) {
     // ---- the hours
     if (w.step === 'time') {
       q.textContent = 'What hours do you want to work?';
-      const pick = (label, opts, key) => {
+      // 8 hours' rest from my own runs the day before and the day after: the
+      // pickers start there, and nothing tighter is offered.
+      const lim = W.restWindow(d => w.days.get(d), w.same ? [w.date] : w.wantDates, w.date);
+      if (lim.earliestMin != null && !(w.prefs.earliestMin >= lim.earliestMin)) w.prefs.earliestMin = lim.earliestMin;
+      if (lim.latestMin != null && !(w.prefs.latestMin != null && w.prefs.latestMin <= lim.latestMin)) w.prefs.latestMin = lim.latestMin;
+      const clock = m => S.fmtClock(m) + (m >= 1440 ? ' (next day)' : '');
+      const within = (opts, m, keep) => {
+        if (m == null) return opts;
+        const list = opts.filter(([v]) => v !== '' && keep(+v));
+        if (!list.some(([v]) => +v === m)) list.push([String(m), clock(m)]);
+        return list.sort((a, b) => +a[0] - +b[0]);
+      };
+      const pick = (label, opts, key, hint) => {
         const wrap = el('label', 'sw-bsel');
         wrap.appendChild(el('span', null, label));
         const s = el('select');
@@ -800,10 +812,18 @@ export function mount(root, deps) {
         s.value = w.prefs[key] != null ? String(w.prefs[key]) : '';
         s.addEventListener('change', () => { w.prefs[key] = s.value === '' ? null : +s.value; msg.textContent = ''; });
         wrap.appendChild(s);
+        if (hint) wrap.appendChild(el('div', 'sw-bhint', hint));
         content.appendChild(wrap);
       };
-      pick('Start no earlier than', START_OPTS, 'earliestMin');
-      pick('Finish by', FINISH_OPTS, 'latestMin');
+      const restHint = (c, word) => '8 hours ' + word + ' your ' + W.longDay(c.date) + ' run ' + c.runNo
+        + ' (' + (word === 'after' ? 'finishes ' + S.fmtClock(c.finishMin) : 'starts ' + S.fmtClock(c.reportMin)) + ')';
+      pick('Start no earlier than', within(START_OPTS, lim.earliestMin, m => m >= lim.earliestMin), 'earliestMin',
+        lim.after && restHint(lim.after, 'after'));
+      pick('Finish by', within(FINISH_OPTS, lim.latestMin, m => m <= lim.latestMin), 'latestMin',
+        lim.before && restHint(lim.before, 'before'));
+      if (lim.earliestMin != null && lim.latestMin != null && lim.latestMin <= lim.earliestMin) {
+        fail('With 8 hours\' rest around your own runs there is no time left to work that day.');
+      }
       next.addEventListener('click', () => {
         const { earliestMin: a, latestMin: b } = w.prefs;
         if (a != null && b != null && b <= a) return fail('The finish time has to be after the start time.');

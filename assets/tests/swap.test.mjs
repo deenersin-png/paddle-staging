@@ -220,3 +220,20 @@ test('two-hour cutoff and this week only', async () => {
   assert.equal(runInCutoff(card(MON, 101, 300, 800), minToMs(SUN, 1000)), false);
   assert.match(buildOffer({ kind: 'give', give: card(NEXT_MON, 1, 360, 800), wants: [{ type: 'same' }] }, who('me', {}), TODAY).error, /this week only/);
 });
+
+test('the hours I can work: 8 hours after my run the day before, 8 hours before the day after', async () => {
+  const { restWindow } = await import('../pa-swap.js');
+  const day = who('me', {
+    [MON]: card(MON, 1, 360, 1369),            // Monday finishes 10:49 PM
+    [TUE]: card(TUE, 2, 600, 1000),            // the run I give away
+    [THU]: card(THU, 3, 330, 900)              // Thursday starts 5:30 AM
+  }).day;
+  // Same day Tuesday: Monday's 10:49 PM finish -> 6:49 AM; Wednesday free.
+  assert.deepEqual(restWindow(day, [TUE], TUE), { earliestMin: 409, latestMin: null, after: day(MON).card, before: null });
+  // Wednesday instead: Tuesday is given away, Thursday 5:30 AM -> finish by 9:30 PM.
+  const wed = restWindow(day, [WED], TUE);
+  assert.equal(wed.earliestMin, null);
+  assert.equal(wed.latestMin, 1290);
+  // An early finish the day before sets no limit.
+  assert.equal(restWindow(who('me', { [MON]: card(MON, 1, 300, 800) }).day, [TUE], null).earliestMin, null);
+});
