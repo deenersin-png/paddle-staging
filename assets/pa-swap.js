@@ -206,6 +206,32 @@ function withDay(busy, date, card) {
   return b;
 }
 
+/**
+ * The hours the poster can work on `dates` and keep MIN_REST_MIN around their
+ * own runs: start no earlier than the day before's finish + 8 h, finish no
+ * later than the day after's start - 8 h. With several dates the tightest
+ * limit wins. `day(date)` is checkOffer's shape; `freed` is the day being
+ * given away, which no longer counts.
+ * Returns { earliestMin, latestMin, after, before }: minutes on the date's own
+ * clock (null = no limit) and the RunCards that set them.
+ */
+export function restWindow(day, dates, freed) {
+  const out = { earliestMin: null, latestMin: null, after: null, before: null };
+  const cardOn = d => (d === freed || (dates || []).includes(d) ? null : ((day(d) || {}).card || null));
+  for (const d of dates || []) {
+    const prev = cardOn(addDays(d, -1)), next = cardOn(addDays(d, 1));
+    if (prev && prev.finishMin != null) {
+      const m = prev.finishMin + MIN_REST_MIN - 1440;
+      if (m > 0 && (out.earliestMin == null || m > out.earliestMin)) { out.earliestMin = m; out.after = prev; }
+    }
+    if (next && next.reportMin != null) {
+      const m = next.reportMin + 1440 - MIN_REST_MIN;
+      if (out.latestMin == null || m < out.latestMin) { out.latestMin = m; out.before = next; }
+    }
+  }
+  return out;
+}
+
 // ---- eligibility ------------------------------------------------------------
 
 /** Depot keys across the spring-era bare slugs ("callowhill") and later
