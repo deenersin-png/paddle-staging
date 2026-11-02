@@ -2,7 +2,7 @@
 // Paddle App — the SWAP tab (home.html, fourth tab after Today, Schedule
 // and Alerts).
 //
-//   BOARD       offers in a district (the user's own by default), each
+//   BOARD       offers in the user's own district (from the profile), each
 //               checked against the user's own week: green fits, red not
 //               eligible with the reason, yellow no run on record for a day
 //               that decides it — enter it, and it is checked again
@@ -124,10 +124,14 @@ export function mount(root, deps) {
     const season = S.seasonFor(st.seasons, today());
     const list = season ? await S.loadManifest(season) : [];
     st.districts = list.map(d => ({ key: S.depotKeyOf(d.name), label: d.label }));
-    if (!st.district) {
-      const mine = await myDistrictKey();
-      st.district = (st.districts.find(d => W.sameDepot(d.key, mine)) || st.districts[0] || {}).key || mine;
-    }
+  }
+
+  /** The board always shows the operator's own district, from their profile. */
+  async function useMyDistrict() {
+    const mine = await myDistrictKey();
+    const hit = st.districts.find(d => W.sameDepot(d.key, mine));
+    st.district = hit ? hit.key : mine;
+    return hit ? hit.label : (profile().depotLabel || mine);
   }
 
   // ---- frame ---------------------------------------------------------------
@@ -183,14 +187,17 @@ export function mount(root, deps) {
     const list = el('div');
     body.appendChild(list);
     loading(list, 'Loading offers…');
+    let label;
     try {
       await withTimeout(loadDistricts());
+      label = await withTimeout(useMyDistrict());
     } catch (e) { if (live()) failed(list, e, () => go('board')); return; }
     if (!live()) return;
 
-    const sel = field(bar, 'District', { tag: 'select', options: st.districts.map(d => [d.key, d.label]), value: st.district });
-    sel.addEventListener('change', () => { st.district = sel.value; go('board'); });
-    bar.appendChild(button('pa-submit', '+ New offer', () => go('new')));
+    const where = el('div', 'sw-where');
+    where.appendChild(el('span', 'k', 'Your district'));
+    where.appendChild(el('b', null, label || '—'));
+    bar.append(where, button('pa-submit', '+ New offer', () => go('new')));
 
     let offers, me, extra = null;
     try {
