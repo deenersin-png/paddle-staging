@@ -112,12 +112,12 @@ test('labels', () => {
   assert.match(interestMessage({ id: 'o', give: GIVE }, null).body, /^An operator wants your Sat run 300\./);
 });
 
-test('an offer is deleted the moment its run starts, unless the swap was arranged', async () => {
+test('an offer is deleted two hours before its run starts, unless the swap was arranged', async () => {
   const h = harness();
   const NOW = Date.UTC(2026, 9, 29, 3, 54);
   h.offer('started', { startsAtMs: NOW - 1000 });
-  h.offer('talking', { startsAtMs: NOW, status: 'matched' });
-  h.offer('later', { startsAtMs: NOW + 60000 });
+  h.offer('talking', { startsAtMs: NOW + 120 * 60000, status: 'matched' });   // exactly two hours out
+  h.offer('later', { startsAtMs: NOW + 121 * 60000 });
   h.offer('old', {});                                  // posted before startsAtMs: left to the daily cleanup
   h.offer('arranged', { startsAtMs: NOW - 5000, status: 'arranged' });
   const n = await expireStarted(h.deps, NOW);

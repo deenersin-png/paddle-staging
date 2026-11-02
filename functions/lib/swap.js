@@ -110,15 +110,18 @@ export async function cleanupExpired(deps, today) {
   return n;
 }
 
+/** No swap within this many minutes of a run's start (assets/pa-swap.js CUTOFF_MIN). */
+export const CUTOFF_MIN = 120;
+
 /**
- * Every minute: an offer whose run has started (startsAtMs, the real clock
- * time, a night liner's the evening before its date) is over unless the swap
- * was arranged, and is deleted with everything under it. An arranged one is
+ * Every minute: an offer whose run starts within CUTOFF_MIN (startsAtMs, the
+ * real clock time, a night liner's the evening before its date) is over
+ * unless the swap was arranged, and is deleted with everything under it. An arranged one is
  * left for cleanupExpired and its startsAtMs cleared so it is not read again.
  */
 export async function expireStarted(deps, nowMs) {
   const { db, deleteTree } = deps;
-  const snap = await db.collection('swapOffers').where('startsAtMs', '<=', nowMs).get();
+  const snap = await db.collection('swapOffers').where('startsAtMs', '<=', nowMs + CUTOFF_MIN * 60000).get();
   let n = 0;
   for (const d of snap.docs) {
     const o = d.data();

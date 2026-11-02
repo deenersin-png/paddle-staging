@@ -59,7 +59,7 @@ export const runAlerts = onSchedule({
   if (r.due) logger.info('run alerts', r);
   // The same minute job, so swap expiry needs no scheduler job of its own.
   const gone = await SWAP.expireStarted(deps(SWAP_URL), now).catch(e => { logger.error('swap expiry', String(e)); return 0; });
-  if (gone) logger.info('swap expired at run start', { deleted: gone });
+  if (gone) logger.info('swap expired 2 h before run start', { deleted: gone });
 });
 
 // ---- swap board -------------------------------------------------------------
