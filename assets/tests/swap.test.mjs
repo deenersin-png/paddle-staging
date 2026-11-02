@@ -189,3 +189,34 @@ test('an offer knows when its run starts, a night liner the evening before its d
   const { doc } = buildOffer({ kind: 'give', give: owl, wants: [{ type: 'day', date: FRI }] }, who('me', {}), TODAY);
   assert.equal(doc.startsAtMs, minToMs(WED, 1434));
 });
+
+test('same day: any other run that day inside the time window, rest checked both ways', () => {
+  const poster = who('deen', { [TUE]: card(TUE, 209, 900, 1440), [WED]: card(WED, 209, 900, 1440) });
+  const { doc, error } = buildOffer({ kind: 'give', give: poster.day(TUE).card, wants: [{ type: 'same' }],
+    prefs: { earliestMin: 300, latestMin: 900 } }, poster, TODAY);
+  assert.equal(error, undefined);
+  const offer = { ...doc, posterUid: 'deen', status: 'open', depotKey: 'callowhillb', seasonId: 'fall2026' };
+  assert.equal(describeWants(offer), 'Another run on Tue, same day');
+  assert.equal(checkOffer(offer, who('p', { [TUE]: card(TUE, 105, 330, 840) }), TODAY).color, 'green');
+  assert.match(checkOffer(offer, who('p', { [TUE]: card(TUE, 105, 240, 840) }), TODAY).reason, /no earlier than/);
+  assert.match(checkOffer(offer, who('p', { [TUE]: 'off' }), TODAY).reason, /You are off Tuesday/);
+  assert.match(checkOffer(offer, who('p', { [TUE]: card(TUE, 209, 330, 840) }), TODAY).reason, /same run/);
+  // The taker finishes Tuesday at midnight and starts Wednesday at 5 AM.
+  assert.match(checkOffer(offer, who('p', { [TUE]: card(TUE, 105, 330, 840), [WED]: card(WED, 7, 300, 800) }), TODAY).reason, /You would get only 5h/);
+});
+
+test('two-hour cutoff and this week only', async () => {
+  const { runInCutoff, pastCutoff, CUTOFF_TEXT } = await import('../pa-swap.js');
+  const { minToMs } = await import('../pa-schedule.js');
+  const give = card(SUN, 101, 600, 1100);                       // Sunday 10:00 AM
+  assert.equal(runInCutoff(give, minToMs(SUN, 479)), false);    // 7:59 AM: still open
+  assert.equal(runInCutoff(give, minToMs(SUN, 480)), true);     // 8:00 AM: two hours out
+  const ok = buildOffer({ kind: 'give', give, wants: [{ type: 'same' }] }, who('me', {}), TODAY, minToMs(SUN, 400));
+  assert.equal(ok.error, undefined);
+  assert.equal(buildOffer({ kind: 'give', give, wants: [{ type: 'same' }] }, who('me', {}), TODAY, minToMs(SUN, 500)).error, CUTOFF_TEXT);
+  assert.equal(pastCutoff({ ...ok.doc, status: 'open' }, minToMs(SUN, 480)), true);
+  assert.equal(pastCutoff({ ...ok.doc, status: 'arranged' }, minToMs(SUN, 480)), false);
+  // Later days have no cutoff today.
+  assert.equal(runInCutoff(card(MON, 101, 300, 800), minToMs(SUN, 1000)), false);
+  assert.match(buildOffer({ kind: 'give', give: card(NEXT_MON, 1, 360, 800), wants: [{ type: 'same' }] }, who('me', {}), TODAY).error, /this week only/);
+});

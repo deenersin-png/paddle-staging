@@ -8,7 +8,7 @@
 //               that decides it — enter it, and it is checked again
 //   MY OFFERS   what I posted, who is interested, pick one, contact, arranged
 //   INTERESTED  offers I said "I'm interested" in, and where they stand
-//   + NEW OFFER the four-question guided flow
+//   + NEW OFFER one question per screen, big buttons
 //
 // The app only connects operators. Nothing here approves a swap; "arranged"
 // always comes with the reminder that the dispatcher must approve it.
@@ -588,218 +588,288 @@ export function mount(root, deps) {
   }
 
   // ---- NEW OFFER (and edit) ------------------------------------------------
+  //
+  // One question per screen, answered with big buttons, so it works with a
+  // thumb between trips:
+  //   day      which day of this week to swap (today only while its run is
+  //            more than two hours away, W.CUTOFF_MIN)
+  //   run      only when that day has no run on file: add it by run number
+  //   same     same day or a different day
+  //   wantday  only for a different day: which of my off days I'd work
+  //   time     the hours I'd work (start no earlier than, finish by)
+  //   routes   routes I won't take, night liners included
+  //   review   the offer as the board will show it, then post
+  // Back keeps every answer.
 
-  const TIME_OPTS = (from, to) => {
-    const out = [['', 'Any time']];
-    for (let m = from; m <= to; m += 30) out.push([String(m), S.fmtClock(m) + (m >= 1440 ? ' (next day)' : '')]);
-    return out;
-  };
+  const START_OPTS = [['', 'Any time']];
+  for (let m = 180; m <= 1410; m += 30) START_OPTS.push([String(m), S.fmtClock(m)]);
+  const FINISH_OPTS = [['', 'Any time']];
+  for (let m = 360; m <= 1620; m += 30) FINISH_OPTS.push([String(m), S.fmtClock(m) + (m >= 1440 ? ' (next day)' : '')]);
 
-  async function renderWizard(offer) {
+  function renderWizard(offer) {
+    const ws = W.weekOf(today());
+    const blank = { step: 'day', weekStart: ws, date: null, give: null, needRun: false, same: null, wantDates: [],
+      prefs: { flexible: false, excludeRoutes: [], earliestMin: null, latestMin: null, note: '' }, days: null, routes: null, adding: false };
     const w = st.wizard = offer ? {
-      id: offer.id, step: 1, kind: offer.kind, weekStart: offer.weekStart, date: offer.give.date, give: offer.give,
-      wants: offer.wants.map(x => ({ ...x })), prefs: { ...offer.prefs, excludeRoutes: [...(offer.prefs.excludeRoutes || [])] },
-      days: null, routes: null
-    } : {
-      step: 1, kind: null, weekStart: W.weekOf(today()), date: null, give: null, wants: [],
-      prefs: { flexible: false, excludeRoutes: [], earliestMin: null, latestMin: null, note: '' }, days: null, routes: null
-    };
+      ...blank, id: offer.id,
+      date: offer.give.date >= today() && W.weekOf(offer.give.date) === ws ? offer.give.date : null,
+      give: offer.give,
+      same: offer.wants.some(x => x.type === 'same' || x.type === 'shift') ? true : offer.wants.length ? false : null,
+      wantDates: offer.wants.filter(x => x.type === 'day').map(x => x.date),
+      prefs: { ...blank.prefs, ...offer.prefs, excludeRoutes: [...(offer.prefs.excludeRoutes || [])] }
+    } : blank;
+    if (!w.date) w.give = null;
     drawStep();
   }
 
-  async function loadWeek(w) {
-    const dates = W.weekDates(w.weekStart);
-    w.days = await daysFor(dates);
+  const stepsOf = w => ['day', ...(w.needRun ? ['run'] : []), 'same', ...(w.same === false ? ['wantday'] : []), 'time', 'routes', 'review'];
+
+  // Days I could work someone's run in return: this week, not past, not the
+  // day I give, and not a day I already work or am away.
+  function wantableDays(w) {
+    return W.weekDates(w.weekStart).filter(d => {
+      if (d === w.date || d < today()) return false;
+      const info = w.days.get(d) || {};
+      return !info.card && !info.away;
+    });
+  }
+
+  const runLine = c => 'Run ' + c.runNo + (c.routeLabel ? ' · ' + c.routeLabel : '')
+    + (c.reportMin != null ? ' · ' + S.fmtClock(c.reportMin) + '–' + S.fmtClock(c.finishMin) : '')
+    + (c.payHours ? ' · ' + c.payHours.toFixed(2) + ' h' : '');
+
+  function bigButton(title, sub, onClick, cls = '') {
+    const b = button('sw-bb ' + cls, null, onClick);
+    b.appendChild(el('span', 't', title));
+    if (sub) b.appendChild(el('span', 's', sub));
+    return b;
   }
 
   function drawStep() {
     const w = st.wizard;
-    const body = frame();
-    const card = el('div', 'card');
-    body.appendChild(card);
-    card.appendChild(el('div', 'sw-step', (w.id ? 'Edit offer · ' : 'New offer · ') + 'Step ' + w.step + ' of 4'));
-    const nav = el('div', 'sw-nav');
-    const back = button('pa-ghost', w.step === 1 ? 'Cancel' : 'Back', () => {
-      if (w.step === 1) { st.wizard = null; go(w.id ? 'mine' : 'board'); } else { w.step--; drawStep(); }
-    });
-    const next = button('pa-submit', w.step === 4 ? (w.id ? 'Save changes' : 'Post offer') : 'Next');
-    const msg = el('div', 'msgline');
-    const content = el('div');
-    card.append(content, nav, msg);
-    nav.append(back, next);
-    const fail = t => { msg.className = 'msgline err'; msg.textContent = t; };
+    const steps = stepsOf(w);
+    if (!steps.includes(w.step)) w.step = 'day';
+    const idx = steps.indexOf(w.step);
+    const goTo = name => { w.step = name; w.adding = false; drawStep(); };
+    const nextStep = () => { const s = stepsOf(w); goTo(s[s.indexOf(w.step) + 1]); };
 
-    if (w.step === 1) {
-      content.appendChild(el('div', 'sw-q', 'What do you want to change?'));
-      [['give', 'Give up a working day or shift', 'Hand over one of your runs, for a run on another day this week or a different shift the same day.'],
-       ['dayoff', 'Get a specific day off', 'Hand over your run that day and work someone\'s run on one of your off days instead.']]
-        .forEach(([k, t, d]) => {
-          const b = button('sw-big' + (w.kind === k ? ' on' : ''), null, () => { w.kind = k; if (k === 'dayoff') w.wants = w.wants.filter(x => x.type === 'day'); w.step = 2; drawStep(); });
-          b.appendChild(el('b', null, t)); b.appendChild(document.createTextNode(d));
-          content.appendChild(b);
-        });
-      content.appendChild(el('div', 'hint', 'Every swap trades two real runs inside one work week (Sunday to Saturday). Whoever gives up a day off works a run in return.'));
-      next.hidden = true;
+    const body = frame();
+    const wz = el('div', 'sw-wz');
+    body.appendChild(wz);
+    const prog = el('div', 'sw-prog');
+    prog.appendChild(el('span', null, (w.id ? 'Edit offer' : 'New offer') + ' · Step ' + (idx + 1) + ' of ' + steps.length));
+    const bar = el('div', 'bar');
+    steps.forEach((_, i) => bar.appendChild(el('i', i <= idx ? 'on' : '')));
+    prog.appendChild(bar);
+    const q = el('div', 'sw-bq');
+    const content = el('div', 'sw-bbody');
+    const msg = el('div', 'sw-bmsg');
+    const nav = el('div', 'sw-bnav');
+    wz.append(prog, q, msg, content, nav);
+    const fail = t => { msg.className = 'sw-bmsg err'; msg.textContent = t; };
+    const say = t => { msg.className = 'sw-bmsg'; msg.textContent = t; };
+
+    const back = button('sw-bnb', idx === 0 ? 'Cancel' : '‹ Back', () => {
+      if (idx === 0) { st.wizard = null; go(w.id ? 'mine' : 'board'); } else goTo(steps[idx - 1]);
+    });
+    const next = button('sw-bnb go', w.step === 'review' ? (w.id ? 'Save changes' : 'Confirm & post') : 'Next ›');
+    nav.append(back, next);
+
+    // ---- which day
+    if (w.step === 'day') {
+      q.textContent = 'Which day do you want to swap?';
+      if (!w.days) {
+        say('Loading your week…');
+        daysFor(W.weekDates(w.weekStart)).then(m => { w.days = m; if (st.wizard === w && w.step === 'day') drawStep(); })
+          .catch(() => fail('Could not load your schedule. Check your signal and try again.'));
+      }
+      const nowMs = Date.now();
+      W.weekDates(w.weekStart).forEach(d => {
+        const info = w.days && w.days.get(d);
+        const past = d < today();
+        const late = !past && !!info && !!info.card && W.runInCutoff(info.card, nowMs);
+        const sub = past ? 'Past' : !info ? '…' : late ? (W.startsAtOf(info.card) <= nowMs ? 'Already started' : 'Starts within 2 hours')
+          : info.card ? runLine(info.card) : info.away ? 'Vacation · no run on file' : info.known ? 'Off · no run on file' : 'No run on file';
+        const b = bigButton(W.longDay(d) + ' ' + W.fmtDay(d).slice(4) + (d === today() ? ' · today' : ''), sub, () => {
+          if (late) return fail(d === today() ? W.CUTOFF_TEXT : 'You can\'t post a swap within two hours of the run\'s start time.');
+          if (d !== w.date) {
+            w.date = d;
+            w.give = info.card || null;
+            w.needRun = !info.card;
+            w.wantDates = w.wantDates.filter(x => x !== d);
+            w.routes = null;
+          }
+          nextStep();
+        }, (d === w.date ? 'on' : '') + (late ? ' off' : ''));
+        b.disabled = past || !info;
+        content.appendChild(b);
+      });
+      next.disabled = !w.date || !w.days;
+      next.addEventListener('click', () => nextStep());
       return;
     }
 
-    if (w.step === 2) {
-      content.appendChild(el('div', 'sw-q', w.kind === 'dayoff' ? 'Which day do you want off?' : 'Which day are you giving up?'));
-      content.appendChild(el('div', 'sw-sub', 'Week'));
-      const weeks = el('div', 'sw-chips');
-      W.weekChoices(today()).forEach((ws, i) => {
-        const b = button('sw-chip' + (ws === w.weekStart ? ' on' : ''), i === 0 ? 'This week' : W.fmtDay(ws).slice(4) + '–' + W.fmtDay(S.addDays(ws, 6)).slice(4), () => {
-          if (ws === w.weekStart) return;
-          w.weekStart = ws; w.date = null; w.give = null; w.wants = []; w.days = null; drawStep();
-        });
-        weeks.appendChild(b);
+    // ---- no run on file: add it by number
+    if (w.step === 'run') {
+      const day = W.longDay(w.date);
+      if (w.give && !w.adding) {
+        q.textContent = 'Your run on ' + day;
+        content.appendChild(el('div', 'sw-bcard', runLine(w.give)));
+        content.appendChild(bigButton('Change run number', null, () => { w.adding = true; drawStep(); }));
+        next.addEventListener('click', () => nextStep());
+        return;
+      }
+      if (!w.adding) {
+        q.textContent = 'You don\'t have a run on file for ' + day + '. Add one now?';
+        content.appendChild(bigButton('Yes, add my run', 'Just the run number', () => { w.adding = true; drawStep(); }));
+        content.appendChild(bigButton('No, pick another day', null, () => goTo('day')));
+        next.hidden = true;
+        return;
+      }
+      q.textContent = 'Your run number for ' + day + '?';
+      const inp = el('input', 'sw-binput');
+      Object.assign(inp, { type: 'text', inputMode: 'numeric', maxLength: 8, placeholder: 'e.g. 209', autocomplete: 'off' });
+      content.appendChild(inp);
+      content.appendChild(el('div', 'sw-bhint', 'Route, times, hours and pay come from the paddle. This stays on this phone and does not change your schedule.'));
+      const look = async () => {
+        const v = inp.value.trim();
+        if (!v) return fail('Enter a run number.');
+        next.disabled = true; say('Looking it up…');
+        let c = null; try { c = await lookupCard(w.date, v); } catch (_) {}
+        next.disabled = false;
+        if (st.wizard !== w) return;
+        if (!c) return fail('Run ' + v + ' is not in the ' + day + ' paddle for your district.');
+        if (W.runInCutoff(c, Date.now())) return fail(W.CUTOFF_TEXT);
+        setManual(w.date, { runNo: v });
+        w.days.set(w.date, { known: true, card: c, manual: true });
+        w.give = c; w.adding = false;
+        drawStep();
+      };
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') look(); });
+      next.textContent = 'Look up ›';
+      next.addEventListener('click', look);
+      setTimeout(() => inp.focus(), 0);
+      return;
+    }
+
+    // ---- same day or a different day
+    if (w.step === 'same') {
+      q.textContent = 'Swap for the same day or a different day?';
+      content.appendChild(bigButton('Same day', 'Another run on ' + W.longDay(w.date), () => { w.same = true; nextStep(); }, w.same === true ? 'on' : ''));
+      content.appendChild(bigButton('Different day', 'Work someone\'s run on a day you\'re off this week', () => { w.same = false; nextStep(); }, w.same === false ? 'on' : ''));
+      next.disabled = w.same == null;
+      next.addEventListener('click', () => nextStep());
+      return;
+    }
+
+    // ---- which day to work instead
+    if (w.step === 'wantday') {
+      q.textContent = 'Which day do you want to work instead?';
+      const days = wantableDays(w);
+      w.wantDates = w.wantDates.filter(d => days.includes(d));
+      if (!days.length) {
+        content.appendChild(el('div', 'sw-bcard', 'You work every other day left this week, so there is no day to trade into. Go back and choose Same day.'));
+        next.disabled = true;
+        return;
+      }
+      const toggle = d => { w.wantDates = w.wantDates.includes(d) ? w.wantDates.filter(x => x !== d) : [...w.wantDates, d]; drawStep(); };
+      days.forEach(d => {
+        const info = w.days.get(d) || {};
+        content.appendChild(bigButton(W.longDay(d) + ' ' + W.fmtDay(d).slice(4), info.known ? 'You\'re off' : 'No run on file',
+          () => toggle(d), w.wantDates.includes(d) ? 'on' : ''));
       });
-      content.appendChild(weeks);
-      content.appendChild(el('div', 'sw-sub', 'Day'));
-      const grid = el('div', 'sw-days');
+      if (days.length > 1) {
+        const all = days.every(d => w.wantDates.includes(d));
+        content.appendChild(bigButton(days.length === 2 ? 'Both' : 'Any of these', null, () => {
+          w.wantDates = all ? [] : [...days]; drawStep();
+        }, 'all' + (all ? ' on' : '')));
+      }
+      content.appendChild(el('div', 'sw-bhint', 'Tap one day, or more than one.'));
+      next.addEventListener('click', () => { if (!w.wantDates.length) return fail('Tap at least one day.'); nextStep(); });
+      return;
+    }
+
+    // ---- the hours
+    if (w.step === 'time') {
+      q.textContent = 'What hours do you want to work?';
+      const pick = (label, opts, key) => {
+        const wrap = el('label', 'sw-bsel');
+        wrap.appendChild(el('span', null, label));
+        const s = el('select');
+        opts.forEach(([v, t]) => { const o = el('option', null, t); o.value = v; s.appendChild(o); });
+        s.value = w.prefs[key] != null ? String(w.prefs[key]) : '';
+        s.addEventListener('change', () => { w.prefs[key] = s.value === '' ? null : +s.value; msg.textContent = ''; });
+        wrap.appendChild(s);
+        content.appendChild(wrap);
+      };
+      pick('Start no earlier than', START_OPTS, 'earliestMin');
+      pick('Finish by', FINISH_OPTS, 'latestMin');
+      next.addEventListener('click', () => {
+        const { earliestMin: a, latestMin: b } = w.prefs;
+        if (a != null && b != null && b <= a) return fail('The finish time has to be after the start time.');
+        nextStep();
+      });
+      return;
+    }
+
+    // ---- routes to leave out
+    if (w.step === 'routes') {
+      q.textContent = 'Any routes you won\'t drive?';
+      const grid = el('div', 'sw-bgrid');
       content.appendChild(grid);
-      const picked = el('div', 'sw-pick');
-      content.appendChild(picked);
+      const skip = button('sw-bnb', 'Skip · none', () => { w.prefs.excludeRoutes = []; nextStep(); });
+      const drawNext = () => { skip.hidden = w.prefs.excludeRoutes.length > 0; next.hidden = !w.prefs.excludeRoutes.length; };
       const draw = () => {
         grid.innerHTML = '';
-        W.weekDates(w.weekStart).forEach(d => {
-          const info = w.days && w.days.get(d);
-          const sub = !info ? '…' : !info.known ? '?' : info.away ? 'VAC' : info.card ? info.card.runNo : 'OFF';
-          const b = button('sw-chip' + (d === w.date ? ' on' : ''), null, () => {
-            w.date = d; w.give = info && info.card ? info.card : null; w.wants = w.wants.filter(x => x.type !== 'day' || x.date !== d); draw();
-          });
-          b.appendChild(document.createTextNode(W.shortDay(d)));
-          b.appendChild(el('small', null, sub));
-          b.disabled = d < today() || !info || (info.known && !info.card);
-          grid.appendChild(b);
-        });
-        picked.innerHTML = '';
-        if (!w.date) { picked.textContent = 'Days marked OFF or VAC have no run to give.'; return; }
-        const info = w.days.get(w.date);
-        if (w.give) {
-          const g = w.give;
-          picked.append(W.longDay(w.date) + ' · ', strong('run ' + g.runNo), (g.routeLabel ? ' · ' + g.routeLabel : '')
-            + (g.reportMin != null ? ' · ' + S.fmtClock(g.reportMin) + '–' + S.fmtClock(g.finishMin) : '') + (g.payHours ? ' · ' + g.payHours.toFixed(2) + ' h' : ''));
-          if (info && info.manual) {
-            picked.append(' (entered by you) ');
-            picked.appendChild(button('rowbtn', 'Change', async () => {
-              setManual(w.date, null);
-              const fresh = await dayInfo(w.date).catch(() => ({ known: false, card: null }));
-              w.days.set(w.date, fresh); w.give = fresh.card; draw();
-            }));
-          }
-        } else {
-          picked.textContent = 'Your schedule has no run for ' + W.longDay(w.date) + '. Enter it:';
-          const row = el('div', 'sw-row');
-          const inp = field(row, 'Run #', { inputmode: 'numeric', maxlength: '8', placeholder: 'e.g. 209' });
-          row.appendChild(button('pa-ghost', 'Look up', async () => {
-            let c = null; try { c = await lookupCard(w.date, inp.value.trim()); } catch (_) {}
-            if (!c) { fail('Run ' + inp.value.trim() + ' is not in the ' + W.longDay(w.date) + ' paddle for your district.'); return; }
-            setManual(w.date, { runNo: inp.value.trim() });
-            w.days.set(w.date, { known: true, card: c, manual: true }); w.give = c; msg.textContent = ''; draw();
+        if (!w.routes) { grid.appendChild(el('div', 'sw-bhint', 'Loading routes…')); return; }
+        [...w.routes, W.OWL].forEach(r => {
+          const on = w.prefs.excludeRoutes.includes(r);
+          grid.appendChild(button('sw-bb sq' + (on ? ' on' : '') + (r === W.OWL ? ' wide' : ''), r === W.OWL ? 'Night liners' : r, () => {
+            w.prefs.excludeRoutes = on ? w.prefs.excludeRoutes.filter(x => x !== r) : [...w.prefs.excludeRoutes, r];
+            draw(); drawNext();
           }));
-          picked.appendChild(row);
-        }
+        });
       };
       draw();
-      if (!w.days) loadWeek(w).then(() => { if (st.wizard === w && w.step === 2) drawStep(); }).catch(() => fail('Could not load your schedule for that week.'));
-      next.addEventListener('click', () => {
-        if (!w.days) return fail('Still loading your week…');
-        if (!w.give) return fail('Pick a day you work.');
-        w.step = 3; drawStep();
-      });
+      if (!w.routes) districtRoutes(w.date).then(r => { w.routes = r; }).catch(() => { w.routes = []; })
+        .then(() => { if (st.wizard === w && w.step === 'routes') draw(); });
+      content.appendChild(el('div', 'sw-bhint', 'Tap every route you won\'t take.'));
+      nav.insertBefore(skip, next);
+      drawNext();
+      next.addEventListener('click', () => nextStep());
       return;
     }
 
-    if (w.step === 3) {
-      content.appendChild(el('div', 'sw-q', 'What would you take in return?'));
-      content.appendChild(el('div', 'hint', 'Pick as many as you like. All in the week of ' + W.fmtDay(w.weekStart).slice(4) + '.'));
-      const isOn = x => w.wants.some(y => y.type === x.type && (x.type === 'day' ? y.date === x.date : y.shift === x.shift));
-      const toggle = x => { w.wants = isOn(x) ? w.wants.filter(y => !(y.type === x.type && (x.type === 'day' ? y.date === x.date : y.shift === x.shift))) : [...w.wants, x]; drawStep(); };
-      const freeDays = W.weekDates(w.weekStart).filter(d => d !== w.date && d >= today()
-        && !((w.days.get(d) || {}).card) && !((w.days.get(d) || {}).away));
-      content.appendChild(el('div', 'sw-sub', w.kind === 'dayoff' ? 'I\'ll work any run on' : 'Any run on (a day you\'re off)'));
-      const grid = el('div', 'sw-days');
-      W.weekDates(w.weekStart).forEach(d => {
-        const info = w.days.get(d) || {};
-        const x = { type: 'day', date: d };
-        const b = button('sw-chip' + (isOn(x) ? ' on' : ''), null, () => { w.prefs.flexible = false; toggle(x); });
-        b.appendChild(document.createTextNode(W.shortDay(d)));
-        b.appendChild(el('small', null, d === w.date ? 'GIVING' : info.away ? 'VAC' : info.card ? 'WORK' : d < today() ? 'PAST' : 'OFF'));
-        b.disabled = !freeDays.includes(d);
-        grid.appendChild(b);
-      });
-      content.appendChild(grid);
-      if (freeDays.length > 1) {
-        const flex = button('sw-chip' + (w.prefs.flexible ? ' on' : ''), 'Flexible: any day I\'m off', () => {
-          w.prefs.flexible = !w.prefs.flexible;
-          w.wants = w.wants.filter(x => x.type !== 'day');
-          if (w.prefs.flexible) freeDays.forEach(d => w.wants.push({ type: 'day', date: d }));
-          drawStep();
-        });
-        flex.style.marginTop = '8px';
-        content.appendChild(flex);
-      }
-      if (w.kind === 'give') {
-        content.appendChild(el('div', 'sw-sub', 'Or a different shift on ' + W.longDay(w.date)));
-        const chips = el('div', 'sw-chips');
-        const own = W.shiftOf(w.give.reportMin);
-        [...Object.keys(W.SHIFTS), 'any'].forEach(s => {
-          if (s === own) return;
-          const x = { type: 'shift', shift: s };
-          chips.appendChild(button('sw-chip' + (isOn(x) ? ' on' : ''), s === 'any' ? 'Any different shift' : W.SHIFTS[s], () => toggle(x)));
-        });
-        content.appendChild(chips);
-      }
-      next.addEventListener('click', () => { if (!w.wants.length) return fail('Pick at least one.'); w.step = 4; drawStep(); });
-      return;
-    }
-
-    // step 4: preferences, then post
-    content.appendChild(el('div', 'sw-q', 'Anything you won\'t take?'));
-    content.appendChild(el('div', 'sw-sub', 'Routes to exclude'));
-    const routesBox = el('div', 'sw-chips');
-    content.appendChild(routesBox);
-    const drawRoutes = () => {
-      routesBox.innerHTML = '';
-      const list = [...(w.routes || []), W.OWL];
-      list.forEach(r => {
-        const on = w.prefs.excludeRoutes.includes(r);
-        routesBox.appendChild(button('sw-chip' + (on ? ' on' : ''), r === W.OWL ? 'Night liners' : r, () => {
-          w.prefs.excludeRoutes = on ? w.prefs.excludeRoutes.filter(x => x !== r) : [...w.prefs.excludeRoutes, r];
-          drawRoutes();
-        }));
-      });
-      if (!w.routes) routesBox.appendChild(el('span', 'hint', 'Loading routes…'));
-    };
-    drawRoutes();
-    if (!w.routes) districtRoutes(w.date).then(r => { w.routes = r; drawRoutes(); }).catch(() => { w.routes = []; drawRoutes(); });
-
-    content.appendChild(el('div', 'sw-sub', 'Time window'));
-    const tw = el('div', 'sw-row');
-    const early = field(tw, 'Start no earlier than', { tag: 'select', options: TIME_OPTS(180, 780), value: w.prefs.earliestMin != null ? String(w.prefs.earliestMin) : '' });
-    const late = field(tw, 'Finish by', { tag: 'select', options: TIME_OPTS(600, 1560), value: w.prefs.latestMin != null ? String(w.prefs.latestMin) : '' });
-    early.addEventListener('change', () => { w.prefs.earliestMin = early.value === '' ? null : +early.value; });
-    late.addEventListener('change', () => { w.prefs.latestMin = late.value === '' ? null : +late.value; });
-    content.appendChild(tw);
-    content.appendChild(el('div', 'sw-sub', 'Note (optional)'));
-    const note = field(content, 'Short note for the board', { maxlength: '140', value: w.prefs.note || '' });
-    note.addEventListener('input', () => { w.prefs.note = note.value; });
-    const name = field(content, 'Your name on the board', { maxlength: '60', value: myName(), autocomplete: 'name' });
-    content.appendChild(el('div', 'hint', 'Only this name is shown. Phone or email is shared later, only with the one person you pick.'));
+    // ---- review and post
+    q.textContent = 'Ready to post?';
+    const wants = w.same ? [{ type: 'same' }] : w.wantDates.slice().sort().map(d => ({ type: 'day', date: d }));
+    const poster = { day: d => (w.days && w.days.get(d)) || { known: false, card: null } };
+    const build = () => W.buildOffer({ kind: 'give', give: w.give, wants, prefs: { ...w.prefs, flexible: false } }, poster, today(), Date.now());
+    const built = build();
+    if (built.error) { fail(built.error); next.disabled = true; return; }
+    const preview = { ...built.doc, id: w.id || '', status: 'open', posterName: myName() || 'You',
+      depotKey: profile().depotKey || '', depotLabel: profile().depotLabel || '' };
+    content.appendChild(U.scorecard(preview, { color: 'mine', reason: '' }, { actions: [] }));
+    const nameWrap = el('label', 'sw-bsel');
+    nameWrap.appendChild(el('span', null, 'Your name on the board'));
+    const name = el('input', 'sw-binput');
+    Object.assign(name, { type: 'text', maxLength: 60, value: myName(), autocomplete: 'name' });
+    nameWrap.appendChild(name);
+    content.appendChild(nameWrap);
+    content.appendChild(el('div', 'sw-bhint', 'Only this name is shown. Phone or email is shared later, only with the one person you pick.'));
+    content.appendChild(remind());
 
     next.addEventListener('click', async () => {
       const posterName = name.value.trim();
       if (!posterName) return fail('Enter the name to show on the board.');
-      const built = W.buildOffer({ kind: w.kind, give: w.give, wants: w.wants, prefs: w.prefs },
-        { day: d => (w.days && w.days.get(d)) || { known: false, card: null } }, today());
-      if (built.error) return fail(built.error);
-      next.disabled = true; msg.className = 'msgline'; msg.textContent = 'Saving…';
+      const again = build();
+      if (again.error) return fail(again.error);
+      next.disabled = true; say('Posting…');
       try {
         const info = await E.slugForDate(profile().depotKey, w.give.date);
         if (!info || !info.season) throw Object.assign(new Error('no season'), { code: 'no-season' });
         const fields = {
-          ...built.doc,
+          ...again.doc,
           posterUid: uid(), posterName,
           depotKey: info.slug ? S.depotKeyOf(info.slug) : profile().depotKey,
           depotLabel: (info.district && info.district.label) || profile().depotLabel || profile().depotKey,
@@ -811,7 +881,7 @@ export function mount(root, deps) {
         go('mine');
       } catch (e) {
         next.disabled = false;
-        fail(e && e.code === 'no-season' ? 'That week is not in a picking the app knows yet.' : errText(e));
+        fail(e && e.code === 'no-season' ? 'This week is not in a picking the app knows yet.' : errText(e));
       }
     });
   }

@@ -20,7 +20,9 @@
 //   seasonId, seasonLabel                  the picking the run belongs to
 //   weekStart                              the Sunday of the one work week
 //   give: RunCard                          the poster's run being offered
-//   wants: [{ type:'day', date } | { type:'shift', shift }]
+//   wants: [{ type:'day', date } | { type:'same' } | { type:'shift', shift }]
+//                                          'same' = any other run that day, inside
+//                                          prefs' time window ('shift' is older offers)
 //   prefs: { flexible, excludeRoutes[], earliestMin, latestMin, note }
 //   posterBusy: { date: [reportMin, finishMin] }   the poster's working days,
 //                                          times only, Saturday before to the
@@ -30,7 +32,8 @@
 //   expiresOn                              earliest date in the offer; gone after it
 //   startsAtMs                             when the offered run starts on the real clock
 //                                          (a night liner: the evening before its date);
-//                                          unless arranged, the offer is deleted then
+//                                          unless arranged, the offer is deleted
+//                                          CUTOFF_MIN before then
 //   matchedUid, matchedName                set when the poster picks someone
 //   reportCount                            server-maintained (functions/)
 //   createdAt, updatedAt
@@ -58,8 +61,13 @@ export const OFFER_VERSION = 1;
 /** Minimum rest between two runs, checked for BOTH operators. */
 export const MIN_REST_MIN = 8 * 60;
 
-/** How many weeks ahead an offer can be posted, counting this one. */
-export const WEEKS_AHEAD = 6;
+/** How many weeks ahead an offer can be posted, counting this one: only the
+ *  current Sunday-to-Saturday week. */
+export const WEEKS_AHEAD = 1;
+
+/** No offer for a run that starts within this many minutes (or has started). */
+export const CUTOFF_MIN = 120;
+export const CUTOFF_TEXT = "You can't post a swap for today's run within two hours of its start time.";
 
 export const SHIFTS = { early: 'Early', mid: 'Midday', late: 'Late', night: 'Night' };
 
@@ -108,12 +116,22 @@ export const isExpired = (offer, today) => !!offer.expiresOn && offer.expiresOn 
  *  under Thursday starts Wednesday evening. */
 export const startsAtOf = give => (give && give.date && give.reportMin != null ? minToMs(give.date, give.reportMin) : null);
 
-/** The run has started and no swap was arranged: the offer is over and is
- *  deleted (functions/lib/swap.js expireStarted; the app hides it at once). */
-export function hasStarted(offer, nowMs) {
+/** The run has started and no swap was arranged: the offer is over. */
+export function hasStarted(offer, nowMs, leadMin = 0) {
   if (!offer || offer.status === 'arranged') return false;
   const at = offer.startsAtMs != null ? offer.startsAtMs : startsAtOf(offer.give);
-  return at != null && at <= nowMs;
+  return at != null && at - leadMin * 60000 <= nowMs;
+}
+
+/** The run starts within CUTOFF_MIN (or has started) and no swap was arranged:
+ *  the offer is deleted (functions/lib/swap.js expireStarted; the app hides
+ *  it at once). */
+export const pastCutoff = (offer, nowMs) => hasStarted(offer, nowMs, CUTOFF_MIN);
+
+/** Too late to post this run: it starts within CUTOFF_MIN or has started. */
+export function runInCutoff(card, nowMs) {
+  const at = startsAtOf(card);
+  return at != null && at - CUTOFF_MIN * 60000 <= nowMs;
 }
 
 // ---- runs -----------------------------------------------------------------
@@ -266,16 +284,17 @@ export function checkOffer(offer, me, today) {
     }
     const dayX = me.day(X), dayD = me.day(D);
 
-    if (w.type === 'shift') {
+    if (w.type === 'shift' || w.type === 'same') {
       if (!dayD || !dayD.known) return { color: 'yellow', needs: [D] };
       const mine = dayD.card;
-      if (!mine) return { color: 'red', reason: 'You are off ' + dayName(D) + ': this is a same-day shift swap' };
+      if (!mine) return { color: 'red', reason: 'You are off ' + dayName(D) + ': this is a same-day swap' };
       if (mine.runNo === offer.give.runNo) return { color: 'red', reason: 'That is the same run' };
       const sh = shiftOf(mine.reportMin);
-      if (w.shift && w.shift !== 'any' && sh !== w.shift) {
+      if (w.type === 'same') { /* any other run that day; the time window is in prefs */ }
+      else if (w.shift && w.shift !== 'any' && sh !== w.shift) {
         return { color: 'red', reason: 'Poster wants ' + an(SHIFTS[w.shift].toLowerCase()) + ' run; yours (' + mine.runNo + ') is ' + (SHIFTS[sh] || '?').toLowerCase() };
       }
-      if (w.shift === 'any' && sh === shiftOf(offer.give.reportMin)) {
+      else if (w.shift === 'any' && sh === shiftOf(offer.give.reportMin)) {
         return { color: 'red', reason: 'Poster wants a different shift; yours is ' + (SHIFTS[sh] || '?').toLowerCase() + ' too' };
       }
       const pp = prefProblem(mine, offer.prefs);
@@ -330,21 +349,24 @@ export const guestCheck = () => ({ color: 'yellow', reason: 'Sign in to see if t
  * The validated document for a new or edited offer, or { error } with the
  * first thing wrong. `poster.day(date)` is the same shape as in checkOffer.
  */
-export function buildOffer(input, poster, today) {
+export function buildOffer(input, poster, today, nowMs) {
   const { kind, give, wants, prefs } = input;
   if (!give || !give.runNo || !give.date) return { error: 'Pick the day and run you are offering.' };
   const ws = weekOf(give.date);
   if (give.date < today) return { error: 'That day has already passed.' };
-  if (!weekChoices(today).includes(ws)) return { error: 'Offers can be up to ' + WEEKS_AHEAD + ' weeks ahead.' };
+  if (!weekChoices(today).includes(ws)) return { error: 'Swaps are for this week only (Sunday to Saturday).' };
+  if (nowMs != null && runInCutoff(give, nowMs)) return { error: CUTOFF_TEXT };
   const list = (wants || []).filter(Boolean);
   if (!list.length) return { error: 'Pick at least one thing you would take in return.' };
   for (const w of list) {
     if (w.type === 'day') {
       if (!sameWeek(w.date, give.date)) return { error: 'Both runs must be in the same week (Sunday to Saturday).' };
       if (w.date < today) return { error: dayName(w.date) + ' has already passed.' };
-      if (w.date === give.date) return { error: 'For the same day, choose "a different shift".' };
+      if (w.date === give.date) return { error: 'For the same day, choose "Same day".' };
       const pd = poster.day(w.date);
       if (pd && pd.card) return { error: 'You already work ' + dayName(w.date) + ' (run ' + pd.card.runNo + ').' };
+    } else if (w.type === 'same') {
+      if (kind === 'dayoff') return { error: 'A day-off offer needs a different day.' };
     } else if (w.type === 'shift') {
       if (kind === 'dayoff') return { error: 'A day-off offer needs a different day, not a different shift.' };
       if (w.shift !== 'any' && !SHIFTS[w.shift]) return { error: 'Unknown shift.' };
@@ -357,7 +379,7 @@ export function buildOffer(input, poster, today) {
     kind: kind === 'dayoff' ? 'dayoff' : 'give',
     weekStart: ws,
     give: { ...give },
-    wants: list.map(w => (w.type === 'day' ? { type: 'day', date: w.date } : { type: 'shift', shift: w.shift })),
+    wants: list.map(w => (w.type === 'day' ? { type: 'day', date: w.date } : w.type === 'same' ? { type: 'same' } : { type: 'shift', shift: w.shift })),
     prefs: {
       flexible: !!p.flexible,
       excludeRoutes: [...new Set((p.excludeRoutes || []).map(r => String(r).toUpperCase().trim()).filter(Boolean))].slice(0, 30),
@@ -388,6 +410,7 @@ export function describeWants(offer) {
   const days = (offer.wants || []).filter(w => w.type === 'day').map(w => w.date).sort();
   const shifts = (offer.wants || []).filter(w => w.type === 'shift').map(w => w.shift);
   const parts = [];
+  if ((offer.wants || []).some(w => w.type === 'same')) parts.push('Another run on ' + shortDay(offer.give.date) + ', same day');
   if (days.length) {
     const list = days.map(shortDay).join(', ');
     parts.push(offer.prefs && offer.prefs.flexible ? 'Any run on a day I\'m off (' + list + ')' : 'Any run on ' + list);
