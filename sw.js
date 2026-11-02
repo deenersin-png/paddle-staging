@@ -17,7 +17,7 @@
 //     served only when the network fails - a depot parking lot with one bar
 //     still gets the paddle viewer it loaded this morning.
 
-const VERSION = 'pa-sw-5';
+const VERSION = 'pa-sw-6';
 const CACHE = 'pa-cache-v2';
 
 // What the worker hands the PAGE is marked no-store. The browser's in-memory
@@ -102,4 +102,20 @@ self.addEventListener('push', e => {
     data: { url: d.url || scope + 'home.html' }
   }).catch(() => self.registration.showNotification(String(d.title || 'Paddle App'), { body: String(d.body || '') }));
   e.waitUntil(show);
+});
+
+// The browser replaced or dropped the push subscription (Chrome and Firefox
+// say so here; iPhone never fires this, which is why the page re-checks on
+// every open). Subscribe again with the same key straight away, and tell any
+// open page, whose refreshPush() then hands the server the new token. With
+// no page open, the next open does it.
+self.addEventListener('pushsubscriptionchange', e => {
+  e.waitUntil((async () => {
+    try {
+      const key = e.oldSubscription && e.oldSubscription.options && e.oldSubscription.options.applicationServerKey;
+      if (!e.newSubscription && key) await self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+    } catch (_) {}
+    const list = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    list.forEach(c => c.postMessage({ type: 'pa-push-changed' }));
+  })());
 });

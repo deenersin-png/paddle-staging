@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { sendDue, STALE_MS } from '../lib/run-alerts.js';
+import { sendDue, STALE_MS, ttlSeconds, EXPIRE_GRACE_MS } from '../lib/run-alerts.js';
 import { makeDb } from './fake-db.mjs';
 
 const NOW = Date.UTC(2026, 9, 28, 9, 0);
@@ -84,4 +84,16 @@ test('a phone is only forgotten when Google says its token is dead', async () =>
   await sendDue(h.deps, NOW);
   assert.equal(h.db.store.has('users/deen/devices/a'), true, 'a bad message is not a dead phone');
   assert.equal(h.db.store.has('users/deen/devices/b'), false);
+});
+
+test('an offline phone gets an alert only until its moment has passed', async () => {
+  const h = harness();
+  h.db.store.set('runAlerts/deen_2026-10-28_rep1', { uid: 'deen', date: '2026-10-28', key: 'rep1', sendAtMs: NOW, title: 'Run 209 · report in 30 min', body: 'b' });
+  h.db.store.set('runAlerts/deen_2026-10-28_d1785', { uid: 'deen', date: '2026-10-28', key: 'd1785', sendAtMs: NOW, title: 'Run 209 · departure now', body: 'b' });
+  await sendDue(h.deps, NOW);
+  const ttl = Object.fromEntries(h.pushes.map(p => [p.tag, p.ttlSec]));
+  assert.equal(ttl['run-2026-10-28-rep1'], (30 * 60000 + EXPIRE_GRACE_MS) / 1000);   // until just after report time
+  assert.equal(ttl['run-2026-10-28-d1785'], 60);                                      // the bus leaves now
+  assert.equal(ttlSeconds({ sendAtMs: NOW, title: 'Run 9 · report in 1 min' }, NOW + 30000), 90);
+  assert.equal(ttlSeconds({ sendAtMs: NOW - 3600000, title: 'Test alert · Paddle App' }, NOW), 60);  // never below a minute
 });

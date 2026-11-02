@@ -239,6 +239,23 @@ export async function sendTestAlert({ db, uid, now = Date.now() }) {
   return a;
 }
 
+/**
+ * The alerts this phone last saved that came due in (fromMs, toMs], soonest
+ * first, as [{ at, title, body }]: what the operator may have missed while
+ * the phone was offline. Read it BEFORE the next syncRunAlerts, which forgets
+ * alerts once their time has passed.
+ */
+export function dueBetween(uid, fromMs, toMs) {
+  const local = readKnown(uid);
+  const out = [];
+  for (const x of Object.values((local && local.a) || {})) {
+    if (!(x.at > fromMs && x.at <= toMs)) continue;
+    const [, title = '', ...body] = String(x.s).split('|');   // signature: sendAtMs|title|body
+    out.push({ at: x.at, title, body: body.join('|') });
+  }
+  return out.sort((a, b) => a.at - b.at);
+}
+
 /** Whether this phone has synced alerts for `uid` before. When it has not and
  *  alerts are off, there is nothing to clear and no reason to ask the server. */
 export const hasLocal = uid => readKnown(uid) !== null;

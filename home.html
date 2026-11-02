@@ -159,6 +159,14 @@ a.chip{text-decoration:none}
 .bulk-back{margin-bottom:12px}
 h2.k{margin-bottom:10px}
 
+/* Signal lost / back (recover() in the script). */
+.net-banner,.net-toast{font-family:var(--mono);font-size:11px;letter-spacing:.02em;border-radius:4px;padding:7px 10px;margin-bottom:10px}
+.net-banner{color:var(--amber);border:1px solid rgba(245,166,35,.35);background:var(--amber-dim)}
+.net-toast{color:var(--green);border:1px solid var(--line);background:var(--ink2)}
+.net-missed{border:1px solid rgba(245,166,35,.35);border-radius:4px;background:var(--ink2);padding:12px 14px;margin-bottom:12px;font-family:var(--mono);font-size:12px;color:var(--text)}
+.net-missed-h{color:var(--amber);font-size:11px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px}
+.net-missed ul{margin:0 0 10px;padding-left:18px;line-height:1.7}
+
 @media (max-width:640px){
   .tab{padding:9px 10px;flex:1 1 auto}
   .stats{grid-template-columns:repeat(2,1fr)}
@@ -189,6 +197,13 @@ h2.k{margin-bottom:10px}
 </nav>
 
 <div class="wrap">
+  <div class="net-banner" id="net-banner" role="status" hidden>Offline · countdown still runs from your schedule · alerts arrive when signal returns</div>
+  <div class="net-toast" id="net-toast" role="status" hidden></div>
+  <div class="net-missed" id="net-missed" hidden>
+    <div class="net-missed-h">While you were offline</div>
+    <ul id="net-missed-list"></ul>
+    <button class="rowbtn" id="net-missed-ok" type="button">OK</button>
+  </div>
   <div class="pa-sync" id="sync-line" hidden></div>
   <div class="gate" id="gate-out">Sign in to see your next run.<br>Your schedule follows you to every device.</div>
 
@@ -465,6 +480,7 @@ async function boot() {
   await refreshToday();
   requireRuns();
   syncPhoneAlerts();
+  if (offlineSince()) recover(true);     // the app was shut while offline: catch up now
   if (toSwap && !ctx.runsGate) { setView('swap', { offer: urlParams.offer, new: urlParams.new }); urlParams.view = urlParams.offer = null; urlParams.new = false; }
   swap.refreshBadge();
 }
@@ -634,17 +650,86 @@ async function wakeLock(on) {
     } else if (!on && ctx.wakeLock) { await ctx.wakeLock.release(); ctx.wakeLock = null; }
   } catch (_) {}
 }
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') { recompute(); refreshToday(); refreshLeader(); checkPush(); }
-});
+// ---- signal lost and back ---------------------------------------------------
+// The operator's phone goes into Airplane Mode on its own when they leave the
+// loop and comes back out when they return. None of that may need them to
+// close and reopen the app: whenever the signal returns or the app comes back
+// to the front, recover() re-fetches the live data, re-checks the push
+// registration (and the notification permission, without asking) and
+// recomputes the countdown, which only ever uses the schedule and this
+// phone's clock.
+//
+// What a web app cannot do: run while it is closed or in the background.
+// Alerts then come from the server as pushes, which the phone's push service
+// holds while it is offline and delivers when it reconnects, or drops once
+// the moment has passed (functions/lib/run-alerts.js sets each one's TTL).
+//
+// When the offline spell began is kept in localStorage, so an iPhone that
+// shut the app while offline still shows what came due in the meantime.
+const LS_OFFLINE = 'pa_offline_since';
+const offlineSince = () => { try { return +localStorage.getItem(LS_OFFLINE) || 0; } catch (_) { return 0; } };
+
+function markOffline() {
+  try { if (!offlineSince()) localStorage.setItem(LS_OFFLINE, String(Date.now())); } catch (_) {}
+  $('net-banner').hidden = false;
+  $('net-toast').hidden = true;
+}
+
+function recover(force) {
+  if (!navigator.onLine) { markOffline(); recompute(); tick(); refreshLeader(); return; }
+  const since = offlineSince();
+  try { localStorage.removeItem(LS_OFFLINE); } catch (_) {}
+  $('net-banner').hidden = true;
+  if (!ctx.user || !A.isAttached()) return;
+  // Alerts that came due while offline, read before the alert sync forgets them.
+  if (since) showMissed(RA.dueBetween(ctx.user.uid, since, Date.now()));
+  // A day's trips that failed to load offline would otherwise stay empty.
+  for (const [date, m] of ctx.trips) if (![...m.values()].some(t => t.length)) ctx.trips.delete(date);
+  recompute();
+  const done = refreshToday();                     // also re-fetches the leaders and detours
+  checkPush(force || !!since);
+  if (since) Promise.resolve(done).finally(() => toast('Back online · refreshed'));
+}
+
+function toast(text) {
+  const t = $('net-toast');
+  t.textContent = text; t.hidden = false;
+  clearTimeout(ctx.toastTimer);
+  ctx.toastTimer = setTimeout(() => { t.hidden = true; }, 4000);
+}
+
+function showMissed(list) {
+  const box = $('net-missed');
+  if (!list.length) return;
+  const at = ms => new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const ul = $('net-missed-list');
+  ul.textContent = '';
+  for (const a of list) ul.appendChild(el('li', null, at(a.at) + ' · ' + a.title + (a.body ? ' — ' + a.body : '')));
+  box.hidden = false;
+}
+$('net-missed-ok').addEventListener('click', () => { $('net-missed').hidden = true; });
+
+window.addEventListener('offline', markOffline);
+window.addEventListener('online', () => recover(true));
+window.addEventListener('pageshow', e => { if (e.persisted) recover(false); });   // back from the page cache
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') recover(false); });
+if (!navigator.onLine) markOffline();
+// sw.js says the browser replaced the push subscription: mend it now.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.type === 'pa-push-changed') checkPush(true); });
+}
 
 // The phone's push registration and its saved alerts, checked on every open
 // and every return to the app (an iPhone keeps the app alive in the
-// background, so "opening" it is often just this). At most every 5 minutes.
-function checkPush() {
-  if (!ctx.user || Date.now() - (ctx.pushCheckedAt || 0) < 5 * 60000) return;
+// background, so "opening" it is often just this). At most every 5 minutes,
+// unless the signal just came back or the browser changed the subscription.
+function checkPush(force) {
+  if (!ctx.user || ctx.pushChecking || (!force && Date.now() - (ctx.pushCheckedAt || 0) < 5 * 60000)) return;
   ctx.pushCheckedAt = Date.now();
-  P.refreshPush(ctx.user.uid).then(r => { if (r === 'reconnected' && ctx.view === 'alerts') renderAlerts(); });
+  ctx.pushChecking = true;
+  P.refreshPush(ctx.user.uid)
+    .then(r => { if (r === 'reconnected' && ctx.view === 'alerts') renderAlerts(); })
+    .finally(() => { ctx.pushChecking = false; });
   syncPhoneAlerts();
 }
 
@@ -765,6 +850,8 @@ async function refreshLeader() {
     ctx.leaderHtml = html;
     $('leader-cards').innerHTML = html;
   };
+  // No signal: say so instead of leaving positions that are minutes old.
+  if (!navigator.onLine) { show(lineHtml('Leader location unavailable — offline.')); return; }
   const byBlock = tripsFor(c.date);
   const pieces = c.run.pieces.filter(p => p.endMin == null || p.endMin >= c.nowMin);
   if (!pieces.length) { show(lineHtml('No more pieces today.')); return; }
@@ -825,7 +912,7 @@ async function refreshLeader() {
       const html = C.busCardHtml(model, { rec: recs[i], leadersOpen: ctx.leadersOpen.has(f.block), note });
       return '<div class="bt leader-card" data-block="' + esc(f.block) + '">' + html + '</div>';
     }).join(''));
-  } catch (_) { show(lineHtml('Live lookup failed — no leader data right now.')); }
+  } catch (_) { show(lineHtml(navigator.onLine ? 'Live lookup failed — no leader data right now.' : 'Leader location unavailable — offline.')); }
   clearInterval(ctx.leaderTimer);
   ctx.leaderTimer = setInterval(() => { if (document.visibilityState === 'visible') refreshLeader(); }, 30000);
 }
@@ -873,6 +960,8 @@ function runRoutesFor(c) {
 async function refreshDetours() {
   const c = ctx.current, routes = runRoutesFor(c);
   if (!$('route-detours') || !routes.length) return;
+  // Offline: keep the last list shown (detours change slowly); coming back online refreshes it.
+  if (!navigator.onLine) { if (!ctx.detoursHtml) $('route-detours').innerHTML = C.detoursErrorHtml('Detours unavailable — offline'); return; }
   const key = routes.join(',');
   const token = ctx.detourToken = (ctx.detourToken || 0) + 1;
   try {
