@@ -283,6 +283,7 @@ a.run-chip:active{opacity:.7}
 .msg .sub{font-size:14px;color:var(--text-faint);line-height:1.6}
 .msg.find-msg .main{font-size:21px;font-weight:800;color:var(--text)}
 .msg.find-msg .sub{font-size:21px;font-weight:800;color:var(--text-dim);line-height:1.4}
+.msg.find-msg .find-sec+.find-sec{margin-top:26px}
 .retry-btn{display:inline-block;margin-top:16px;padding:10px 24px;background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent);border-radius:8px;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation}
 .retry-btn:active{opacity:.7}
 
@@ -420,7 +421,7 @@ const DETOUR_ENDPOINTS = [
 // bus/busBlock: set while a bus-number search is active — the page loads that
 // bus's route as usual but shows only its card. block: a block number shown
 // the same way (a 4-digit search is tried as a bus AND a block number). find:
-// what that search turned up — { num, bus, block, lastSeen } (see
+// what that search turned up — { num, bus, block, busSeen, blockSeen } (see
 // onBusSearch). Picking a route clears them all.
 const state = { route: '', status: 'idle', lastUpdate: null, bus: '', busBlock: '', block: '', find: null };
 
@@ -2048,15 +2049,17 @@ function findCardsFor(merged) {
   return out;
 }
 
-// Banners above a search's cards: where the searched bus was last seen when
-// it isn't out, and a button over to the other match when the number is a
+// Banners above a search's cards: where the searched bus or block was last
+// seen when that one isn't out, and a button over to the other match when the number is a
 // bus on one route and a block on another.
 function findBannersHtml() {
   const f = state.find;
   if (!f) return '';
   let h = '';
-  if (!state.bus && f.lastSeen)
-    h += '<div class="alert-banner info"><span class="alert-icon">🚌</span><span>' + esc('Bus ' + f.num + ' isn\'t out now. ' + f.lastSeen[0] + ' ' + f.lastSeen.slice(1).join(', ') + '.') + '</span></div>';
+  const seen = (what, parts) => '<div class="alert-banner info"><span class="alert-icon">🚌</span><span>' +
+    esc(what + ' ' + parts[0] + ' ' + parts.slice(1).join(', ') + '.') + '</span></div>';
+  if (!state.bus && f.busSeen) h += seen('Bus ' + f.num + ' is currently offline.', f.busSeen);
+  if (!state.block && f.blockSeen) h += seen('Block ' + f.num + ' isn\'t in service now.', f.blockSeen);
   if (f.bus && f.block && !isSameRoute(f.bus.route, f.block.route)) {
     const other = state.bus ? 'Block ' + f.num + ' · Route ' + f.block.route : 'Bus ' + f.num + ' · Route ' + f.bus.route;
     h += '<button type="button" class="alert-banner info find-alt" onclick="switchFindView()"><span class="alert-icon">↔</span>' +
@@ -2729,14 +2732,16 @@ async function onRouteChange() {
 // state.json), skipping any block it has since been swapped off; failing
 // that, where it was last seen. As a block: the route it is live on, else
 // the route it is on now per the timetable — only a block running now (out
-// on a trip or between trips) counts. Resets the dropdown to "Select Route" and loads
-// the route showing only those cards: both when they share a route, else the
-// bus's, with a button over to the block's.
+// on a trip or between trips) counts; failing that, where it was last seen.
+// Sightings older than SEEN_DAYS don't count. Resets the dropdown to "Select
+// Route" and loads the route showing only those cards: both when they share
+// a route, else the bus's, with a button over to the block's.
+const SEEN_DAYS = 3;
 async function onBusSearch() {
   const num = document.getElementById('busSearch').value.trim();
   if (!num) return;
   document.getElementById('routeSelect').value = '';
-  const f = { num, bus: null, block: null, lastSeen: null };
+  const f = { num, bus: null, block: null, busSeen: null, blockSeen: null };
   state.find = f; state.bus = ''; state.busBlock = ''; state.block = '';
   const superseded = () => state.find !== f; // a route was picked (or another number searched) meanwhile
   document.getElementById('alertArea').innerHTML = '';
@@ -2756,6 +2761,10 @@ async function onBusSearch() {
     const st = await fetchWithTimeout(GTFS_OBSERVED_BASE + '/state.json?t=' + Date.now());
     const rows = Object.values(st.blocks || {});
     rows.forEach(r => notePair(r.blockId, r.vehicleId, r.lastSeenAtMs || r.endedAtMs || 0, r.routeId));
+    // The newest sighting matching `pick` within SEEN_DAYS, or null.
+    const at = r => r.lastSeenAtMs || r.endedAtMs || 0;
+    const newest = pick => rows.filter(r => pick(r) && at(r) > Date.now() - SEEN_DAYS * 86400000)
+      .sort((a, c) => at(c) - at(a))[0] || null;
     if (!f.bus) {
       // Not live: its block today from the pairing (newest sighting, not
       // swapped off since), then the route that block is on now or runs next
@@ -2766,12 +2775,15 @@ async function onBusSearch() {
         f.bus = { block: kb.block, route: await routeForBlockNow(kb.block, kb.route, routes) };
       } else {
         // Not out today (or swapped off its block): where it was last seen.
-        const at = r => r.lastSeenAtMs || r.endedAtMs || 0;
-        const seen = rows.filter(r => String(r.vehicleId) === num && at(r)).sort((a, c) => at(c) - at(a))[0];
-        if (seen) f.lastSeen = lastSeenParts(seen);
+        const seen = newest(r => String(r.vehicleId) === num);
+        if (seen) f.busSeen = lastSeenParts(seen, 'bus');
       }
     }
-    if (!f.block) f.block = await blockToday(num, rows);
+    if (!f.block) {
+      f.block = await blockToday(num, rows);
+      const seen = !f.block && newest(r => String(r.blockId) === num);
+      if (seen) f.blockSeen = lastSeenParts(seen, 'block');
+    }
   } catch(e) {
     if (superseded()) return;
     if (!f.bus && !f.block) {
@@ -2787,9 +2799,12 @@ async function onBusSearch() {
     state.route = '';
     setStatus('idle');
     document.getElementById('routeBar').classList.add('hidden');
-    setContent(f.lastSeen
-      ? '<div class="msg find-msg"><div class="icon">🚌</div><div class="main">Bus ' + esc(num) + ' isn\'t out now</div><div class="sub">' + f.lastSeen.map(esc).join('<br>') + '</div></div>'
-      : '<div class="msg find-msg"><div class="icon">🚌</div><div class="main">' + esc(num) + ' not found</div><div class="sub">No bus with this number has been seen</div></div>');
+    const sec = (main, sub) => '<div class="find-sec"><div class="main">' + esc(main) + '</div><div class="sub">' + sub + '</div></div>';
+    let h = '';
+    if (f.busSeen) h += sec('Bus ' + num + ' is currently offline', f.busSeen.map(esc).join('<br>'));
+    if (f.blockSeen) h += sec('Block ' + num + ' isn\'t in service now', f.blockSeen.map(esc).join('<br>'));
+    if (!h) h = sec(num + ' not found', 'No bus or block with this number<br>seen in the last ' + SEEN_DAYS + ' days');
+    setContent('<div class="msg find-msg"><div class="icon">🚌</div>' + h + '</div>');
     return;
   }
   if (f.bus) {
@@ -2831,11 +2846,13 @@ function pickRoutes(names) {
 }
 
 // ["Last seen", "yesterday at 10:42 PM", "on Route 44 Block 9663", "Run 209"]
-// from a state.json row — one line each in the not-found message. "yesterday"
+// from a state.json row — one line each in the not-found message. For a
+// searched block (`as` 'block') the third line names the bus instead:
+// "on Route 44 Bus 3038". "yesterday"
 // is by the calendar, as a person reads a time; the run goes by its service
 // day (a 1 AM sighting belongs to the evening before) and only when that day
 // ran today's pick.
-function lastSeenParts(row) {
+function lastSeenParts(row, as) {
   const ms = row.lastSeenAtMs || row.endedAtMs;
   const cal = new Date(ms); cal.setHours(0, 0, 0, 0);
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -2848,7 +2865,8 @@ function lastSeenParts(row) {
   if (inOwlWindow(day)) day.setDate(day.getDate() - 1);
   day.setHours(0, 0, 0, 0);
   const time = new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  const parts = ['Last seen', when + ' at ' + time, 'on Route ' + row.routeId + ' Block ' + row.blockId];
+  const parts = ['Last seen', when + ' at ' + time,
+    'on Route ' + row.routeId + (as === 'block' ? ' Bus ' + row.vehicleId : ' Block ' + row.blockId)];
   const rec = paddle.byBlock.get(String(row.blockId));
   if (rec && rec.runs.length && dayTypeOfDate(day) === getDayType()) {
     // The run out at that moment: the last to have pulled out by then. A
