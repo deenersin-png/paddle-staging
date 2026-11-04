@@ -662,13 +662,19 @@ function withoutOldSchedule(list) {
 function serviceDayTrips(data) {
   const trips = dayTrips(data, getDayType());
   if (!inOwlWindow(new Date())) return trips;
+  // A block that goes out before 4 AM comes with its whole run, not just its
+  // trips before 4: route 42 block 9102 (out 1:27 AM, trips 1:34-10:38 AM)
+  // otherwise "ended" at 4:25 until the day turned over at 4:00.
   const owlEnd = SERVICE_DAY_START_HR * 60;
   const plus24 = t => String(t).replace(/^(\d+)/, h => String(parseInt(h, 10) + 24));
-  const early = dayTrips(data, dayTypeOfDate(new Date()))
-    .filter(t => (timeStrToMin(t.start) ?? Infinity) < owlEnd)
+  const today = dayTrips(data, dayTypeOfDate(new Date()));
+  const nightBlocks = new Set(today.filter(t => (timeStrToMin(t.start) ?? Infinity) < owlEnd).map(t => String(t.block_id)));
+  const early = today
+    .filter(t => nightBlocks.has(String(t.block_id)))
     .map(t => ({ ...t, start: plus24(t.start), end: plus24(t.end) }));
+  // Yesterday's own copies of those trips (same ids, long done) go.
   const ids = new Set(early.map(t => String(t.trip_id)));
-  return trips.filter(t => !(ids.has(String(t.trip_id)) && timeStrToMin(t.start) < owlEnd)).concat(early);
+  return trips.filter(t => !ids.has(String(t.trip_id))).concat(early);
 }
 
 // septa-gtfs's feed still carries the previous schedule beside the current
@@ -2630,7 +2636,7 @@ function allTripsCardHtml(it, dirs, anim, idx) {
   const nums = runs.length ? runs.map(numOf).join('<span class="at-relief">→</span>') : '<div class="prc-num">—</div>';
   const paddles = runs.filter(r => r.link).map(r => '<a class="prc-paddle" href="' + esc(r.link) + '" target="_blank" rel="noopener">' +
     (two ? esc(r.runno) : 'PADDLE') + '</a>').join('');
-  const tag = it.inService ? '<span class="at-tag now">IN SERVICE</span>' : it.layover ? '<span class="at-tag lay">LAYOVER</span>' : '';
+  const tag = it.inService ? '<span class="at-tag now">IN SERVICE</span>' : '';
   let h = '<div class="prc day-' + day + (it.inService ? ' at-now' : '') + (anim ? ' fade-in' : '') + '" style="animation-delay:' + (idx * 0.015) + 's">';
   h += '<div class="prc-head"><div class="prc-head-top">' + nums + '<div class="prc-day">' + esc(day) + '</div>' +
        '<div class="prc-actions">' + (two && paddles ? '<span class="at-paddle-lbl">PADDLE</span>' : '') + paddles + '</div></div>';
