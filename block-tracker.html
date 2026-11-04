@@ -157,6 +157,10 @@ body.has-bar #content{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .at-dir.done{background:var(--line);color:var(--dim)}
 .at-dir.cur{background:rgba(61,214,140,.16);color:var(--green);box-shadow:inset 0 0 0 1px rgba(61,214,140,.45)}
 .at-blk{font-size:11px;font-weight:600;color:var(--mid);white-space:nowrap}
+.at-runf{margin-left:auto;padding:3px 9px;border-radius:3px;border:1px solid var(--line3);background:transparent;color:var(--mid);font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;cursor:pointer}
+.at-runf:hover{color:var(--bright);border-color:var(--mid)}
+.at-runf.on{border-color:var(--amber);color:var(--amber);background:rgba(245,166,35,.1)}
+.at-empty .at-runf{margin:10px auto 0;display:block}
 .at-bus{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:3px;background:var(--line2);color:var(--bright);white-space:nowrap}
 .at-bus svg{width:13px;height:13px;fill:currentColor}
 .at-bus.unknown{background:transparent;border:1px dashed var(--line3);color:var(--mid)}
@@ -1035,7 +1039,11 @@ async function loadPaddleData() {
       const runLink = new Map();
       for (const row of parseCSV(pdfsText)) {
         if (!row.runno || (row.day || '') !== dayLabel) continue;
-        const link = (row.moblink || row.pclink || '').trim();
+        // Phones open the mobile link; a PC the desktop one (the mobile link
+        // makes a desktop browser save the PDF instead of opening it), as the
+        // Paddle App's viewer does.
+        const phone = window.innerWidth <= 768;
+        const link = ((phone ? row.moblink || row.pclink : row.pclink || row.moblink) || '').trim();
         if (link) runLink.set(String(row.runno), link);
       }
 
@@ -2365,7 +2373,7 @@ function weaveGhosts(active, ghosts) {
 // refresh that finds the directions in a different order (or one direction
 // briefly empty) can't move the view; it is saved per route (bt_dir_<route>).
 // The mode survives refreshes and route changes for this visit.
-const view = { mode: 'dir', dir: '', follow: false };
+const view = { mode: 'dir', dir: '', follow: false, run: '' };  // run: All Trips shows only this run (depot|runno)
 let lastCards = [];     // annotated cards of the last render (the route's, or a search's)
 let lastEmptyHtml = ''; // message for a direction view when there are no cards
 let refreshing = false; // refresh spinner state, kept across bar redraws
@@ -2606,6 +2614,8 @@ function dayLabelOf(day) { return day === 'saturday' ? 'Saturday' : day === 'sun
 // PADDLE; this trip's times on the left and the run's routes on the
 // right), the bus's location while it is live, then the trips still to do by
 // that direction and the bus number.
+const runKey = r => r.depot + '|' + r.runno;
+
 function allTripsCardHtml(it, anim, idx) {
   const day = dayLabelOf(getDayType());
   // A relief during this trip shows both runs, in order: "203 → 424",
@@ -2642,15 +2652,25 @@ function allTripsCardHtml(it, anim, idx) {
   h += vid ? '<span class="at-bus">' + ICONS.bus + ' ' + esc(vid) + '</span>'
            : '<span class="at-bus unknown">' + ICONS.bus + ' Bus# pending</span>';
   h += '<span class="at-blk">Blk ' + esc(it.blk) + '</span>';
+  // Show only this run's trips, or back to every run.
+  if (view.run) h += '<button type="button" class="at-runf on" data-run-filter="">Show all runs</button>';
+  else if (runs.length) h += '<button type="button" class="at-runf" data-run-filter="' + esc(runKey(runs[0])) + '">' +
+    'Run ' + esc(runs[0].runno) + ' only</button>';
   return h + '</div></div>';
 }
 
 function buildAllTripsPage(anim) {
-  const items = sched.loaded ? allTripsItems() : [];
+  let items = sched.loaded ? allTripsItems() : [];
+  // "Run 558 only": every card that run drives (a relief card counts for both runs).
+  const runNo = view.run ? view.run.split('|')[1] : '';
+  if (view.run) items = items.filter(it => runsOnBlockDuring(it.blk, it.s, it.e).some(r => runKey(r) === view.run));
   const buses = new Set(items.map(it => it.blk)).size;
-  let h = '<div class="section-label' + (anim ? ' fade-in' : '') + '">All Trips · ' + buses + (buses === 1 ? ' bus' : ' buses') + '</div>';
+  let h = '<div class="section-label' + (anim ? ' fade-in' : '') + '">All Trips · ' +
+    (view.run ? 'Run ' + esc(runNo) + ' · ' + items.length + (items.length === 1 ? ' trip' : ' trips')
+              : buses + (buses === 1 ? ' bus' : ' buses')) + '</div>';
   if (!sched.loaded) return h + '<div class="at-empty">Loading the timetable…</div>';
-  if (!items.length) return h + '<div class="at-empty">No trips left today on Route ' + esc(state.route) + '</div>';
+  if (!items.length) return h + '<div class="at-empty">No trips left today' + (view.run ? ' for Run ' + esc(runNo) + ' on Route ' : ' on Route ') + esc(state.route) +
+    (view.run ? ' <button type="button" class="at-runf on" data-run-filter="">Show all runs</button>' : '') + '</div>';
   return h + '<div class="at-list">' + items.map((it, i) => allTripsCardHtml(it, anim, i)).join('') + '</div>';
 }
 
@@ -3052,6 +3072,9 @@ function manageLayoverTimers() {
   }, { passive: true });
 
   content.addEventListener('click', e => {
+    // All Trips: one run's cards only / every run again.
+    const rf = e.target.closest('[data-run-filter]');
+    if (rf) { view.run = rf.dataset.runFilter || ''; drawView(true); window.scrollTo(0, 0); return; }
     // Leaders expand/collapse — only the right-side "Leaders" control toggles
     // the panel; run chips (also on this line) fall through to open their PDF.
     const toggle = e.target.closest('[data-lead-toggle]');
@@ -3121,7 +3144,7 @@ async function onRouteChange() {
 
 function endSearch() {
   state.bus = ''; state.busBlock = ''; state.block = ''; state.find = null;
-  view.follow = false;
+  view.follow = false; view.run = '';
   document.getElementById('busSearch').value = '';
   document.querySelector('.input-row').classList.remove('searching');
 }
@@ -3229,7 +3252,7 @@ async function onBusSearch() {
   // (dimmed, route cleared) and come back when the field is cleared.
   document.getElementById('routeSelect').value = '';
   document.querySelector('.input-row').classList.add('searching');
-  view.mode = 'dir'; view.follow = true; // show the found bus, in its own direction
+  view.mode = 'dir'; view.follow = true; view.run = ''; // show the found bus, in its own direction
   const f = { num, bus: null, block: null, busSeen: null, blockSeen: null };
   state.find = f; state.bus = ''; state.busBlock = ''; state.block = '';
   const superseded = () => state.find !== f; // a route was picked (or another number searched) meanwhile
@@ -3381,6 +3404,7 @@ async function loadRoute(route) {
   isFirstRender = true;
   lastHTML = '';
   view.dir = '';  // this route's own saved direction (see currentDir)
+  view.run = '';
   lastCards = []; lastEmptyHtml = '';
   sched.dirNames = {}; // the old route's; this route's come with its schedule
   renderBottomBar();
