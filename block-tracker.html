@@ -142,6 +142,9 @@ body.has-bar #content{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .at-list .prc.at-now{border-color:var(--line3)}
 .at-list .prc-head{border-bottom:none}
 .at-list .prc-head-bottom{justify-content:space-between;gap:10px}
+.at-list .prc-actions{gap:5px}
+.at-relief{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--mid);margin:0 -2px}
+.at-paddle-lbl{font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:.06em;color:var(--dim)}
 .at-time{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--mid);white-space:nowrap;font-variant-numeric:tabular-nums}
 .at-time .at-tag{font-size:10px;font-weight:700;letter-spacing:.06em;padding:1px 5px;border-radius:3px;margin-right:6px;background:var(--line);color:var(--mid)}
 .at-time .at-tag.now{background:rgba(61,214,140,.14);color:var(--green)}
@@ -2501,6 +2504,16 @@ function runOnBlockAt(blk, min) {
   return (before || segs.slice().sort((a, b) => a.s - b.s)[0]).run;
 }
 
+// Every run on `blk` during [s, e): the one on it at the start, then any
+// relief that takes over before the round trip ends ("203 → 424").
+function runsOnBlockDuring(blk, s, e) {
+  const first = runOnBlockAt(blk, s);
+  if (!first) return [];
+  const rec = paddle.byBlock.get(String(blk));
+  const later = (rec.segs || []).filter(x => x.s != null && x.s > s && x.s < e).sort((a, b) => a.s - b.s).map(x => x.run);
+  return [first, ...later].filter((r, i, a) => a.indexOf(r) === i);
+}
+
 function dayLabelOf(day) { return day === 'saturday' ? 'Saturday' : day === 'sunday' ? 'Sunday' : 'Weekday'; }
 
 // One All Trips scorecard: the Paddle App's card head (run number, day,
@@ -2509,16 +2522,20 @@ function dayLabelOf(day) { return day === 'saturday' ? 'Saturday' : day === 'sun
 // direction and the bus number.
 function allTripsCardHtml(it, dirs, anim, idx) {
   const day = dayLabelOf(getDayType());
-  const run = runOnBlockAt(it.blk, it.s);
-  const url = run && run.link ? run.link : '';
-  const runNo = run ? run.runno : '—';
-  const routes = run && run.routes.length ? run.routes.join(' | ') : state.route;
-  const num = url ? '<a class="prc-num" href="' + esc(url) + '" target="_blank" rel="noopener">' + esc(runNo) + '</a>'
-                  : '<div class="prc-num">' + esc(runNo) + '</div>';
+  // A relief during this round trip shows both runs, in order: "203 → 424",
+  // each number and its own PADDLE button opening that run's paddle.
+  const runs = runsOnBlockDuring(it.blk, it.s, it.e);
+  const two = runs.length > 1;
+  const routes = runs.length ? [...new Set(runs.flatMap(r => r.routes))].join(' | ') || state.route : state.route;
+  const numOf = r => r.link ? '<a class="prc-num" href="' + esc(r.link) + '" target="_blank" rel="noopener">' + esc(r.runno) + '</a>'
+                            : '<div class="prc-num">' + esc(r.runno) + '</div>';
+  const nums = runs.length ? runs.map(numOf).join('<span class="at-relief">→</span>') : '<div class="prc-num">—</div>';
+  const paddles = runs.filter(r => r.link).map(r => '<a class="prc-paddle" href="' + esc(r.link) + '" target="_blank" rel="noopener">' +
+    (two ? esc(r.runno) : 'PADDLE') + '</a>').join('');
   const tag = it.inService ? '<span class="at-tag now">IN SERVICE</span>' : it.layover ? '<span class="at-tag lay">LAYOVER</span>' : '';
   let h = '<div class="prc day-' + day + (it.inService ? ' at-now' : '') + (anim ? ' fade-in' : '') + '" style="animation-delay:' + (idx * 0.015) + 's">';
-  h += '<div class="prc-head"><div class="prc-head-top">' + num + '<div class="prc-day">' + esc(day) + '</div>' +
-       '<div class="prc-actions">' + (url ? '<a class="prc-paddle" href="' + esc(url) + '" target="_blank" rel="noopener">PADDLE</a>' : '') + '</div></div>';
+  h += '<div class="prc-head"><div class="prc-head-top">' + nums + '<div class="prc-day">' + esc(day) + '</div>' +
+       '<div class="prc-actions">' + (two && paddles ? '<span class="at-paddle-lbl">PADDLE</span>' : '') + paddles + '</div></div>';
   h += '<div class="prc-head-bottom"><span class="at-time">' + tag + fmtClock(it.s) + ' – ' + fmtClock(it.e) + '</span>' +
        '<div class="prc-routes">' + esc(routes) + '</div></div></div>';
   // Third line: where the bus is now — only while it is live.
