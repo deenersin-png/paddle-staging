@@ -632,11 +632,22 @@ function parseCSV(text) {
 // is also in the Saturday or Sunday list is one of those (same rule as
 // assets/pa-schedule.js loadRouteTrips).
 function dayTrips(data, day) {
-  const list = (data && data[day]) || [];
+  const list = withoutOldSchedule((data && data[day]) || []);
   if (day !== 'weekday') return list;
   const weekend = new Set([...(data.saturday || []), ...(data.sunday || [])].map(t => String(t.trip_id)));
   const own = list.filter(t => !weekend.has(String(t.trip_id)));
   return own.length ? own : list;
+}
+
+// septa-gtfs's lists still carry the previous schedule: trips with short
+// (4-digit) ids beside the current 6-digit ones (route 21 weekday: 202 of
+// each). Live buses only ever report 6-digit trip ids. The old set doubles
+// trips at shifted times (21 block 9118 at 6:44 AND 6:50), puts blocks on a
+// route they no longer run (21 "9117", now on 42 only) and adds renumbered
+// blocks (21 "9158"). When a list has 6-digit ids, drop the short ones.
+function withoutOldSchedule(list) {
+  if (!list.some(t => String(t.trip_id).length >= 6)) return list;
+  return list.filter(t => String(t.trip_id).length > 4);
 }
 
 // The trips of the current service day. GTFS writes after-midnight trips two
@@ -683,6 +694,73 @@ function dropStaleCopies(blockTrips, order) {
   }
 }
 
+// The pick names a piece on two routes by both ("21-42": 69 pieces at
+// Callowhill) without saying which one it drives. The timetables do: block
+// 9118 runs route 21 under run 113 (6:36 AM-3:42 PM) and route 42 under run
+// 561 (3:42-5:51 PM). For such pieces on this route's blocks, load the other
+// route's timetable too: route → Map(block → GTFS trips). Best-effort.
+async function loadPartnerTimetables(route, blockTrips) {
+  const others = new Set();
+  for (const blk of blockTrips.keys()) {
+    const rec = paddle.byBlock.get(blk);
+    for (const seg of (rec && rec.segs) || []) {
+      const parts = pickRoutes(seg.rt ? [seg.rt] : []);
+      if (parts.length > 1 && parts.some(p => isSameRoute(p, route)))
+        parts.filter(p => !isSameRoute(p, route)).forEach(p => others.add(p));
+    }
+  }
+  const out = new Map();
+  await Promise.all([...others].map(async other => {
+    for (const name of getAliases(other)) {
+      try {
+        const res = await fetch(GTFS_BASE + '/' + encodeURIComponent(name) + '.json');
+        if (!res.ok) continue;
+        const byBlk = new Map();
+        for (const t of serviceDayTrips(await res.json())) {
+          const b = String(t.block_id);
+          if (!byBlk.has(b)) byBlk.set(b, []);
+          byBlk.get(b).push(t);
+        }
+        out.set(other, byBlk);
+        return;
+      } catch(e) {}
+    }
+  }));
+  return out;
+}
+
+// The route(s) a pick piece really drives. A one-route piece: its name as
+// the pick prints it. A two-route piece ("21-42"): the route(s) whose
+// timetable has the block out during the piece; a route whose timetable
+// isn't loaded is kept; if nothing matches, the pick's own name.
+function pieceRoutes(seg) {
+  const parts = pickRoutes(seg.rt ? [seg.rt] : []);
+  if (parts.length < 2 || seg.s == null || seg.e == null) return seg.rt ? [seg.rt] : [];
+  const ttOf = p => isSameRoute(p, sched.route) ? sched.blockTrips : (sched.partnerTT && sched.partnerTT.get(p));
+  if (!parts.some(ttOf)) return [seg.rt]; // no timetable to tell by (a piece on another route's block)
+  const on = parts.filter(p => {
+    const tt = ttOf(p);
+    if (!tt) return true;
+    return (tt.get(seg.blk) || []).some(t => {
+      const s = timeStrToMin(t.start), e = timeStrToMin(t.end);
+      // More than a few minutes together: a relief listed 2 min into a trip
+      // (113 hands 9118 to 561 at 3:42, its 42 trip leaves 3:40) isn't
+      // driving that route.
+      return s != null && e != null && Math.min(e, seg.e) - Math.max(s, seg.s) > 5;
+    });
+  });
+  return on.length ? on : [seg.rt];
+}
+
+// The run numbers that drive this route on `blk` (all of them when the pick
+// and timetable don't line up).
+function runsOnThisRoute(blk) {
+  const rec = paddle.byBlock.get(String(blk));
+  if (!rec) return null;
+  const here = new Set((rec.segs || []).filter(x => pieceRoutes(x).some(r => pickRoutes([r]).some(p => isSameRoute(p, state.route)))).map(x => x.run.runno));
+  return here.size ? here : null;
+}
+
 async function loadScheduleData(route) {
   const reqId = ++schedRequestId;
   sched.loaded = false;
@@ -711,6 +789,8 @@ async function loadScheduleData(route) {
     if (paddleReady) { try { await paddleReady; } catch(e) {} }
     if (reqId !== schedRequestId) return;
     dropStaleCopies(blockTrips, order);
+    const partnerTT = await loadPartnerTimetables(route, blockTrips);
+    if (reqId !== schedRequestId) return;
 
     // Best-effort: the self-learned schedule published by septa-gtfs's
     // poll-observed.js, keyed by exact GTFS trip_id. Missing file or too few
@@ -754,6 +834,8 @@ async function loadScheduleData(route) {
     if (reqId !== schedRequestId) return;
 
     sched.blockTrips = blockTrips;
+    sched.route = route;
+    sched.partnerTT = partnerTT;
     sched.schedOrderByRoute = new Map([[route, order]]); // trips arrive pre-sorted by start time
     sched.observed = observed;
     sched.recoveryBlocks = recoveryBlocks;
@@ -956,7 +1038,7 @@ async function loadPaddleData() {
         if (!runno) continue;
         // The run as the Paddle App's scorecard shows it: number, its routes
         // in paddle order, its paddle link. Shared by its pieces below.
-        const run = { runno, depot, link: runLink.get(runno) || '', routes: [] };
+        const run = { runno, depot, link: runLink.get(runno) || '', routes: [], pieces: [] };
         for (let i = 1; i <= 10; i++) {
           const b = (row['b' + i] || '').trim();
           if (!b || b === '0') continue;
@@ -970,7 +1052,9 @@ async function loadPaddleData() {
           // time is after midnight, so 24:00+), for "which run is on the
           // block at this time".
           const s = pickPieceMin(row['pot' + i]), e = pickPieceMin(row['pit' + i]);
-          rec.segs.push({ run, s, e: e != null && s != null && e < s ? e + 1440 : e });
+          const seg = { run, blk: b, rt, s, e: e != null && s != null && e < s ? e + 1440 : e };
+          rec.segs.push(seg);
+          run.pieces.push(seg);
           const potype = (row['potype' + i] || '').trim().toUpperCase();
           const pitype = (row['pitype' + i] || '').trim().toUpperCase();
           const pot = (row['pot' + i] || '').trim();
@@ -1020,8 +1104,12 @@ function paddleRowHtml(blk) {
 function runChipsHtml(blk) {
   const rec = paddle.byBlock.get(String(blk));
   if (!rec || !rec.runs.length) return '';
+  // Only the runs that drive this route on the block (a 21-42 block's
+  // morning run on 21 isn't shown on 42).
+  const here = runsOnThisRoute(blk);
   let h = '';
   for (const r of rec.runs) {
+    if (here && !here.has(r.runno)) continue;
     if (r.link) h += '<a class="run-chip" href="' + esc(r.link) + '" target="_blank" rel="noopener">RUN ' + esc(r.runno) + '</a>';
     else        h += '<span class="run-chip nolink">RUN ' + esc(r.runno) + '</span>';
   }
@@ -2534,7 +2622,9 @@ function allTripsCardHtml(it, dirs, anim, idx) {
   // each number and its own PADDLE button opening that run's paddle.
   const runs = runsOnBlockDuring(it.blk, it.s, it.e);
   const two = runs.length > 1;
-  const routes = runs.length ? [...new Set(runs.flatMap(r => r.routes))].join(' | ') || state.route : state.route;
+  // Each run's routes in paddle order, a two-route piece ("21-42") named by
+  // the route it actually drives.
+  const routes = runs.length ? [...new Set(runs.flatMap(r => r.pieces.flatMap(pieceRoutes)))].join(' | ') || state.route : state.route;
   const numOf = r => r.link ? '<a class="prc-num" href="' + esc(r.link) + '" target="_blank" rel="noopener">' + esc(r.runno) + '</a>'
                             : '<div class="prc-num">' + esc(r.runno) + '</div>';
   const nums = runs.length ? runs.map(numOf).join('<span class="at-relief">→</span>') : '<div class="prc-num">—</div>';
