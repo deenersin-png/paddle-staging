@@ -19,7 +19,9 @@
   
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans+Condensed:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/pa-account.css">
+<link rel="stylesheet" href="assets/pa-run-card.css">
 <script>
 // pa-settings-hook: re-broadcasts this page's own localStorage writes as a
 // 'pa:setting' event so the account modules can mirror them to the signed-in
@@ -27,7 +29,7 @@
 // run BEFORE the inline script below, and module scripts are always deferred.
 // Nothing here changes what the page stores or how it reads it.
 (function(){
-  var WATCH = /^(paddleSeason|paddleDepot|bt_route|bt_block|vacSickViewMode)/;
+  var WATCH = /^(paddleSeason|paddleDepot|bt_route|bt_block|bt_depot|vacSickViewMode)/;
   var set = Storage.prototype.setItem;
   Storage.prototype.setItem = function(k, v){
     set.call(this, k, v);
@@ -75,8 +77,13 @@ body{min-height:100%;background:var(--bg);font-family:'Inter',-apple-system,syst
 .route-select option{background:var(--card);color:var(--text);font-size:16px}
 .route-select:focus{border-color:var(--purple)}
 .select-arrow{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--text-faint);font-size:14px;pointer-events:none}
-.bus-form{display:flex;flex:0 0 112px;min-width:0;margin:0}
-.bus-search{flex:1;width:0;min-width:0;background:var(--card);border:1.5px solid var(--border-light);border-radius:10px;padding:12px;font-family:inherit;font-size:17px;font-weight:700;color:var(--accent);outline:none}
+.input-row .route-select{font-size:15px;padding:11px 24px 11px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.input-row .select-arrow{right:8px}
+.depot-wrap{flex:1.15}
+.depot-select{color:var(--accent)}
+.bus-form{display:flex;flex:0 0 92px;min-width:0;margin:0}
+.bus-search{flex:1;width:0;min-width:0;background:var(--card);border:1.5px solid var(--border-light);border-radius:10px;padding:11px 10px;font-family:inherit;font-size:16px;font-weight:700;color:var(--accent);outline:none}
+.input-row.searching .route-select{opacity:.45}
 .bus-search::placeholder{color:var(--text-faint);font-weight:600;font-size:14px}
 .bus-search:focus{border-color:var(--accent)}
 
@@ -107,19 +114,49 @@ body{min-height:100%;background:var(--bg);font-family:'Inter',-apple-system,syst
 .bus-count{font-size:13px;color:var(--text-faint)}
 .refresh-tag{font-size:12px;color:var(--text-faint);font-weight:500}
 
-/* SWIPEABLE DIRECTION PAGES */
-.pages-wrap{overflow:hidden}
-.pages-track{display:flex;transition:transform .25s ease-out}
-.page{flex:0 0 100%;min-width:0}
-.page-dots{display:flex;justify-content:center;gap:8px;padding:10px 16px 16px;position:sticky;bottom:0;background:var(--bg);border-top:1px solid var(--border);flex-wrap:wrap}
-.page-dot{font-size:12px;font-weight:700;padding:6px 16px;border-radius:20px;background:var(--card);color:var(--text-faint);cursor:pointer;touch-action:manipulation;border:1px solid var(--border-light)}
+/* VIEWS (one at a time: a direction, All Trips or Detours) */
+.view-wrap{overflow:hidden}
+/* Room under the last card for the pinned bottom bar. */
+body.has-bar #content{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
+
+/* PINNED BOTTOM BAR — one row: dir 1, dir 2, All Trips, Detours (equal
+   widths), then a small round refresh at the far right. */
+.bottom-bar{position:fixed;left:0;right:0;bottom:0;z-index:20;display:flex;align-items:center;gap:6px;padding:8px 10px calc(8px + env(safe-area-inset-bottom));background:var(--bg);border-top:1px solid var(--border)}
+.page-dot{flex:1 1 0;min-width:0;height:38px;display:inline-flex;align-items:center;justify-content:center;gap:3px;font-family:inherit;font-size:13px;font-weight:700;padding:0 4px;border-radius:19px;background:var(--card);color:var(--text-dim);cursor:pointer;touch-action:manipulation;border:1px solid var(--border-light);white-space:nowrap;overflow:hidden}
 .page-dot.active{background:var(--accent-dim);color:var(--accent);border-color:var(--accent)}
+.page-dot.all-dot.active{background:var(--purple-dim);color:var(--purple);border-color:var(--purple)}
 .page-dot.detour-dot.active{background:var(--yellow-dim);color:var(--yellow);border-color:var(--yellow)}
-.refresh-btn{font-size:15px;font-weight:700;line-height:1;padding:5px 12px;border-radius:20px;background:var(--card);color:var(--accent);cursor:pointer;touch-action:manipulation;border:1px solid var(--border-light);font-family:inherit}
+.page-dot:disabled{opacity:.4;cursor:default}
+.refresh-btn{flex:0 0 38px;width:38px;height:38px;display:inline-flex;align-items:center;justify-content:center;font-size:19px;font-weight:700;line-height:1;padding:0;border-radius:50%;background:var(--card);color:var(--accent);cursor:pointer;touch-action:manipulation;border:1px solid var(--border-light);font-family:inherit}
 .refresh-btn:active{opacity:.7}
 .refresh-btn.spinning{animation:spin .8s linear infinite;pointer-events:none}
 @keyframes spin{to{transform:rotate(360deg)}}
-.page-dot .dot-count{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;margin-left:3px;border-radius:8px;background:var(--yellow);color:#1a1300;font-size:10px;font-weight:800;vertical-align:middle}
+.page-dot .dot-count{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--yellow);color:#1a1300;font-size:10px;font-weight:800;flex-shrink:0}
+
+/* ALL TRIPS — the Paddle App's run scorecard (assets/pa-run-card.css), with
+   that page's tokens set on the list only so they can't touch this page's. */
+.at-list{--ink:#0a0b0d;--ink2:#13151a;--ink3:#1d2028;--line:rgba(255,255,255,0.07);--line2:rgba(255,255,255,0.13);--line3:rgba(255,255,255,0.22);
+  --dim:#4a4f5e;--mid:#8a909f;--text:#c8cdd8;--bright:#e8ecf4;--amber:#f5a623;--green:#3dd68c;--green-dim:rgba(61,214,140,0.1);--blue:#4d9fff;--violet:#a78bfa;
+  --sans:'IBM Plex Sans Condensed','Inter',sans-serif;--mono:'IBM Plex Mono',ui-monospace,monospace;padding:12px 16px 20px}
+.at-list .prc{margin-bottom:10px}
+.at-list .prc.at-now{border-color:var(--line3)}
+.at-list .prc-head{border-bottom:none}
+.at-list .prc-head-bottom{justify-content:space-between;gap:10px}
+.at-time{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--mid);white-space:nowrap;font-variant-numeric:tabular-nums}
+.at-time .at-tag{font-size:10px;font-weight:700;letter-spacing:.06em;padding:1px 5px;border-radius:3px;margin-right:6px;background:var(--line);color:var(--mid)}
+.at-time .at-tag.now{background:rgba(61,214,140,.14);color:var(--green)}
+.at-time .at-tag.lay{background:rgba(245,166,35,.14);color:var(--amber)}
+.at-loc{display:flex;align-items:center;gap:8px;padding:6px 12px;border-top:1px solid var(--line);background:var(--ink3);font-size:13px;font-weight:600;color:var(--bright);min-width:0}
+.at-loc .at-loc-txt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.at-loc .late-tag{font-size:11px;padding:2px 6px;flex-shrink:0}
+.at-trips{display:flex;align-items:center;gap:8px;padding:7px 12px;border-top:1px solid var(--line);font-family:var(--mono);font-size:13px;font-weight:700;color:var(--bright);flex-wrap:wrap}
+.at-dir{padding:2px 7px;border-radius:3px;background:rgba(77,159,255,.12);color:var(--blue);white-space:nowrap}
+.at-dir.done{background:var(--line);color:var(--dim)}
+.at-blk{font-size:11px;font-weight:600;color:var(--mid);white-space:nowrap}
+.at-bus{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:3px;background:var(--line2);color:var(--bright);white-space:nowrap}
+.at-bus svg{width:13px;height:13px;fill:currentColor}
+.at-bus.unknown{background:transparent;border:1px dashed var(--line3);color:var(--mid)}
+.at-empty{text-align:center;padding:40px 16px;color:var(--text-dim)}
 
 /* DETOURS PAGE */
 .detours-page{padding-bottom:8px}
@@ -309,9 +346,17 @@ a.run-chip:active{opacity:.7}
     </div>
   </div>
   <div class="input-row">
+    <!-- Depot first; the route list then holds only that depot's routes (from
+         today's pick). Both remembered (bt_depot / bt_route). -->
+    <div class="route-select-wrap depot-wrap">
+      <select id="depotSelect" class="route-select depot-select" aria-label="Depot">
+        <option value="">Depot</option>
+      </select>
+      <span class="select-arrow">▾</span>
+    </div>
     <div class="route-select-wrap">
-      <select id="routeSelect" class="route-select">
-        <option value="">Select Route</option>
+      <select id="routeSelect" class="route-select" aria-label="Route">
+        <option value="">Route</option>
       </select>
       <span class="select-arrow">▾</span>
     </div>
@@ -350,10 +395,14 @@ a.run-chip:active{opacity:.7}
 <div id="content">
   <div class="msg">
     <div class="icon">🚌</div>
-    <div class="main">Select a Route</div>
-    <div class="sub">See all active buses · swipe left/right<br>to switch direction · or enter a bus or block #</div>
+    <div class="main">Select a Depot &amp; Route</div>
+    <div class="sub">See all active buses · or enter a bus or block #</div>
   </div>
 </div>
+
+<!-- Pinned bottom bar: two direction buttons, All Trips, Detours, refresh.
+     Lives outside #content so a re-render never resets it. -->
+<nav id="bottomBar" class="bottom-bar hidden" aria-label="Views"></nav>
 
 <script>
 'use strict';
@@ -437,7 +486,15 @@ let schedRequestId = 0;
 // Run-number / pull-out-in / paddle-link data, keyed by block number. Loaded
 // once from the septa-scheduler pick CSVs (all districts for today's day
 // type) and reused across route changes.
-const paddle = { byBlock: new Map(), loaded: false, loading: false };
+const paddle = { byBlock: new Map(), loaded: false, loading: false, depots: [], routesByDepot: new Map() };
+
+// A pick piece time ("05:45 AM") as service-day minutes: an early-AM time
+// belongs after midnight (24:00+), like the GTFS owl trips.
+function pickPieceMin(t) {
+  const m = clockToMin(String(t || '').trim());
+  if (!isFinite(m)) return null;
+  return m < SERVICE_DAY_START_HR * 60 ? m + 1440 : m;
+}
 let paddleReady = null; // loadPaddleData()'s promise, so a search can wait for it
 
 // Holiday-aware day type. On July 4th, Thanksgiving, etc., SEPTA runs a
@@ -671,6 +728,14 @@ async function loadScheduleData(route) {
     savePairs();
     sched.dirNames = data.directions || {}; // GTFS direction_id → "Eastbound" etc.
     sched.loaded = true;
+    // Redraw with the timetable (scheduled cards, All Trips, the direction
+    // buttons) without waiting a full refresh.
+    const redraw = () => {
+      if (state.route !== route) return;
+      if (ticking) { setTimeout(redraw, 300); return; } // the route's first load is still running
+      lastHTML = ''; tick();
+    };
+    redraw();
   } catch(e) { console.warn('Schedule load failed:', e); }
 }
 
@@ -829,10 +894,15 @@ async function loadPaddleData() {
     const day = getDayType();
     const dayLabel = day.charAt(0).toUpperCase() + day.slice(1);
     const byBlock = new Map();
+    const routesByDepot = new Map(); // depot label → Set(route id)
+    const depots = (manifest.districts || []).map(d => d.label || d.name);
 
     await Promise.allSettled((manifest.districts || []).map(async district => {
       if (!district.days || !district.days.includes(dayLabel)) return;
       const slug = district.name;
+      const depot = district.label || slug;
+      const depotRoutes = new Set();
+      routesByDepot.set(depot, depotRoutes);
       let schedText = '', pdfsText = '';
       try {
         [schedText, pdfsText] = await Promise.all([
@@ -852,13 +922,23 @@ async function loadPaddleData() {
       for (const row of parseCSV(schedText)) {
         const runno = String(row.runno || '').trim();
         if (!runno) continue;
+        // The run as the Paddle App's scorecard shows it: number, its routes
+        // in paddle order, its paddle link. Shared by its pieces below.
+        const run = { runno, depot, link: runLink.get(runno) || '', routes: [] };
         for (let i = 1; i <= 10; i++) {
           const b = (row['b' + i] || '').trim();
           if (!b || b === '0') continue;
-          if (!byBlock.has(b)) byBlock.set(b, { poTime: '', piTime: '', runs: [], routes: [] });
+          if (!byBlock.has(b)) byBlock.set(b, { poTime: '', piTime: '', runs: [], routes: [], segs: [] });
           const rec = byBlock.get(b);
           const rt = (row['r' + i] || '').trim();
           if (rt && !rec.routes.includes(rt)) rec.routes.push(rt);
+          if (rt && !run.routes.includes(rt)) run.routes.push(rt);
+          pickRoutes(rt ? [rt] : []).forEach(r => depotRoutes.add(r));
+          // This run's piece of the block, service-day minutes (an early-AM
+          // time is after midnight, so 24:00+), for "which run is on the
+          // block at this time".
+          const s = pickPieceMin(row['pot' + i]), e = pickPieceMin(row['pit' + i]);
+          rec.segs.push({ run, s, e: e != null && s != null && e < s ? e + 1440 : e });
           const potype = (row['potype' + i] || '').trim().toUpperCase();
           const pitype = (row['pitype' + i] || '').trim().toUpperCase();
           const pot = (row['pot' + i] || '').trim();
@@ -878,7 +958,10 @@ async function loadPaddleData() {
 
     for (const rec of byBlock.values()) rec.runs.sort((a, b) => a.sortMin - b.sortMin);
     paddle.byBlock = byBlock;
+    paddle.depots = depots.filter(d => routesByDepot.has(d) && routesByDepot.get(d).size);
+    paddle.routesByDepot = routesByDepot;
     paddle.loaded = true;
+    fillDepots();
     // Refresh so the newly-available run info shows without waiting a full tick.
     if (state.route && !ticking) { lastHTML = ''; tick(); }
   } catch(e) { console.warn('Paddle load failed:', e); }
@@ -2004,10 +2087,12 @@ function renderMain(merged, route) {
   const atTerm    = merged.filter(b => b._isLayover).length;
   const schedOnly = merged.filter(b => b._scheduledOnly).length;
 
+  document.getElementById('alertArea').innerHTML = '';
   if (live === 0 && atTerm === 0 && schedOnly === 0) {
     document.getElementById('busCount').textContent = 'No active buses';
-    document.getElementById('alertArea').innerHTML = '';
-    setContent('<div class="msg"><div class="icon">🚌</div><div class="main">No buses on Route ' + esc(route) + '</div><div class="sub">Route may not be running right now</div></div>');
+    lastCards = [];
+    lastEmptyHtml = '<div class="msg"><div class="icon">🚌</div><div class="main">No buses on Route ' + esc(route) + '</div><div class="sub">Route may not be running right now<br>All Trips lists what\'s still to come today</div></div>';
+    drawView(false);
     return;
   }
 
@@ -2015,7 +2100,6 @@ function renderMain(merged, route) {
   if (atTerm > 0) parts.push(atTerm + ' at terminal');
   if (schedOnly > 0) parts.push(schedOnly + ' scheduled');
   document.getElementById('busCount').textContent = parts.join(' · ');
-  document.getElementById('alertArea').innerHTML = '';
 
   const anim = isFirstRender;
   isFirstRender = false;
@@ -2023,9 +2107,9 @@ function renderMain(merged, route) {
   annotateSchedLeader(merged);
   annotateLeaderTimeline(merged);
   annotatePositions(merged);
-  setContent(buildAllBuses(merged, anim));
-  manageLayoverTimers();
-  updatePagesTransform();
+  lastCards = merged;
+  lastEmptyHtml = '';
+  drawView(anim);
 }
 
 // Bus-number search: the whole route is merged and annotated exactly as usual
@@ -2113,11 +2197,13 @@ function renderBusMain(merged, route) {
 
   if (!mine.length) {
     document.getElementById('busCount').textContent = what.join(' & ');
-    setContent(state.bus
+    lastCards = [];
+    lastEmptyHtml = state.bus
       ? '<div class="msg"><div class="icon">🚌</div><div class="main">Bus ' + esc(state.bus) + ' is done for now</div>' +
         '<div class="sub">' + esc(doneReason(route)) + '</div></div>'
       : '<div class="msg"><div class="icon">🚌</div><div class="main">Block ' + esc(state.block) + ' is done for now</div>' +
-        '<div class="sub">Nothing left today on Route ' + esc(route) + '</div></div>');
+        '<div class="sub">Nothing left today on Route ' + esc(route) + '</div></div>';
+    drawView(false);
     return;
   }
 
@@ -2125,9 +2211,9 @@ function renderBusMain(merged, route) {
   document.getElementById('busCount').textContent = what.join(' & ') + (isLive ? '' : ' · not live');
   const anim = isFirstRender;
   isFirstRender = false;
-  setContent(buildAllBuses(mine, anim));
-  manageLayoverTimers();
-  updatePagesTransform();
+  lastCards = mine;
+  lastEmptyHtml = '';
+  drawView(anim);
 }
 
 // Insert each no-data in-service ghost into the live active list at its fixed
@@ -2147,97 +2233,301 @@ function weaveGhosts(active, ghosts) {
   return out;
 }
 
-// Groups all buses into one swipeable "page" per direction. Touch-swipe
-// (or tap a dot) switches pages — see setupSwipe()/goToPage() below.
-function buildAllBuses(merged, anim) {
-  const dirs = {};
-  merged.forEach(b => { const d = b.Direction || 'Unknown'; (dirs[d] = dirs[d] || []).push(b); });
-  const dirKeys = Object.keys(dirs).sort();
+// ── VIEWS ────────────────────────────────────────────────────
+// One view at a time: a direction ('dir', view.dir), All Trips ('all') or
+// Detours ('detours'). The direction is kept by NAME, not page position, so a
+// refresh that finds the directions in a different order (or one direction
+// briefly empty) can't move the view; it is saved per route (bt_dir_<route>).
+// The mode survives refreshes and route changes for this visit.
+const view = { mode: 'dir', dir: '', follow: false };
+let lastCards = [];     // annotated cards of the last render (the route's, or a search's)
+let lastEmptyHtml = ''; // message for a direction view when there are no cards
+let refreshing = false; // refresh spinner state, kept across bar redraws
 
-  let h = '<div class="pages-wrap"><div class="pages-track" id="pagesTrack">';
-  let idx = 0;
-  dirKeys.forEach(dir => {
-    // Consistent visual geography across a route's two direction pages, so the
-    // same physical point keeps its vertical spot when you swipe. Buses travel
-    // through the list in their direction of motion:
-    //   Eastbound/Southbound → START at TOP, destination at BOTTOM (buses move
-    //                          DOWN as they progress).
-    //   Westbound/Northbound → START at BOTTOM, destination at TOP (buses move
-    //                          UP as they progress).
-    // next_stop_sequence grows toward the destination. Scheduled (not-yet-
-    // started) buses sit at the START end, ordered by scheduled departure so
-    // the soonest-to-leave is nearest the last-started (lowest-sequence) bus.
-    const westNorth = /west|north/i.test(dir);
-    // No-data "should be in service" ghosts are woven into the live sequence
-    // (numbered as if in service), not parked in the scheduled section below.
-    const inServiceGhosts = dirs[dir].filter(b => b._scheduledOnly && b._schedState === 'in_service_expected');
-    const liveActive = dirs[dir].filter(b => !b._scheduledOnly)
-      .sort((a, b) => (a.next_stop_sequence || 0) - (b.next_stop_sequence || 0)); // start → destination
-    const active = weaveGhosts(liveActive, inServiceGhosts);
+const DIR_ORDER = ['Northbound', 'Southbound', 'Eastbound', 'Westbound'];
+const dirKey = route => 'bt_dir_' + route;
+function savedDir(route) { try { return localStorage.getItem(dirKey(route)) || ''; } catch(e) { return ''; } }
 
-    const dueSort = (a, b) => (a._dueOutMin != null ? a._dueOutMin : -Infinity) -
-                              (b._dueOutMin != null ? b._dueOutMin : -Infinity);  // soonest → latest
-    const schedAll = dirs[dir].filter(b => b._scheduledOnly && b._schedState !== 'in_service_expected').sort(dueSort);
-
-    // Scheduled buses still waiting for their FIRST trip (blue tag, no bus
-    // number) are collapsed: show only the NEXT (soonest) one inline, tuck the
-    // rest behind a tappable "N more scheduled" section. Already-served
-    // scheduled buses stay visible normally.
-    const notStarted = schedAll.filter(b => b._schedState === 'not_started');
-    const otherSched = schedAll.filter(b => b._schedState !== 'not_started');
-    const schedVisible = otherSched.concat(notStarted.slice(0, 1)).sort(dueSort);
-    const schedHidden  = notStarted.slice(1);
-
-    const totalCount = dirs[dir].length;
-    h += '<div class="page"><div class="timeline-wrap"><div class="timeline">';
-    h += '<div class="section-label' + (anim ? ' fade-in' : '') + '">' + dirShort(dir) + ' · ' + totalCount + ' bus' + (totalCount !== 1 ? 'es' : '') + '</div>';
-
-    // Collapsed extras sit at the far START end (furthest from active buses),
-    // matching the scheduled-bus geography.
-    const hiddenHtml = schedHidden.length
-      ? '<details class="more-sched"><summary>' + schedHidden.length +
-        ' more scheduled</summary>' + schedHidden.map(b => buildNode(b, idx++, anim)).join('') +
-        '</details>'
-      : '';
-
-    if (westNorth) {
-      // WB/NB: active (destination→start) on top, then scheduled soonest→latest,
-      // then the collapsed extras at the bottom (start end).
-      active.slice().reverse().forEach(bus => { h += buildNode(bus, idx++, anim); });
-      schedVisible.forEach(bus => { h += buildNode(bus, idx++, anim); });
-      h += hiddenHtml;
-    } else {
-      // EB/SB: collapsed extras on top (start end), then scheduled latest→soonest,
-      // then active start→destination.
-      h += hiddenHtml;
-      schedVisible.slice().reverse().forEach(bus => { h += buildNode(bus, idx++, anim); });
-      active.forEach(bus => { h += buildNode(bus, idx++, anim); });
-    }
-    h += '</div></div></div>';
-  });
-
-  // Extra final page: all detours for this route, both directions together.
-  h += buildDetoursPage(anim);
-  h += '</div></div>';
-
-  // Dots: one per direction + a Detours dot. Always shown now (there's always
-  // the detours page in addition to the direction pages).
-  h += '<div class="page-dots">';
-  dirKeys.forEach((dir, i) => {
-    h += '<span class="page-dot' + (i === 0 ? ' active' : '') + '" data-page="' + i + '">' + dirShort(dir) + '</span>';
-  });
-  const detourCount = routeDetours.length;
-  h += '<span class="page-dot detour-dot' + (dirKeys.length === 0 ? ' active' : '') + '" data-page="' + dirKeys.length + '">⚠ Detours' +
-       (detourCount ? ' <span class="dot-count">' + detourCount + '</span>' : '') + '</span>';
-  h += '<button type="button" class="refresh-btn" data-refresh aria-label="Refresh now">&#8635;</button>';
-  h += '</div>';
-  return h;
+// The route's two directions, NB before SB and EB before WB: GTFS's direction
+// names first, else whatever the cards say.
+function routeDirs() {
+  const s = new Set();
+  Object.values(sched.dirNames || {}).forEach(d => d && s.add(canonDir(d)));
+  if (s.size < 2) lastCards.forEach(b => b.Direction && s.add(canonDir(b.Direction)));
+  const rank = d => { const i = DIR_ORDER.indexOf(d); return i < 0 ? 99 : i; };
+  return [...s].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b)).slice(0, 2);
 }
 
-// The final swipeable page: every active detour on this route, both directions
-// in one list (mirrors the standalone septa-scheduler detours app).
+// The direction shown: while a search follows its bus, the bus's own
+// direction; else the one picked (or saved for this route); else the first.
+function currentDir() {
+  const dirs = routeDirs();
+  if (view.follow && lastCards.length) return canonDir(lastCards[0].Direction);
+  if (dirs.includes(view.dir)) return view.dir;
+  const saved = savedDir(state.route);
+  if (dirs.includes(saved)) return saved;
+  return dirs[0] || (lastCards[0] ? canonDir(lastCards[0].Direction) : '');
+}
+
+// A bottom-bar tap (or a swipe): switch view; a direction pick is remembered.
+function selectView(mode, dir) {
+  view.mode = mode;
+  if (mode === 'dir' && dir) {
+    view.dir = dir; view.follow = false;
+    try { localStorage.setItem(dirKey(state.route), dir); } catch(e) {}
+  }
+  lastHTML = '';
+  drawView(false);
+  window.scrollTo(0, 0);
+}
+
+function viewOrder() {
+  return routeDirs().map(d => ({ mode: 'dir', dir: d })).concat([{ mode: 'all' }, { mode: 'detours' }]);
+}
+function swipeView(step) {
+  const order = viewOrder();
+  const cur = view.mode === 'dir' ? currentDir() : '';
+  const i = order.findIndex(v => v.mode === view.mode && (v.mode !== 'dir' || v.dir === cur));
+  const next = order[Math.max(0, Math.min(order.length - 1, (i < 0 ? 0 : i) + step))];
+  if (next && (next.mode !== view.mode || next.dir !== cur)) selectView(next.mode, next.dir);
+}
+
+function drawView(anim) {
+  renderBottomBar();
+  let html;
+  if (view.mode === 'all') html = '<div class="view-wrap">' + buildAllTripsPage(anim) + '</div>';
+  else if (view.mode === 'detours') html = '<div class="view-wrap">' + buildDetoursPage(anim) + '</div>';
+  else if (!lastCards.length && lastEmptyHtml) html = '<div class="view-wrap">' + lastEmptyHtml + '</div>';
+  else {
+    const dir = currentDir();
+    html = '<div class="view-wrap">' + buildDirPage(dir, lastCards.filter(b => canonDir(b.Direction) === dir), anim) + '</div>';
+  }
+  setContent(html);
+  manageLayoverTimers();
+}
+
+function renderBottomBar() {
+  const bar = document.getElementById('bottomBar');
+  const on = !!state.route;
+  bar.classList.toggle('hidden', !on);
+  document.body.classList.toggle('has-bar', on);
+  if (!on) return;
+  const dirs = routeDirs();
+  const cur = view.mode === 'dir' ? currentDir() : '';
+  let h = '';
+  for (let i = 0; i < 2; i++) {
+    const d = dirs[i];
+    h += d ? '<button type="button" class="page-dot' + (d === cur ? ' active' : '') + '" data-view="dir" data-dir="' + esc(d) + '">' + esc(dirShort(d)) + '</button>'
+           : '<button type="button" class="page-dot" disabled>—</button>';
+  }
+  h += '<button type="button" class="page-dot all-dot' + (view.mode === 'all' ? ' active' : '') + '" data-view="all">All Trips</button>';
+  const n = routeDetours.length;
+  h += '<button type="button" class="page-dot detour-dot' + (view.mode === 'detours' ? ' active' : '') + '" data-view="detours">Detours' +
+       (n ? ' <span class="dot-count">' + n + '</span>' : '') + '</button>';
+  h += '<button type="button" class="refresh-btn' + (refreshing ? ' spinning' : '') + '" data-refresh aria-label="Refresh now">&#8635;</button>';
+  if (bar.innerHTML !== h) bar.innerHTML = h;
+}
+
+// One direction's buses, ordered the way they travel through the list.
+function buildDirPage(dir, list, anim) {
+  let idx = 0, h = '';
+  // Consistent visual geography across a route's two direction views, so the
+  // same physical point keeps its vertical spot when you switch. Buses travel
+  // through the list in their direction of motion:
+  //   Eastbound/Southbound → START at TOP, destination at BOTTOM (buses move
+  //                          DOWN as they progress).
+  //   Westbound/Northbound → START at BOTTOM, destination at TOP (buses move
+  //                          UP as they progress).
+  // next_stop_sequence grows toward the destination. Scheduled (not-yet-
+  // started) buses sit at the START end, ordered by scheduled departure so
+  // the soonest-to-leave is nearest the last-started (lowest-sequence) bus.
+  const westNorth = /west|north/i.test(dir);
+  // No-data "should be in service" ghosts are woven into the live sequence
+  // (numbered as if in service), not parked in the scheduled section below.
+  const inServiceGhosts = list.filter(b => b._scheduledOnly && b._schedState === 'in_service_expected');
+  const liveActive = list.filter(b => !b._scheduledOnly)
+    .sort((a, b) => (a.next_stop_sequence || 0) - (b.next_stop_sequence || 0)); // start → destination
+  const active = weaveGhosts(liveActive, inServiceGhosts);
+
+  const dueSort = (a, b) => (a._dueOutMin != null ? a._dueOutMin : -Infinity) -
+                            (b._dueOutMin != null ? b._dueOutMin : -Infinity);  // soonest → latest
+  const schedAll = list.filter(b => b._scheduledOnly && b._schedState !== 'in_service_expected').sort(dueSort);
+
+  // Scheduled buses still waiting for their FIRST trip (blue tag, no bus
+  // number) are collapsed: show only the NEXT (soonest) one inline, tuck the
+  // rest behind a tappable "N more scheduled" section. Already-served
+  // scheduled buses stay visible normally.
+  const notStarted = schedAll.filter(b => b._schedState === 'not_started');
+  const otherSched = schedAll.filter(b => b._schedState !== 'not_started');
+  const schedVisible = otherSched.concat(notStarted.slice(0, 1)).sort(dueSort);
+  const schedHidden  = notStarted.slice(1);
+
+  const totalCount = list.length;
+  h += '<div class="timeline-wrap"><div class="timeline">';
+  h += '<div class="section-label' + (anim ? ' fade-in' : '') + '">' + esc(dirShort(dir)) + ' · ' + totalCount + ' bus' + (totalCount !== 1 ? 'es' : '') + '</div>';
+
+  // Collapsed extras sit at the far START end (furthest from active buses),
+  // matching the scheduled-bus geography.
+  const hiddenHtml = schedHidden.length
+    ? '<details class="more-sched"><summary>' + schedHidden.length +
+      ' more scheduled</summary>' + schedHidden.map(b => buildNode(b, idx++, anim)).join('') +
+      '</details>'
+    : '';
+
+  if (westNorth) {
+    // WB/NB: active (destination→start) on top, then scheduled soonest→latest,
+    // then the collapsed extras at the bottom (start end).
+    active.slice().reverse().forEach(bus => { h += buildNode(bus, idx++, anim); });
+    schedVisible.forEach(bus => { h += buildNode(bus, idx++, anim); });
+    h += hiddenHtml;
+  } else {
+    // EB/SB: collapsed extras on top (start end), then scheduled latest→soonest,
+    // then active start→destination.
+    h += hiddenHtml;
+    schedVisible.slice().reverse().forEach(bus => { h += buildNode(bus, idx++, anim); });
+    active.forEach(bus => { h += buildNode(bus, idx++, anim); });
+  }
+  if (!totalCount) h += '<div class="at-empty">No ' + esc(dirShort(dir)) + ' buses right now</div>';
+  return h + '</div></div>';
+}
+
+// ── ALL TRIPS ────────────────────────────────────────────────
+// Every bus still to run on this route today, both directions in one list,
+// by time: each block once per round trip (a trip and the opposite-direction
+// trip after it), at that round trip's start, showing the trips it still has
+// on this route from there. A block in from another route for one trip shows
+// up the same way (1 EB · 1 WB). Built from the timetable, so blocks not out
+// yet are all there; live data only marks which trip a live bus is on (a
+// late bus stays until it finishes), its location, and its bus number.
+// A round trip's second leg must start within this long of the first's end;
+// a longer gap means the block left the route (or pulled in) in between.
+const ROUND_TRIP_GAP_MIN = 90;
+
+function allTripsItems() {
+  const nowMin = serviceNowMin();
+  const byBlock = new Map();
+  lastCards.forEach(b => byBlock.set(String(b.BlockID || ''), b));
+  // A search shows its own block(s) only.
+  const only = (state.bus || state.block) ? new Set(lastCards.map(b => String(b.BlockID || ''))) : null;
+  const items = [];
+  for (const [blk, raw] of sched.blockTrips) {
+    if (only && !only.has(blk)) continue;
+    // The feed can list one trip twice under two trip ids (route 38 block
+    // 9260: 963851 and 5630, both 10:53-11:50 EB); count it once, matching
+    // a live bus on either id.
+    const byKey = new Map();
+    for (const t of raw) {
+      const s = timeStrToMin(t.start), e = timeStrToMin(t.end);
+      if (s == null || e == null || isPhantomTrip(blk, s)) continue;
+      const k = s + '|' + e + '|' + t.direction;
+      if (byKey.has(k)) byKey.get(k).ids.add(String(t.trip_id));
+      else byKey.set(k, { t, s, e, ids: new Set([String(t.trip_id)]) });
+    }
+    const trips = [...byKey.values()].sort((a, b) => a.s - b.s || a.e - b.e);
+    if (!trips.length) continue;
+    const card = byBlock.get(blk);
+    const live = card && !card._scheduledOnly && !card._isLayover ? card : null;
+    if (!live && blockPulledIn(blk)) continue;
+    // A live bus's own trip (by its live trip id) and everything after it are
+    // still to do, even if the timetable says that trip has ended (running
+    // late). Otherwise: a trip that hasn't ended yet.
+    const liveIdx = live && live.trip != null ? trips.findIndex(x => x.ids.has(String(live.trip))) : -1;
+    const pending = (x, i) => liveIdx >= 0 ? i >= liveIdx : x.e > nowMin;
+
+    const groups = [];
+    for (let i = 0; i < trips.length;) {
+      const a = trips[i], b = trips[i + 1];
+      if (b && b.t.direction !== a.t.direction && b.s - a.e <= ROUND_TRIP_GAP_MIN) { groups.push([i, i + 1]); i += 2; }
+      else { groups.push([i]); i += 1; }
+    }
+    let first = true;
+    for (const g of groups) {
+      const gi = g[0], gl = g[g.length - 1];
+      if (!g.some(i => pending(trips[i], i))) continue;
+      const left = {};
+      trips.forEach((x, i) => {
+        if (i < gi || !pending(x, i)) return;
+        const d = canonDir((sched.dirNames && sched.dirNames[x.t.direction]) || 'Direction ' + x.t.direction);
+        left[d] = (left[d] || 0) + 1;
+      });
+      const s = trips[gi].s, e = trips[gl].e;
+      const inService = (liveIdx >= 0 && liveIdx >= gi && liveIdx <= gl) || (liveIdx < 0 && nowMin >= s && nowMin <= e);
+      // Between trips at the terminal, this round trip next.
+      const layover = !inService && first && trips[0].s <= nowMin;
+      items.push({ blk, s, e, left, inService, layover, live: first ? live : null });
+      first = false;
+    }
+  }
+  return items.sort((a, b) => a.s - b.s || a.e - b.e || a.blk.localeCompare(b.blk));
+}
+
+// The pick run on `blk` at service minute `min`: the piece covering it, else
+// the last one to start before it, else the first.
+function runOnBlockAt(blk, min) {
+  const rec = paddle.byBlock.get(String(blk));
+  const segs = rec && rec.segs ? rec.segs.filter(x => x.s != null) : [];
+  if (!segs.length) return null;
+  const cover = segs.find(x => x.s <= min && x.e != null && min < x.e);
+  if (cover) return cover.run;
+  const before = segs.filter(x => x.s <= min).sort((a, b) => b.s - a.s)[0];
+  return (before || segs.slice().sort((a, b) => a.s - b.s)[0]).run;
+}
+
+function dayLabelOf(day) { return day === 'saturday' ? 'Saturday' : day === 'sunday' ? 'Sunday' : 'Weekday'; }
+
+// One All Trips scorecard: the Paddle App's card head (run number, day,
+// PADDLE; this round trip's times on the left and the run's routes on the
+// right), the bus's location while it is live, then the trips still to do by
+// direction and the bus number.
+function allTripsCardHtml(it, dirs, anim, idx) {
+  const day = dayLabelOf(getDayType());
+  const run = runOnBlockAt(it.blk, it.s);
+  const url = run && run.link ? run.link : '';
+  const runNo = run ? run.runno : '—';
+  const routes = run && run.routes.length ? run.routes.join(' | ') : state.route;
+  const num = url ? '<a class="prc-num" href="' + esc(url) + '" target="_blank" rel="noopener">' + esc(runNo) + '</a>'
+                  : '<div class="prc-num">' + esc(runNo) + '</div>';
+  const tag = it.inService ? '<span class="at-tag now">IN SERVICE</span>' : it.layover ? '<span class="at-tag lay">LAYOVER</span>' : '';
+  let h = '<div class="prc day-' + day + (it.inService ? ' at-now' : '') + (anim ? ' fade-in' : '') + '" style="animation-delay:' + (idx * 0.015) + 's">';
+  h += '<div class="prc-head"><div class="prc-head-top">' + num + '<div class="prc-day">' + esc(day) + '</div>' +
+       '<div class="prc-actions">' + (url ? '<a class="prc-paddle" href="' + esc(url) + '" target="_blank" rel="noopener">PADDLE</a>' : '') + '</div></div>';
+  h += '<div class="prc-head-bottom"><span class="at-time">' + tag + fmtClock(it.s) + ' – ' + fmtClock(it.e) + '</span>' +
+       '<div class="prc-routes">' + esc(routes) + '</div></div></div>';
+  // Third line: where the bus is now — only while it is live.
+  const lv = it.live;
+  if (lv && lv.next_stop_name) {
+    const late = parseInt(lv.late) || 0;
+    const lt = late === 0 ? ['ontime', 'On Time'] : late < 0 ? ['early', Math.abs(late) + 'm early'] : [late < LATE_BAD ? 'mild' : 'bad', '+' + late + 'm late'];
+    h += '<div class="at-loc"><span class="at-loc-txt">→ ' + esc(lv.next_stop_name) + '</span>' +
+         (lv._notTracking ? '<span class="not-tracking-tag">NOT TRACKING</span>' : '<span class="late-tag ' + lt[0] + '">' + lt[1] + '</span>') + '</div>';
+  }
+  // Trips still to do on this route from here, by direction, then the bus.
+  h += '<div class="at-trips">';
+  const shown = dirs.length ? dirs : Object.keys(it.left);
+  shown.forEach(d => { const n = it.left[d] || 0; h += '<span class="at-dir' + (n ? '' : ' done') + '">' + n + ' ' + esc(dirShort(d)) + '</span>'; });
+  Object.keys(it.left).filter(d => !shown.includes(d)).forEach(d => { h += '<span class="at-dir">' + it.left[d] + ' ' + esc(dirShort(d)) + '</span>'; });
+  const vRaw = lv ? String(lv.VehicleID || '').trim() : '';
+  const vid = (vRaw && vRaw !== '0' ? vRaw : '') || knownVehicleFor(it.blk);
+  h += vid ? '<span class="at-bus">' + ICONS.bus + ' ' + esc(vid) + '</span>'
+           : '<span class="at-bus unknown">' + ICONS.bus + ' Bus# pending</span>';
+  h += '<span class="at-blk">Blk ' + esc(it.blk) + '</span>';
+  return h + '</div></div>';
+}
+
+function buildAllTripsPage(anim) {
+  const items = sched.loaded ? allTripsItems() : [];
+  const buses = new Set(items.map(it => it.blk)).size;
+  let h = '<div class="section-label' + (anim ? ' fade-in' : '') + '">All Trips · ' + buses + (buses === 1 ? ' bus' : ' buses') + '</div>';
+  if (!sched.loaded) return h + '<div class="at-empty">Loading the timetable…</div>';
+  if (!items.length) return h + '<div class="at-empty">No trips left today on Route ' + esc(state.route) + '</div>';
+  const dirs = routeDirs();
+  return h + '<div class="at-list">' + items.map((it, i) => allTripsCardHtml(it, dirs, anim, i)).join('') + '</div>';
+}
+
+// The Detours view: every active detour on this route, both directions in one
+// list (mirrors the standalone septa-scheduler detours app).
 function buildDetoursPage(anim) {
-  let h = '<div class="page"><div class="detours-page">';
+  let h = '<div class="detours-page">';
   h += '<div class="section-label' + (anim ? ' fade-in' : '') + '">⚠ Detours · ' + routeDetours.length + '</div>';
   if (!routeDetours.length) {
     h += '<div class="msg"><div class="icon">✅</div><div class="main">No active detours</div>' +
@@ -2247,7 +2537,7 @@ function buildDetoursPage(anim) {
     routeDetours.forEach(d => { h += detourCardHtml(d); });
     h += '</div>';
   }
-  return h + '</div></div>';
+  return h + '</div>';
 }
 
 function detourCardHtml(d) {
@@ -2573,14 +2863,12 @@ let refreshSec = 30;
 // the block↔bus pairing now, and restart the 30 s countdown from here.
 async function refreshNow() {
   if (!state.route || ticking) return;
-  const btn = document.querySelector('[data-refresh]');
-  if (btn) btn.classList.add('spinning');
+  refreshing = true; renderBottomBar();
   pairsFetchedAt = 0; // also re-read the all-routes feed
   loadDetours(state.route);
   startTimers();
   await tick();
-  const b = document.querySelector('[data-refresh]'); // may be re-rendered
-  if (b) b.classList.remove('spinning');
+  refreshing = false; renderBottomBar();
 }
 
 function startTimers() {
@@ -2609,37 +2897,16 @@ function manageLayoverTimers() {
   }
 }
 
-// ── SWIPEABLE DIRECTION PAGES ────────────────────────────────
-// `#pagesTrack` is rebuilt from scratch on every render (setContent()
-// replaces innerHTML), so the current page position is tracked here and
-// reapplied after each render rather than living on the DOM.
-let activePage = 0;
-
-function updatePagesTransform() {
-  const track = document.getElementById('pagesTrack');
-  if (!track) return;
-  const count = track.querySelectorAll('.page').length;
-  if (activePage >= count) activePage = 0;
-  track.style.transform = 'translateX(-' + (activePage * 100) + '%)';
-  document.querySelectorAll('.page-dot').forEach((d, i) => d.classList.toggle('active', i === activePage));
-}
-
-function goToPage(i) {
-  const track = document.getElementById('pagesTrack');
-  if (!track) return;
-  const count = track.querySelectorAll('.page').length;
-  activePage = Math.max(0, Math.min(count - 1, i));
-  updatePagesTransform();
-}
-
-// Event delegation on the stable #content wrapper (not the regenerated
-// inner elements) so swipe/tap handling survives every re-render.
+// ── SWIPE & TAPS ─────────────────────────────────────────────
+// A horizontal swipe on the content steps through the views in bottom-bar
+// order (dir 1, dir 2, All Trips, Detours). Event delegation on the stable
+// #content wrapper, so it survives every re-render.
 (function setupSwipe() {
   const content = document.getElementById('content');
   let startX = null, startY = null, dragging = false;
 
   content.addEventListener('touchstart', e => {
-    if (!e.target.closest('.pages-wrap')) return;
+    if (!e.target.closest('.view-wrap')) return;
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
     dragging = true;
@@ -2651,18 +2918,10 @@ function goToPage(i) {
     const dx = e.changedTouches[0].clientX - startX;
     const dy = e.changedTouches[0].clientY - startY;
     // Require a mostly-horizontal swipe so vertical scrolling isn't hijacked.
-    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-      goToPage(activePage + (dx < 0 ? 1 : -1));
-    }
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) swipeView(dx < 0 ? 1 : -1);
   }, { passive: true });
 
-  // Tap-to-switch fallback for non-touch input (and easier automated testing).
   content.addEventListener('click', e => {
-    const refresh = e.target.closest('[data-refresh]');
-    if (refresh) { refreshNow(); return; }
-    const dot = e.target.closest('.page-dot');
-    if (dot) { goToPage(parseInt(dot.dataset.page, 10)); return; }
-
     // Leaders expand/collapse — only the right-side "Leaders" control toggles
     // the panel; run chips (also on this line) fall through to open their PDF.
     const toggle = e.target.closest('[data-lead-toggle]');
@@ -2676,6 +2935,12 @@ function goToPage(i) {
         if (blk) { if (nowOpen) openLeaders.add(blk); else openLeaders.delete(blk); }
       }
     }
+  });
+
+  document.getElementById('bottomBar').addEventListener('click', e => {
+    if (e.target.closest('[data-refresh]')) { refreshNow(); return; }
+    const b = e.target.closest('[data-view]');
+    if (b && !b.disabled) selectView(b.dataset.view, b.dataset.dir || '');
   });
 })();
 
@@ -2719,10 +2984,100 @@ async function tick() {
 async function onRouteChange() {
   const route = document.getElementById('routeSelect').value;
   if (!route) return;
-  state.bus = ''; state.busBlock = ''; state.block = ''; state.find = null;
-  document.getElementById('busSearch').value = '';
+  endSearch();
   try { localStorage.setItem('bt_route', route); } catch(e) {}
   return loadRoute(route);
+}
+
+function endSearch() {
+  state.bus = ''; state.busBlock = ''; state.block = ''; state.find = null;
+  view.follow = false;
+  document.getElementById('busSearch').value = '';
+  document.querySelector('.input-row').classList.remove('searching');
+}
+
+// ── DEPOT / ROUTE DROPDOWNS ──────────────────────────────────
+// Depots are the pick's districts; a depot's routes are the ones its runs
+// drive today. Both choices are remembered (bt_depot, bt_route). A depot is
+// kept by its label ("Frontier"), which stays the same from pick to pick.
+const lsGet = k => { try { return localStorage.getItem(k) || ''; } catch(e) { return ''; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch(e) {} };
+const routeRank = r => { const n = parseInt(r, 10); return isNaN(n) ? [1, r] : [0, n, r]; };
+function sortRoutes(list) {
+  return list.slice().sort((a, b) => {
+    const x = routeRank(a), y = routeRank(b);
+    return x[0] - y[0] || (x[0] ? String(x[1]).localeCompare(String(y[1])) : x[1] - y[1] || String(x[2]).localeCompare(String(y[2])));
+  });
+}
+function depotRoutes(depot) { return sortRoutes([...(paddle.routesByDepot.get(depot) || [])]); }
+
+// The depot to show: the saved one; else the one running the saved route;
+// else the Paddle App's own depot for its current pick; else the first.
+function initialDepot() {
+  const saved = lsGet('bt_depot');
+  if (paddle.depots.includes(saved)) return saved;
+  const route = lsGet('bt_route');
+  const withRoute = route && paddle.depots.find(d => depotRoutes(d).some(r => isSameRoute(r, route)));
+  if (withRoute) return withRoute;
+  const season = lsGet('paddleSeason');
+  const slug = (season && lsGet('paddleDepot_' + season)) || lsGet('paddleDepot');
+  const fromApp = slug && paddle.depots.find(d => slug.toLowerCase().replace(/[^a-z]/g, '').startsWith(d.toLowerCase().replace(/[^a-z]/g, '').slice(0, 5)));
+  return fromApp || paddle.depots[0] || '';
+}
+
+function fillRoutes(depot, selected) {
+  const sel = document.getElementById('routeSelect');
+  const routes = depotRoutes(depot);
+  sel.innerHTML = '<option value="">Route</option>' + routes.map(r => '<option value="' + esc(r) + '">Route ' + esc(r) + '</option>').join('');
+  const hit = routes.find(r => r === selected) || routes.find(r => isSameRoute(r, selected));
+  sel.value = hit || '';
+  return sel.value;
+}
+
+// Called once the pick is loaded.
+function fillDepots() {
+  const dsel = document.getElementById('depotSelect');
+  const depot = initialDepot();
+  dsel.innerHTML = '<option value="">Depot</option>' + paddle.depots.map(d => '<option value="' + esc(d) + '">' + esc(d) + '</option>').join('');
+  dsel.value = depot;
+  const route = fillRoutes(depot, lsGet('bt_route'));
+  if (state.find) { document.getElementById('routeSelect').value = ''; return; } // a search is showing; leave it
+  if (route && route !== state.route) { lsSet('bt_route', route); loadRoute(route); }
+}
+
+function onDepotChange() {
+  const depot = document.getElementById('depotSelect').value;
+  if (!depot) return;
+  lsSet('bt_depot', depot);
+  // Keep the route when this depot runs it too; else wait for a pick.
+  const route = fillRoutes(depot, state.find ? lsGet('bt_route') : state.route || lsGet('bt_route'));
+  if (route) { if (state.find || route !== state.route) onRouteChange(); return; }
+  endSearch();
+  showIdle();
+}
+
+function showIdle() {
+  state.route = '';
+  clearInterval(refreshTimer); clearInterval(countdownTimer);
+  document.getElementById('alertArea').innerHTML = '';
+  document.getElementById('alertsPanel').classList.add('hidden');
+  document.getElementById('detoursPanel').classList.add('hidden');
+  setStatus('idle');
+  document.getElementById('routeBar').classList.add('hidden');
+  renderBottomBar();
+  lastHTML = '';
+  setContent(IDLE_HTML);
+}
+
+// Search cleared: back to the saved depot and route.
+function restoreSaved() {
+  endSearch();
+  const dsel = document.getElementById('depotSelect');
+  const depot = paddle.loaded ? (paddle.depots.includes(lsGet('bt_depot')) ? lsGet('bt_depot') : initialDepot()) : '';
+  if (depot) dsel.value = depot;
+  const route = paddle.loaded ? fillRoutes(depot, lsGet('bt_route')) : lsGet('bt_route');
+  if (!paddle.loaded && route) document.getElementById('routeSelect').value = route;
+  if (route) loadRoute(route); else showIdle();
 }
 
 // Bus or block number entered (both are 4 digits, and many numbers are both,
@@ -2740,7 +3095,11 @@ const SEEN_DAYS = 3;
 async function onBusSearch() {
   const num = document.getElementById('busSearch').value.trim();
   if (!num) return;
+  // A search covers every depot and route; the dropdowns are set aside
+  // (dimmed, route cleared) and come back when the field is cleared.
   document.getElementById('routeSelect').value = '';
+  document.querySelector('.input-row').classList.add('searching');
+  view.mode = 'dir'; view.follow = true; // show the found bus, in its own direction
   const f = { num, bus: null, block: null, busSeen: null, blockSeen: null };
   state.find = f; state.bus = ''; state.busBlock = ''; state.block = '';
   const superseded = () => state.find !== f; // a route was picked (or another number searched) meanwhile
@@ -2797,8 +3156,10 @@ async function onBusSearch() {
 
   if (!f.bus && !f.block) {
     state.route = '';
+    clearInterval(refreshTimer); clearInterval(countdownTimer);
     setStatus('idle');
     document.getElementById('routeBar').classList.add('hidden');
+    renderBottomBar();
     const sec = (main, sub) => '<div class="find-sec"><div class="main">' + esc(main) + '</div><div class="sub">' + sub + '</div></div>';
     let h = '';
     if (f.busSeen) h += sec('Bus ' + num + ' is currently offline', f.busSeen.map(esc).join('<br>'));
@@ -2889,7 +3250,10 @@ async function loadRoute(route) {
   loadDetours(state.route);  // detours page for the new route
   isFirstRender = true;
   lastHTML = '';
-  activePage = 0; // a new route may have a different direction ordering/count
+  view.dir = '';  // this route's own saved direction (see currentDir)
+  lastCards = []; lastEmptyHtml = '';
+  sched.dirNames = {}; // the old route's; this route's come with its schedule
+  renderBottomBar();
 
   document.getElementById('alertsPanel').classList.add('hidden');
   document.getElementById('detoursPanel').classList.add('hidden');
@@ -2995,28 +3359,32 @@ const IDLE_HTML = document.getElementById('content').innerHTML;
 (function init() {
   const routeSel = document.getElementById('routeSelect');
 
-  ROUTES.forEach(r => {
-    const o = document.createElement('option');
-    o.value = r; o.textContent = 'Route ' + r;
-    routeSel.appendChild(o);
-  });
-
-  try {
-    const sr = localStorage.getItem('bt_route');
-    if (sr) routeSel.value = sr;
-  } catch(e) {}
+  // Until the pick loads (it fills both dropdowns, see fillDepots), show
+  // the saved route alone so it can load straight away.
+  const sr = lsGet('bt_route');
+  if (sr) {
+    routeSel.insertAdjacentHTML('beforeend', '<option value="' + esc(sr) + '">Route ' + esc(sr) + '</option>');
+    routeSel.value = sr;
+  }
+  const sd = lsGet('bt_depot');
+  if (sd) {
+    const dsel = document.getElementById('depotSelect');
+    dsel.insertAdjacentHTML('beforeend', '<option value="' + esc(sd) + '">' + esc(sd) + '</option>');
+    dsel.value = sd;
+  }
 
   state.route = routeSel.value;
   loadPairs(); // today's block↔bus pairs seen earlier in this browser
 
   routeSel.addEventListener('change', onRouteChange);
+  document.getElementById('depotSelect').addEventListener('change', onDepotChange);
   document.getElementById('busForm').addEventListener('submit', e => {
     e.preventDefault();
     document.getElementById('busSearch').blur(); // close the phone keyboard
     onBusSearch();
   });
   // Digits only; the 4th digit starts the search. Field emptied (✕ or
-  // backspace) while a bus is shown → back to the idle screen.
+  // backspace) after a search → back to the saved depot and route.
   document.getElementById('busSearch').addEventListener('input', e => {
     const digits = e.target.value.replace(/\D/g, '').slice(0, 4);
     if (digits !== e.target.value) e.target.value = digits;
@@ -3025,11 +3393,7 @@ const IDLE_HTML = document.getElementById('content').innerHTML;
       return;
     }
     if (digits || !state.find) return;
-    state.route = ''; state.bus = ''; state.busBlock = ''; state.block = ''; state.find = null;
-    document.getElementById('alertArea').innerHTML = '';
-    setStatus('idle');
-    document.getElementById('routeBar').classList.add('hidden');
-    setContent(IDLE_HTML);
+    restoreSaved();
   });
 
   window.addEventListener('online',  () => { if (state.route) loadRoute(state.route); });

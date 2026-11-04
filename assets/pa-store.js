@@ -53,7 +53,7 @@ export function readLocal(tool) {
     } catch (_) { /* storage blocked */ }
     return { seasonId, districtBySeason };
   }
-  if (tool === 'tracker') return { route: g('bt_route') || '', block: g('bt_block') || '' };
+  if (tool === 'tracker') return { route: g('bt_route') || '', block: g('bt_block') || '', depot: g('bt_depot') || '' };
   if (tool === 'vacsick') return { viewMode: g('vacSickViewMode') || '' };
   return {};
 }
@@ -74,6 +74,7 @@ function writeLocal(tool, data) {
   } else if (tool === 'tracker') {
     s('bt_route', data.route);
     s('bt_block', data.block);
+    s('bt_depot', data.depot);
   } else if (tool === 'vacsick') {
     s('vacSickViewMode', data.viewMode);
   }
@@ -96,7 +97,7 @@ function sig(obj) {
 /** Which tool owns a given localStorage key. */
 function toolForKey(key) {
   if (key === 'paddleSeason' || key.startsWith('paddleDepot')) return 'paddle';
-  if (key === 'bt_route' || key === 'bt_block') return 'tracker';
+  if (key === 'bt_route' || key === 'bt_block' || key === 'bt_depot') return 'tracker';
   if (key === 'vacSickViewMode') return 'vacsick';
   return null;
 }
