@@ -155,6 +155,7 @@ body.has-bar #content{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .at-trips{display:flex;align-items:center;gap:8px;padding:7px 12px;border-top:1px solid var(--line);font-family:var(--mono);font-size:13px;font-weight:700;color:var(--bright);flex-wrap:wrap}
 .at-dir{padding:2px 7px;border-radius:3px;background:rgba(77,159,255,.12);color:var(--blue);white-space:nowrap}
 .at-dir.done{background:var(--line);color:var(--dim)}
+.at-dir.cur{background:rgba(61,214,140,.16);color:var(--green);box-shadow:inset 0 0 0 1px rgba(61,214,140,.45)}
 .at-blk{font-size:11px;font-weight:600;color:var(--mid);white-space:nowrap}
 .at-bus{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:3px;background:var(--line2);color:var(--bright);white-space:nowrap}
 .at-bus svg{width:13px;height:13px;fill:currentColor}
@@ -2485,7 +2486,14 @@ function allTripsItems() {
       const inService = (liveIdx >= 0 && liveIdx >= gi && liveIdx <= gl) || (liveIdx < 0 && nowMin >= s && nowMin <= e);
       // Between trips at the terminal, this round trip next.
       const layover = !inService && first && trips[0].s <= nowMin;
-      items.push({ blk, s, e, left, inService, layover, live: first ? live : null });
+      // The way a live bus is heading right now (green on its card): its
+      // live trip's direction, else what the feed reports.
+      let curDir = '';
+      if (first && live) {
+        const lt = liveIdx >= 0 ? trips[liveIdx].t : null;
+        curDir = lt ? canonDir((sched.dirNames && sched.dirNames[lt.direction]) || 'Direction ' + lt.direction) : canonDir(live.Direction);
+      }
+      items.push({ blk, s, e, left, inService, layover, live: first ? live : null, curDir });
       first = false;
     }
   }
@@ -2549,7 +2557,7 @@ function allTripsCardHtml(it, dirs, anim, idx) {
   // Trips still to do on this route from here, by direction, then the bus.
   h += '<div class="at-trips">';
   const shown = dirs.length ? dirs : Object.keys(it.left);
-  shown.forEach(d => { const n = it.left[d] || 0; h += '<span class="at-dir' + (n ? '' : ' done') + '">' + n + ' ' + esc(dirShort(d)) + '</span>'; });
+  shown.forEach(d => { const n = it.left[d] || 0; h += '<span class="at-dir' + (d === it.curDir ? ' cur' : n ? '' : ' done') + '">' + n + ' ' + esc(dirShort(d)) + '</span>'; });
   Object.keys(it.left).filter(d => !shown.includes(d)).forEach(d => { h += '<span class="at-dir">' + it.left[d] + ' ' + esc(dirShort(d)) + '</span>'; });
   const vRaw = lv ? String(lv.VehicleID || '').trim() : '';
   const vid = (vRaw && vRaw !== '0' ? vRaw : '') || knownVehicleFor(it.blk);
