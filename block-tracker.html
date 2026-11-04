@@ -2572,7 +2572,10 @@ function allTripsItems() {
       first = false;
     });
   }
-  return items.sort((a, b) => a.s - b.s || a.e - b.e || a.blk.localeCompare(b.blk));
+  // Strictly by start time, whatever the direction; trips leaving at the
+  // same minute list WB/NB before EB/SB.
+  const rank = d => /^(WB|NB)$/.test(dirShort(d)) ? 0 : /^(EB|SB)$/.test(dirShort(d)) ? 1 : 2;
+  return items.sort((a, b) => a.s - b.s || rank(a.dir) - rank(b.dir) || a.e - b.e || a.blk.localeCompare(b.blk));
 }
 
 // The pick run on `blk` at service minute `min`: the piece covering it, else
