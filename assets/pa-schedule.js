@@ -434,6 +434,20 @@ const tripsMem = new Map();
  */
 export function clearCaches() { mem.clear(); tripsMem.clear(); }
 /**
+ * septa-gtfs's lists still carry the previous schedule: trips with short
+ * (4-digit) ids beside the current 6-digit ones (route 21 weekday: 202 of
+ * each). Live buses only ever report 6-digit trip ids. The old set doubles
+ * trips at shifted times (21 block 9118 at 6:44 AND 6:50), keeps blocks on a
+ * route they no longer run (21 "9117", now 42 only) and adds renumbered
+ * blocks (21 "9158"). When a list has 6-digit ids, drop the short ones.
+ * Same rule as block-tracker.html withoutOldSchedule.
+ */
+export function withoutOldSchedule(list) {
+  if (!list.some(t => String(t.trip_id).length >= 6)) return list;
+  return list.filter(t => String(t.trip_id).length > 4);
+}
+
+/**
  * All trips on one route for a day type, normalised to minutes. Route files
  * are 110-150 KB; the browser HTTP cache handles repeat loads, and we only
  * ever load the routes on the operator's own run.
@@ -458,6 +472,7 @@ export async function loadRouteTrips(route, dayType) {
       const own = list.filter(t => !weekend.has(String(t.trip_id)));
       if (own.length) list = own;
     }
+    list = withoutOldSchedule(list);
     return list.map(t => ({
       tripId: String(t.trip_id), block: String(t.block_id || ''), route,
       dir: t.direction, headsign: t.headsign || '',
