@@ -656,6 +656,29 @@ function serviceDayTrips(data) {
   return trips.filter(t => !(ids.has(String(t.trip_id)) && timeStrToMin(t.start) < owlEnd)).concat(early);
 }
 
+// septa-gtfs's feed still carries the previous schedule beside the current
+// one (older 4-digit trip ids next to the 963xxx ones). Mostly that is the
+// same block listed twice, but a block the old pick numbered differently
+// shows up as an extra, run-less block: weekday route 21 "9158" is an exact
+// copy of 9157 (5:03 PM-2:21 AM; the fall pick has run 146 on 9157 and only
+// 9157 is ever live). Drop a block that isn't in today's pick when every one
+// of its trips is also a trip of a block that is.
+function dropStaleCopies(blockTrips, order) {
+  if (!paddle.loaded) return;
+  const key = t => timeStrToMin(t.start) + '|' + timeStrToMin(t.end) + '|' + t.direction;
+  const inPick = new Set();
+  for (const [blk, trips] of blockTrips)
+    if (paddle.byBlock.has(blk)) trips.forEach(t => inPick.add(key(t)));
+  for (const [blk, trips] of [...blockTrips]) {
+    if (paddle.byBlock.has(blk) || !trips.length) continue;
+    if (trips.every(t => inPick.has(key(t)))) {
+      blockTrips.delete(blk);
+      const i = order.indexOf(blk);
+      if (i >= 0) order.splice(i, 1);
+    }
+  }
+}
+
 async function loadScheduleData(route) {
   const reqId = ++schedRequestId;
   sched.loaded = false;
@@ -679,6 +702,11 @@ async function loadScheduleData(route) {
       blockTrips.get(blk).push({ ...t, route });
     }
     if (reqId !== schedRequestId) return;
+
+    // Needs today's pick (below), so wait for it; a failed load just skips it.
+    if (paddleReady) { try { await paddleReady; } catch(e) {} }
+    if (reqId !== schedRequestId) return;
+    dropStaleCopies(blockTrips, order);
 
     // Best-effort: the self-learned schedule published by septa-gtfs's
     // poll-observed.js, keyed by exact GTFS trip_id. Missing file or too few
