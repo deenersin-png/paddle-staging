@@ -2519,22 +2519,20 @@ function buildDirPage(dir, list, anim) {
 
 // ── ALL TRIPS ────────────────────────────────────────────────
 // Every bus still to run on this route today, both directions in one list,
-// by time: each block once per round trip (a trip and the opposite-direction
-// trip after it), at that round trip's start, showing the trips it still has
-// on this route from there. A block in from another route for one trip shows
-// up the same way (1 EB · 1 WB). Built from the timetable, so blocks not out
-// yet are all there; live data only marks which trip a live bus is on (a
-// late bus stays until it finishes), its location, and its bus number.
-// A round trip's second leg must start within this long of the first's end;
-// a longer gap means the block left the route (or pulled in) in between.
-const ROUND_TRIP_GAP_MIN = 90;
-
+// by time: one card per one-way trip, at that trip's start, showing how many
+// trips in that direction the block still has on this route from there
+// (2 EB, then 2 WB, 1 EB, 1 WB). A block in from another route for one round
+// trip shows up the same way (1 EB, then 1 WB). Built from the timetable, so
+// blocks not out yet are all there; live data only marks which trip a live
+// bus is on (a late bus stays until it finishes), its location, and its bus
+// number.
 function allTripsItems() {
   const nowMin = serviceNowMin();
   const byBlock = new Map();
   lastCards.forEach(b => byBlock.set(String(b.BlockID || ''), b));
   // A search shows its own block(s) only.
   const only = (state.bus || state.block) ? new Set(lastCards.map(b => String(b.BlockID || ''))) : null;
+  const dirOf = t => canonDir((sched.dirNames && sched.dirNames[t.direction]) || 'Direction ' + t.direction);
   const items = [];
   for (const [blk, raw] of sched.blockTrips) {
     if (only && !only.has(blk)) continue;
@@ -2560,36 +2558,19 @@ function allTripsItems() {
     const liveIdx = live && live.trip != null ? trips.findIndex(x => x.ids.has(String(live.trip))) : -1;
     const pending = (x, i) => liveIdx >= 0 ? i >= liveIdx : x.e > nowMin;
 
-    const groups = [];
-    for (let i = 0; i < trips.length;) {
-      const a = trips[i], b = trips[i + 1];
-      if (b && b.t.direction !== a.t.direction && b.s - a.e <= ROUND_TRIP_GAP_MIN) { groups.push([i, i + 1]); i += 2; }
-      else { groups.push([i]); i += 1; }
-    }
     let first = true;
-    for (const g of groups) {
-      const gi = g[0], gl = g[g.length - 1];
-      if (!g.some(i => pending(trips[i], i))) continue;
-      const left = {};
-      trips.forEach((x, i) => {
-        if (i < gi || !pending(x, i)) return;
-        const d = canonDir((sched.dirNames && sched.dirNames[x.t.direction]) || 'Direction ' + x.t.direction);
-        left[d] = (left[d] || 0) + 1;
-      });
-      const s = trips[gi].s, e = trips[gl].e;
-      const inService = (liveIdx >= 0 && liveIdx >= gi && liveIdx <= gl) || (liveIdx < 0 && nowMin >= s && nowMin <= e);
-      // Between trips at the terminal, this round trip next.
-      const layover = !inService && first && trips[0].s <= nowMin;
-      // The way a live bus is heading right now (green on its card): its
-      // live trip's direction, else what the feed reports.
-      let curDir = '';
-      if (first && live) {
-        const lt = liveIdx >= 0 ? trips[liveIdx].t : null;
-        curDir = lt ? canonDir((sched.dirNames && sched.dirNames[lt.direction]) || 'Direction ' + lt.direction) : canonDir(live.Direction);
-      }
-      items.push({ blk, s, e, left, inService, layover, live: first ? live : null, curDir });
+    trips.forEach((x, i) => {
+      if (!pending(x, i)) return;
+      const dir = dirOf(x.t);
+      // This trip and the ones after it in the same direction.
+      let left = 0;
+      for (let j = i; j < trips.length; j++) if (pending(trips[j], j) && dirOf(trips[j].t) === dir) left++;
+      const inService = liveIdx >= 0 ? liveIdx === i : nowMin >= x.s && nowMin <= x.e;
+      // The way a live bus is heading right now (green on its card).
+      const cur = first && live && (inService || (liveIdx < 0 && canonDir(live.Direction) === dir));
+      items.push({ blk, s: x.s, e: x.e, dir, left, inService, live: first ? live : null, cur });
       first = false;
-    }
+    });
   }
   return items.sort((a, b) => a.s - b.s || a.e - b.e || a.blk.localeCompare(b.blk));
 }
@@ -2607,7 +2588,7 @@ function runOnBlockAt(blk, min) {
 }
 
 // Every run on `blk` during [s, e): the one on it at the start, then any
-// relief that takes over before the round trip ends ("203 → 424").
+// relief that takes over before the trip ends ("203 → 424").
 function runsOnBlockDuring(blk, s, e) {
   const first = runOnBlockAt(blk, s);
   if (!first) return [];
@@ -2619,12 +2600,12 @@ function runsOnBlockDuring(blk, s, e) {
 function dayLabelOf(day) { return day === 'saturday' ? 'Saturday' : day === 'sunday' ? 'Sunday' : 'Weekday'; }
 
 // One All Trips scorecard: the Paddle App's card head (run number, day,
-// PADDLE; this round trip's times on the left and the run's routes on the
+// PADDLE; this trip's times on the left and the run's routes on the
 // right), the bus's location while it is live, then the trips still to do by
-// direction and the bus number.
-function allTripsCardHtml(it, dirs, anim, idx) {
+// that direction and the bus number.
+function allTripsCardHtml(it, anim, idx) {
   const day = dayLabelOf(getDayType());
-  // A relief during this round trip shows both runs, in order: "203 → 424",
+  // A relief during this trip shows both runs, in order: "203 → 424",
   // each number and its own PADDLE button opening that run's paddle.
   const runs = runsOnBlockDuring(it.blk, it.s, it.e);
   const two = runs.length > 1;
@@ -2650,11 +2631,9 @@ function allTripsCardHtml(it, dirs, anim, idx) {
     h += '<div class="at-loc"><span class="at-loc-txt">→ ' + esc(lv.next_stop_name) + '</span>' +
          (lv._notTracking ? '<span class="not-tracking-tag">NOT TRACKING</span>' : '<span class="late-tag ' + lt[0] + '">' + lt[1] + '</span>') + '</div>';
   }
-  // Trips still to do on this route from here, by direction, then the bus.
+  // Trips still to do in this card's direction from here, then the bus.
   h += '<div class="at-trips">';
-  const shown = dirs.length ? dirs : Object.keys(it.left);
-  shown.forEach(d => { const n = it.left[d] || 0; h += '<span class="at-dir' + (d === it.curDir ? ' cur' : n ? '' : ' done') + '">' + n + ' ' + esc(dirShort(d)) + '</span>'; });
-  Object.keys(it.left).filter(d => !shown.includes(d)).forEach(d => { h += '<span class="at-dir">' + it.left[d] + ' ' + esc(dirShort(d)) + '</span>'; });
+  h += '<span class="at-dir' + (it.cur ? ' cur' : '') + '">' + it.left + ' ' + esc(dirShort(it.dir)) + '</span>';
   const vRaw = lv ? String(lv.VehicleID || '').trim() : '';
   const vid = (vRaw && vRaw !== '0' ? vRaw : '') || knownVehicleFor(it.blk);
   h += vid ? '<span class="at-bus">' + ICONS.bus + ' ' + esc(vid) + '</span>'
@@ -2669,8 +2648,7 @@ function buildAllTripsPage(anim) {
   let h = '<div class="section-label' + (anim ? ' fade-in' : '') + '">All Trips · ' + buses + (buses === 1 ? ' bus' : ' buses') + '</div>';
   if (!sched.loaded) return h + '<div class="at-empty">Loading the timetable…</div>';
   if (!items.length) return h + '<div class="at-empty">No trips left today on Route ' + esc(state.route) + '</div>';
-  const dirs = routeDirs();
-  return h + '<div class="at-list">' + items.map((it, i) => allTripsCardHtml(it, dirs, anim, i)).join('') + '</div>';
+  return h + '<div class="at-list">' + items.map((it, i) => allTripsCardHtml(it, anim, i)).join('') + '</div>';
 }
 
 // The Detours view: every active detour on this route, both directions in one
