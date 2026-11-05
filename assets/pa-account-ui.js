@@ -228,6 +228,10 @@ function disableForm() {
 // ---- signed-out ------------------------------------------------------------
 
 function buildSignedOut(body) {
+  if (justDeleted) {
+    justDeleted = false;
+    showMsg('Your account was deleted. Everything still works on this phone without one.', 'ok');
+  }
   const tabs = el('div', 'pa-tabs');
   [['signin', 'SIGN IN'], ['signup', 'CREATE ACCOUNT']].forEach(([id, label]) => {
     const t = el('button', 'pa-tab' + (mode === id ? ' pa-on' : ''));
@@ -412,6 +416,92 @@ function buildSignedIn(body) {
   stack.appendChild(out);
 
   body.appendChild(stack);
+
+  const delRow = el('div', 'pa-linkrow');
+  const del = el('button', 'pa-link pa-link-danger');
+  del.type = 'button';
+  del.textContent = 'Delete account';
+  del.addEventListener('click', () => buildDeleteAccount(body));
+  delRow.appendChild(del);
+  body.appendChild(delRow);
+}
+
+// Set after a delete so the signed-out screen can say it worked.
+let justDeleted = false;
+
+function buildDeleteAccount(body) {
+  body.textContent = '';
+  body.appendChild(msgNode());
+
+  const warn = el('div', 'pa-delete-warn');
+  const h = el('div', 'pa-delete-title');
+  h.textContent = 'Delete your account?';
+  const p = el('div', 'pa-hint');
+  p.textContent = 'This removes your login, your runs, weekly hours, vacation, phone alerts '
+    + 'and anything you posted on the swap board. It cannot be undone. '
+    + 'Every tool keeps working on this phone without an account.';
+  warn.append(h, p);
+  body.appendChild(warn);
+
+  const form = el('form');
+  form.noValidate = true;
+  const needsPw = auth.usesPassword();
+  const pw = needsPw
+    ? field(form, 'Enter your password to confirm', 'password',
+            { type: 'password', autocomplete: 'current-password' })
+    : null;
+  if (!needsPw) {
+    form.appendChild(el('div', 'pa-hint')).textContent =
+      'A Google window will open so you can confirm it is you.';
+  }
+
+  const go = el('button', 'pa-submit pa-submit-danger');
+  go.type = 'submit';
+  go.textContent = 'Delete my account';
+  form.appendChild(go);
+
+  form.addEventListener('submit', async ev => {
+    ev.preventDefault();
+    clearMsg();
+    if (needsPw && !pw.value) { showMsg('Enter your password.', 'err'); return; }
+    busy(form, true, go, 'Delete my account');
+    const uid = user.uid;
+    const step = t => { go.textContent = t; };
+    try {
+      step('Checking it is you…');
+      await auth.reauthenticate(pw ? pw.value : '');
+      // Stop syncing first, so nothing writes the settings back while they go.
+      if (strip) { try { strip.unmount(); } catch (_) {} }
+      store.detach();
+      const wipe = await import('./pa-delete-account.js');
+      await wipe.wipeAccountData(uid, step);
+      step('Removing your login…');
+      await wipe.dropPush();
+      // Set before the call: Firebase may report the sign-out before it returns.
+      justDeleted = true;
+      await auth.deleteLogin();
+      wipe.forgetOnDevice(uid);
+      // onAuthChange re-renders the (now signed-out) modal with the message.
+    } catch (err) {
+      justDeleted = false;
+      busy(form, false, go, 'Delete my account');
+      // The login is still there if we got here, so they can just try again.
+      if (user) store.attach(user.uid).catch(() => {});
+      showMsg(err.code && err.code.startsWith('auth/')
+        ? auth.errText(err)
+        : 'Could not delete everything (' + (err.code || err.message || 'error')
+          + '). Your account is still here — check your connection and try again.', 'err');
+    }
+  });
+  body.appendChild(form);
+
+  const back = el('div', 'pa-linkrow');
+  const link = el('button', 'pa-link');
+  link.type = 'button';
+  link.textContent = 'Cancel';
+  link.addEventListener('click', renderModal);
+  back.appendChild(link);
+  body.appendChild(back);
 }
 
 function buildEditProfile(body) {

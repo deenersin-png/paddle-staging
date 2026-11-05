@@ -18,7 +18,11 @@ import {
   GoogleAuthProvider,
   updateProfile,
   sendPasswordResetEmail,
-  signOut as fbSignOut
+  signOut as fbSignOut,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  reauthenticateWithPopup,
+  deleteUser
 } from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-auth.js';
 
 import { initFirebase, isConfigured } from './pa-firebase.js';
@@ -98,6 +102,36 @@ export async function signOut() {
   await fbSignOut(auth);
 }
 
+// ---- account deletion -------------------------------------------------------
+//
+// Firebase only deletes an account that signed in within the last few minutes
+// (auth/requires-recent-login). So the delete screen proves who it is FIRST —
+// password, or the Google window — and only then wipes data and the login.
+// Doing it in that order means a wrong password never leaves someone with
+// their data gone but their login still there.
+
+/** True when the account signs in with email + password (it needs the password to delete). */
+export function usesPassword() {
+  return !!currentUser?.providerData?.some(p => p.providerId === 'password');
+}
+
+export async function reauthenticate(password) {
+  const u = auth.currentUser;
+  if (!u) throw Object.assign(new Error('Not signed in.'), { code: 'auth/no-current-user' });
+  if (usesPassword()) {
+    await reauthenticateWithCredential(u, EmailAuthProvider.credential(u.email, password || ''));
+  } else {
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    await reauthenticateWithPopup(u, provider);
+  }
+}
+
+/** Deletes the login itself. Call reauthenticate() first. */
+export async function deleteLogin() {
+  await deleteUser(auth.currentUser);
+}
+
 // ---- error copy -----------------------------------------------------------
 //
 // Email-enumeration protection is ON by default in Firebase Auth, which
@@ -117,7 +151,10 @@ const ERRS = {
   'auth/popup-closed-by-user':    'Google sign-in was cancelled.',
   'auth/cancelled-popup-request': 'Google sign-in was cancelled.',
   'auth/operation-not-allowed':   'That sign-in method is not enabled for this project yet.',
-  'auth/unauthorized-domain':     'This site is not in the Firebase authorized-domains list.'
+  'auth/unauthorized-domain':     'This site is not in the Firebase authorized-domains list.',
+  'auth/wrong-password':          'That password is not right.',
+  'auth/user-mismatch':           'That is a different Google account. Pick the one you signed in with.',
+  'auth/requires-recent-login':   'For safety, enter your password again and retry.'
 };
 
 export function errText(e) {
