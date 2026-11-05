@@ -335,6 +335,29 @@
   text-underline-offset: 2px;
 }
 .pa-link:hover { color: var(--pa-mid); }
+.pa-ghost.pa-delete-btn { color: var(--pa-red); border-color: rgba(255,107,107,0.35); }
+.pa-ghost.pa-delete-btn:hover { background: var(--pa-red-dim); }
+
+/* Delete-account screen. */
+.pa-delete-warn {
+  border: 1px solid rgba(255,107,107,0.35);
+  background: var(--pa-red-dim);
+  border-radius: var(--pa-radius);
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+.pa-delete-warn .pa-hint { margin-top: 6px; color: var(--pa-mid); }
+.pa-delete-title {
+  font-family: var(--pa-sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--pa-red);
+}
+.pa-submit.pa-submit-danger {
+  background: var(--pa-red);
+  border-color: var(--pa-red);
+  color: #fff;
+}
 
 .pa-divider {
   display: flex;
