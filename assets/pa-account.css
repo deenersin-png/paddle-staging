@@ -335,7 +335,8 @@
   text-underline-offset: 2px;
 }
 .pa-link:hover { color: var(--pa-mid); }
-.pa-link.pa-link-danger:hover { color: var(--pa-red); }
+.pa-ghost.pa-delete-btn { color: var(--pa-red); border-color: rgba(255,107,107,0.35); }
+.pa-ghost.pa-delete-btn:hover { background: var(--pa-red-dim); }
 
 /* Delete-account screen. */
 .pa-delete-warn {

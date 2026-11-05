@@ -415,15 +415,13 @@ function buildSignedIn(body) {
   });
   stack.appendChild(out);
 
-  body.appendChild(stack);
-
-  const delRow = el('div', 'pa-linkrow');
-  const del = el('button', 'pa-link pa-link-danger');
+  const del = el('button', 'pa-ghost pa-delete-btn');
   del.type = 'button';
   del.textContent = 'Delete account';
   del.addEventListener('click', () => buildDeleteAccount(body));
-  delRow.appendChild(del);
-  body.appendChild(delRow);
+  stack.appendChild(del);
+
+  body.appendChild(stack);
 }
 
 // Set after a delete so the signed-out screen can say it worked.
