@@ -18,7 +18,7 @@
 //     still gets the paddle viewer it loaded this morning.
 
 const VERSION = 'pa-sw-6';
-const CACHE = 'pa-cache-v2';
+const CACHE = 'pa-cache-v3';
 
 // What the worker hands the PAGE is marked no-store. The browser's in-memory
 // cache otherwise reuses a module it loaded minutes earlier without asking
