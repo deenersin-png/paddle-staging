@@ -207,3 +207,13 @@ header, .header { top: 60px !important; }
 .card.day-Saturday .run-day, .card.day-Saturday .run-num { color: #c8102e !important; }
 .prc.day-Saturday::before, .prc-stack.day-Saturday > .prc-top::before { background: #c8102e !important; }
 .prc.day-Saturday .prc-day, .prc.day-Saturday .prc-num, .prc-stack.day-Saturday .prc-cd-status { color: #c8102e !important; }
+
+/* "My run" strip under the header (pa-strip.js): MY RUN in bold, and the OPEN
+   button styled like the Paddles page's PADDLE button. */
+.pa-strip > span:first-child { font-weight: 700 !important; color: #08122b !important; white-space: nowrap; }
+.pa-strip a {
+  background: #1565c0 !important; border: 1px solid #1565c0 !important; color: #ffffff !important;
+  font-family: 'IBM Plex Mono', monospace !important; font-size: 10px !important; font-weight: 600 !important;
+  letter-spacing: .06em; padding: 4px 10px !important; border-radius: 4px !important; white-space: nowrap; flex-shrink: 0;
+}
+.pa-strip a:hover, .pa-strip a:active { background: #0b4ea2 !important; border-color: #0b4ea2 !important; color: #ffffff !important; }
