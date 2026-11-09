@@ -82,3 +82,42 @@ header, .header { top: 52px !important; }
 .hd-sub:has(#hd-ctx:not(:empty)) { display: block !important; }
 .header-inner { gap: 10px; flex-wrap: wrap; }
 .header-count { font-size: 12px; color: #d3e2fa; }
+
+/* ===== Unified light colours for components that carry their own dark tokens ===== */
+
+/* Account panel (pa-account.css declares --pa-* on :root AND .pa-root; both are overridden here). */
+:root, .pa-root {
+  --pa-ink: #ffffff; --pa-ink2: #ffffff; --pa-ink3: #e6ecf6;
+  --pa-line: rgba(10,30,70,0.14); --pa-line2: rgba(10,30,70,0.26); --pa-line3: rgba(10,30,70,0.42);
+  --pa-dim: #56627a; --pa-mid: #3a4660; --pa-text: #17213a; --pa-bright: #08122b;
+  --pa-amber: #0b4ea2; --pa-amber-dim: rgba(11,78,162,0.10);
+  --pa-green: #12753a; --pa-red: #c8102e; --pa-red-dim: rgba(200,16,46,0.10);
+}
+
+/* Delete account: small text link at the bottom of the panel, not a red button. */
+.pa-acct-foot { margin-top: 26px; padding-top: 12px; border-top: 1px solid var(--pa-line2); text-align: center; }
+.pa-delete-link {
+  background: none; border: 0; cursor: pointer; padding: 8px 10px;
+  font-family: var(--pa-sans); font-size: 13px; color: var(--pa-mid); text-decoration: underline;
+}
+.pa-delete-link:hover, .pa-delete-link:focus-visible { color: var(--pa-red); }
+
+/* All Trips list (block-tracker's .at-list sets its own dark tokens). */
+.at-list {
+  --ink: #ffffff; --ink2: #ffffff; --ink3: #e6ecf6;
+  --line: rgba(10,30,70,0.14); --line2: rgba(10,30,70,0.26); --line3: rgba(10,30,70,0.42);
+  --dim: #56627a; --mid: #3a4660; --text: #17213a; --bright: #08122b;
+  --amber: #0b4ea2; --green: #12753a; --green-dim: rgba(18,117,58,0.10);
+  --blue: #1565c0; --violet: #5b3fb5;
+  background: var(--bg, #f2f5fa);
+}
+.at-list .at-time .at-tag.lay { background: rgba(11,78,162,0.12); color: #0b4ea2; }
+.at-list .at-dir { background: rgba(21,101,192,0.10); color: #1565c0; }
+.at-list .at-dir.cur { background: rgba(18,117,58,0.12); color: #12753a; box-shadow: inset 0 0 0 1px rgba(18,117,58,0.45); }
+.at-list .at-runf.on { border-color: #0b4ea2; color: #0b4ea2; background: rgba(11,78,162,0.08); }
+.at-list .at-empty { color: #3a4660; }
+
+/* Run scorecards (My run + All Trips): square corners like the rest of the app. */
+.prc { border-radius: 4px; background: #ffffff; }
+.prc-head { background: #e6ecf6; }
+.prc-swing { background: #e6ecf6; }

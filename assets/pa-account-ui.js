@@ -415,13 +415,17 @@ function buildSignedIn(body) {
   });
   stack.appendChild(out);
 
-  const del = el('button', 'pa-ghost pa-delete-btn');
-  del.type = 'button';
-  del.textContent = 'Delete account';
-  del.addEventListener('click', () => buildDeleteAccount(body));
-  stack.appendChild(del);
-
   body.appendChild(stack);
+
+  // Delete is kept apart from the everyday buttons: a small text link at the
+  // bottom, under a divider, so it can't be hit by mistake.
+  const foot = el('div', 'pa-acct-foot');
+  const del = el('button', 'pa-delete-link');
+  del.type = 'button';
+  del.textContent = 'Delete my account';
+  del.addEventListener('click', () => buildDeleteAccount(body));
+  foot.appendChild(del);
+  body.appendChild(foot);
 }
 
 // Set after a delete so the signed-out screen can say it worked.
