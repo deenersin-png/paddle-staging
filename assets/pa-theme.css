@@ -142,3 +142,14 @@ header, .header { top: 52px !important; }
   background: rgba(255,255,255,0.18) !important;
   border-color: rgba(255,255,255,0.7) !important;
 }
+
+/* My Run: detour cards (.dt in pa-live-cards.css) carried the Detours page's dark palette on the wrapper. */
+.dt {
+  --ink: #ffffff; --ink2: #ffffff; --ink3: #e6ecf6;
+  --line: rgba(10,30,70,0.14); --line2: rgba(10,30,70,0.26); --line3: rgba(10,30,70,0.42);
+  --dim: #56627a; --mid: #3a4660; --text: #17213a; --bright: #08122b;
+  --amber: #0b4ea2; --amber-dim: rgba(11,78,162,0.10);
+  --green: #12753a; --green-dim: rgba(18,117,58,0.10);
+  --red: #c8102e; --red-dim: rgba(200,16,46,0.10);
+}
+.dt .detour-card { background: #ffffff; }
