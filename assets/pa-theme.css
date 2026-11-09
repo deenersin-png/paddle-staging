@@ -121,3 +121,24 @@ header, .header { top: 52px !important; }
 .prc { border-radius: 4px; background: #ffffff; }
 .prc-head { background: #e6ecf6; }
 .prc-swing { background: #e6ecf6; }
+
+/* My Run: live bus scorecards (.bt in pa-live-cards.css) carried the tracker's
+   dark palette on the wrapper; give them the app's light colours. */
+.bt {
+  --bg: #f2f5fa; --card: #ffffff; --border: rgba(10,30,70,0.14); --border-light: rgba(10,30,70,0.26);
+  --text: #17213a; --text-dim: #3a4660; --text-faint: #56627a;
+  --accent: #0b4ea2; --accent-dim: rgba(11,78,162,0.10);
+  --green: #12753a; --green-dim: rgba(18,117,58,0.10);
+  --yellow: #9a6700; --yellow-dim: rgba(154,103,0,0.14);
+  --red: #c8102e; --red-dim: rgba(200,16,46,0.10);
+  --orange: #b4510d; --orange-dim: rgba(180,81,13,0.12);
+  --purple: #5b3fb5; --purple-dim: rgba(91,63,181,0.10);
+}
+.bt .node-card { background: #ffffff; }
+
+/* Account initials: white on the blue header. */
+.pa-avatar-circle {
+  color: #ffffff !important;
+  background: rgba(255,255,255,0.18) !important;
+  border-color: rgba(255,255,255,0.7) !important;
+}
