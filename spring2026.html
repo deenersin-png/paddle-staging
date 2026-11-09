@@ -760,6 +760,7 @@ header {
   }
 }
 </style>
+<link rel="stylesheet" href="assets/pa-account.css">
 <link rel="stylesheet" href="assets/pa-theme.css">
 <link rel="stylesheet" href="assets/pa-menu.css">
 <script src="assets/pa-menu.js" defer></script>
@@ -773,7 +774,6 @@ header {
       <select class="hd-depot-select" id="district-select" onchange="changeDistrict()">
         <option value="">Loading districts...</option>
       </select>
-      <div class="hd-pick">Paddle App for Septa Bus Operators</div>
     </div>
   </div>
   <a href="https://deenersin-png.github.io/live-tracker/" class="btn-live">LIVE</a>
@@ -1108,5 +1108,6 @@ function render() {
 
 loadManifest();
 </script>
+<script type="module" src="assets/pa-account-ui.js"></script>
 </body>
 </html>

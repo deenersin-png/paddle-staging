@@ -71,3 +71,14 @@ header .pa-btn, .header .pa-btn { color: #fff !important; border-color: rgba(255
 /* Paddles / Live / menu now live in the top bar (assets/pa-menu.js): hide the old per-page copies, and sit the page header under the bar. */
 .btn-live, .btn-paddles, .header-buttons .btn-header { display: none !important; }
 header, .header { top: 52px !important; }
+
+/* One format for the second line on every page: a single page title (plus page controls), same type everywhere. */
+.hd-title, .header-title, .brand-text {
+  font-family: 'IBM Plex Mono', monospace !important; font-size: 15px !important; font-weight: 600 !important;
+  letter-spacing: .03em !important; color: #fff !important; line-height: 1.25;
+}
+.hd-sub, .hd-pick, .header-sub, .brand-sub, .app-link, .back-link, .header-badge { display: none !important; }
+#hd-ctx { color: #d3e2fa; }
+.hd-sub:has(#hd-ctx:not(:empty)) { display: block !important; }
+.header-inner { gap: 10px; flex-wrap: wrap; }
+.header-count { font-size: 12px; color: #d3e2fa; }

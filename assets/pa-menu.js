@@ -80,7 +80,8 @@
       acts.appendChild(a);
     });
     var slot = document.getElementById('pa-slot');
-    if (slot) acts.appendChild(slot);
+    if (!slot) { slot = document.createElement('div'); slot.id = 'pa-slot'; }
+    acts.appendChild(slot);
     bar.appendChild(btn);
     bar.appendChild(title);
     bar.appendChild(acts);
