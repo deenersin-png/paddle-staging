@@ -1256,7 +1256,7 @@ function renderRegularForm(form) {
   const w = { start: null, end: null, days: new Set([1, 2, 3, 4, 5]), runs: {}, copySource: null, editing: null, pickStart: null, pickLabel: '' };
   const last = wins[wins.length - 1] || null;
   let s0 = last && last.effectiveTo ? S.addDays(last.effectiveTo, 1) : S.weekStartOf(today);
-  while (coveredBy(s0)) s0 = S.addDays(s0, 7);
+  for (let _i = 0; _i < 520 && coveredBy(s0); _i++) s0 = S.addDays(s0, 7);
   w.start = s0; w.end = S.addDays(s0, 27);
   if (last) { w.days = new Set(Object.keys(last.days || {}).map(Number)); w.copySource = last; }
 
@@ -1337,7 +1337,7 @@ function renderRegularForm(form) {
     const fwd  = el('button', 'pa-ghost', 'Next uncovered 4 weeks \u2192'); fwd.type = 'button';
     back.addEventListener('click', () => {
       let e = S.addDays(w.start, -1);
-      while (coveredBy(e)) e = S.addDays(e, -7);
+      for (let _i = 0; _i < 520 && coveredBy(e); _i++) e = S.addDays(e, -7);
       let s = S.addDays(e, -27);
       for (let d = s; d <= e; d = S.addDays(d, 7)) if (coveredBy(d)) s = S.addDays(d, 7);
       w.copySource = coveredBy(S.addDays(e, 1)) || w.editing || last;
@@ -1346,7 +1346,7 @@ function renderRegularForm(form) {
     });
     fwd.addEventListener('click', () => {
       let s = S.addDays(w.end, 1);
-      while (coveredBy(s)) s = S.addDays(s, 7);
+      for (let _i = 0; _i < 520 && coveredBy(s); _i++) s = S.addDays(s, 7);
       let e = S.addDays(s, 27);
       for (let d = S.addDays(s, 7); d <= e; d = S.addDays(d, 7)) if (coveredBy(d)) { e = S.addDays(d, -1); break; }
       w.copySource = coveredBy(S.addDays(s, -1)) || w.editing || last;
@@ -1403,7 +1403,7 @@ function renderRegularForm(form) {
   slugForDate(ctx.profile.depotKey, today).then(({ season }) => {
     if (!season) return;
     w.pickStart = season.start; w.pickLabel = season.label;
-    if (!wins.length && !w.editing) { w.start = season.start; while (coveredBy(w.start)) w.start = S.addDays(w.start, 7); w.end = S.addDays(w.start, 27); }
+    if (!wins.length && !w.editing) { w.start = season.start; for (let _i = 0; _i < 520 && coveredBy(w.start); _i++) w.start = S.addDays(w.start, 7); w.end = S.addDays(w.start, 27); }
     drawWindow();
   }).catch(() => {});
 }
