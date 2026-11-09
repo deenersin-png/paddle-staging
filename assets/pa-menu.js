@@ -9,15 +9,10 @@
   // Pages inside the app, then the Google Site menu.
   var APP = [
     ['Hold-downs', 'holdowner-fall-2026.html'],
-    ['Detours',    'detours.html']
+    ['Detours',    'detours.html'],
+    ['About',      'about.html']
   ];
-  var SITE = [
-    ['SEPTA Now', 'https://septanow.org'],
-    ['TWU Local 234', 'https://www.twulocal234.net/'],
-    ['Spring 2026 old app', 'https://sites.google.com/view/paddleapp/spring2026-old-app'],
-    ['Fall 2025-2026 old app', 'https://sites.google.com/view/paddleapp/fall-2025-2026-old-app'],
-    ['About',     'https://sites.google.com/view/paddleapp/about']
-  ];
+  var SITE = [];
   // Other season / viewer pages count as their parent menu item.
   var ALIAS = {
     'fall-2026.html': 'index.html', 'spring2026.html': 'index.html', 'summer2026.html': 'index.html',
@@ -40,7 +35,6 @@
     APP.forEach(function (it) {
       html += '<a href="' + esc(it[1]) + '"' + (it[1] === here ? ' class="on" aria-current="page"' : '') + '>' + esc(it[0]) + '</a>';
     });
-    html += '<div class="pam-sec">More</div>';
     SITE.forEach(function (it) {
       html += '<a href="' + esc(it[1]) + '" target="_blank" rel="noopener">' + esc(it[0]) + '<span class="ext" aria-hidden="true">&#8599;</span></a>';
     });

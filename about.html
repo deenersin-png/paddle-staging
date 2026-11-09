@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>About Paddle App</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/pa-account.css">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b4ea2">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--sans:'IBM Plex Sans Condensed',sans-serif;--mono:'IBM Plex Mono',monospace}
+body{background:var(--ink,#f2f5fa);color:var(--text,#17213a);font-family:var(--sans);min-height:100vh}
+header{padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;position:sticky;z-index:200}
+.wrap{max-width:680px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:26px;line-height:1.2;color:var(--bright,#08122b);margin-bottom:10px}
+.by{font-size:17px;line-height:1.5;margin-bottom:18px}
+p{font-size:17px;line-height:1.6;margin-bottom:14px}
+ul{margin:0 0 18px 22px}
+li{font-size:17px;line-height:1.6;margin-bottom:4px}
+.note{border-left:4px solid #c8102e;background:#fff;padding:12px 14px;border-radius:0 6px 6px 0;margin:18px 0}
+a{color:#0b4ea2;font-weight:600}
+.btn-paddle{display:inline-block;font-family:var(--mono);font-size:12px;font-weight:600;padding:3px 8px;border-radius:4px;background:#0b4ea2;color:#fff}
+</style>
+<link rel="stylesheet" href="assets/pa-theme.css">
+<link rel="stylesheet" href="assets/pa-menu.css">
+<script src="assets/pa-menu.js" defer></script>
+</head>
+<body>
+
+<header>
+  <div class="hd-left">
+    <div><div class="hd-title">ABOUT</div></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <h1>Paddle: Find your run in seconds</h1>
+  <p class="by">Built by Deen Ersin, a SEPTA operator at Callowhill, for operators. Free for every coworker.</p>
+
+  <p>Type your run number and get your scorecard instantly:</p>
+  <ul>
+    <li>Pull-out and pull-in times</li>
+    <li>Every route and route change</li>
+    <li>Scheduled hours and pay</li>
+    <li>Swing runs with the gap and both pieces clearly shown</li>
+  </ul>
+
+  <p>Hunting for a specific route? Filter by route (21-42, 65, whatever you want) and see every run that covers it across Weekday, Saturday, and Sunday.</p>
+  <p>Found a run you like? Tap <span class="btn-paddle">PADDLE</span> to open the official PDF right to your page.</p>
+
+  <p class="note">Please note: This is an unofficial tool for orientation only. It may contain errors. Always confirm your run details against the official SEPTA files.</p>
+
+  <p>Questions? Contact Deen at <a href="mailto:dersin@septa.org">dersin@septa.org</a>.</p>
+  <p>Works on your phone. No download, no cost.</p>
+</main>
+
+<script type="module" src="assets/pa-account-ui.js"></script>
+</body>
+</html>
