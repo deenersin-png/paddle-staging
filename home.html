@@ -354,7 +354,7 @@ document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () =>
 const week = HV.mount($('sch-week'), { readOnly: false, getProfile: () => ctx.profile, onEditDay: r => askDay(r) });
 
 function askDay(r) {
-  document.getElementById('day-pop')?.remove();
+  const oldPop = document.getElementById('day-pop'); if (oldPop) oldPop.remove();
   const bg = el('div', 'day-pop-bg'); bg.id = 'day-pop';
   const box = el('div', 'day-pop');
   box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true');
