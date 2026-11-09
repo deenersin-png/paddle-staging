@@ -113,6 +113,9 @@ body{min-height:100%;background:var(--bg);font-family:'Inter',-apple-system,syst
 .route-num{background:var(--accent-dim);color:var(--accent);padding:2px 9px;border-radius:5px;font-weight:800;font-size:15px}
 .bus-count{font-size:13px;color:var(--text-faint)}
 .refresh-tag{font-size:12px;color:var(--text-faint);font-weight:500}
+.rb-right{display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+.rb-status{display:flex;align-items:center;gap:5px}
+.rb-status .status-text{font-size:11px}
 
 /* VIEWS (one at a time: a direction, All Trips or Detours) */
 .view-wrap{overflow:hidden}
@@ -344,15 +347,7 @@ a.run-chip:active{opacity:.7}
 <body>
 
 <div class="header">
-  <div class="header-row">
-    <div>
-    </div>
-    <div class="status-area">
-      <span id="statusDot" class="live-dot idle"></span>
-      <span id="statusText" class="status-text">IDLE</span>
-      <div id="pa-slot"></div>
-    </div>
-  </div>
+  <div id="pa-slot"></div>
   <div class="input-row">
     <!-- Depot first; the route list then holds only that depot's routes (from
          today's pick). Both remembered (bt_depot / bt_route). -->
@@ -397,7 +392,10 @@ a.run-chip:active{opacity:.7}
     Route <span id="routeNum" class="route-num">—</span>
     <span id="busCount" class="bus-count"></span>
   </div>
-  <span id="refreshTag" class="refresh-tag">—</span>
+  <div class="rb-right">
+    <span id="refreshTag" class="refresh-tag">—</span>
+    <span class="rb-status"><span id="statusDot" class="live-dot idle"></span><span id="statusText" class="status-text">IDLE</span></span>
+  </div>
 </div>
 
 <div id="content">

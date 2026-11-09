@@ -67,3 +67,11 @@ body.pam-lock { overflow: hidden; }
 .pam-bar #pa-slot { display: flex; align-items: center; }
 @media (max-width: 400px) { .pam-bar-title { font-size: 16px; } .pam-link { padding: 7px 7px; font-size: 11px; } }
 .pam-bar .pa-btn { color: #fff !important; border-color: rgba(255,255,255,0.7) !important; font-weight: 600; }
+
+/* Taller, darker top line so it reads apart from the page's title line. */
+.pam-bar { height: 60px; background: #06295a; border-bottom: 1px solid rgba(255,255,255,0.18); }
+.pam-bar-title { font-size: 22px; font-weight: 700; }
+.pam-bar .pam-btn { width: 48px; height: 48px; }
+.pam-bar .pam-btn svg { width: 28px; height: 28px; }
+.pam-link { font-size: 13px; padding: 9px 11px; }
+@media (max-width: 400px) { .pam-bar-title { font-size: 19px; } .pam-link { font-size: 12px; padding: 8px 8px; } }
