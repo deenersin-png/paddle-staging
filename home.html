@@ -772,6 +772,21 @@ function currentPiece(c) {
       || ps[0];
 }
 
+// The bus on the current piece's block, found the way the Live page finds it:
+// the live feed first, then the block <-> bus pairing (a bus keeps its block
+// all day, even while it rests at a terminal and drops out of the feed).
+async function curBus(p) {
+  const show = v => { const b = $('cur-bus'); if (b && v) b.textContent = v; };
+  try {
+    const routes = p.routes || [];
+    const buses = await L.fetchRoutes(routes);
+    const live = buses.find(b => String(b.BlockID || '') === String(p.block));
+    if (live) show(String(live.VehicleID || live.label || ''));
+    await L.learnPairs(routes, buses, p.block);
+    if (!live) show(L.knownBus(p.block, routes[0] || ''));
+  } catch (_) {}
+}
+
 function curLabel(p) {
   const lab = el('div', 'prc-cur');
   const put = (k, v, id) => {
@@ -837,9 +852,7 @@ function renderToday() {
     hTop.querySelectorAll('.prc-num, .prc-day').forEach(n => n.remove());
     const p = currentPiece(c);
     hTop.prepend(curLabel(p));
-    if (p) L.vehicleForBlock(p.routes, p.block).then(v => {
-      const b = $('cur-bus'); if (b && v && v.vehicleId) b.textContent = v.vehicleId;
-    }).catch(() => {});
+    if (p) curBus(p);
   }
   if (r.runNo && run && !run.synthetic) attachPaddleLink(cardEl, r, run, c.date);
   body.appendChild(RC.stack(top, cardEl, dayType));
@@ -907,6 +920,7 @@ const lineHtml = text => '<div class="leader-line">' + esc(text) + '</div>';
 // trip, running late; and once it has pulled in or gone out of service.
 async function refreshLeader() {
   const c = ctx.current;
+  if (c && c.run) { const cp = currentPiece(c); if (cp) curBus(cp); }
   if (!$('leader-cards') || !c || c.mode !== 'live' || !c.st || !c.run) return;
   const token = ctx.leaderToken = (ctx.leaderToken || 0) + 1;
   const show = html => {
