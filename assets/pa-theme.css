@@ -217,3 +217,43 @@ header, .header { top: 60px !important; }
   letter-spacing: .06em; padding: 4px 10px !important; border-radius: 4px !important; white-space: nowrap; flex-shrink: 0;
 }
 .pa-strip a:hover, .pa-strip a:active { background: #0b4ea2 !important; border-color: #0b4ea2 !important; color: #ffffff !important; }
+
+/* Paddles page: Run # / Block # boxes, route chips and the sort picker are
+   the main controls - white, blue-edged and larger so nobody misses them. */
+.search-wrap input {
+  background: #ffffff !important; color: #0b4ea2 !important;
+  border: 2px solid #0b4ea2 !important; border-radius: 8px !important;
+  font-family: 'IBM Plex Sans Condensed', system-ui, sans-serif !important;
+  font-size: 18px !important; font-weight: 700 !important;
+  padding: 11px 12px 11px 36px !important; min-height: 48px;
+  box-shadow: 0 2px 6px rgba(8,18,43,0.12);
+}
+.search-wrap input::placeholder { color: #56627a !important; font-weight: 600; }
+.search-wrap input:focus { border-color: #c8102e !important; box-shadow: 0 0 0 3px rgba(200,16,46,0.18) !important; }
+.search-wrap svg { color: #0b4ea2 !important; width: 17px; height: 17px; left: 11px !important; }
+
+.fchip {
+  background: #ffffff !important; color: #0b4ea2 !important;
+  border: 2px solid rgba(11,78,162,0.40) !important; border-radius: 6px !important;
+  font-size: 14px !important; font-weight: 700 !important; padding: 8px 12px !important;
+}
+.fchip:hover { border-color: #0b4ea2 !important; }
+.fchip.active {
+  background: #0b4ea2 !important; color: #ffffff !important;
+  border-color: #0b4ea2 !important; box-shadow: inset 0 -3px 0 #c8102e;
+}
+.fchip.active .cnt { opacity: .9 !important; color: #ffffff; }
+.fchip.dead { color: #8a93a6 !important; border-color: rgba(10,30,70,0.22) !important; border-style: dashed !important; }
+
+.sort-sel {
+  background-color: #ffffff !important; color: #0b4ea2 !important;
+  border: 2px solid #0b4ea2 !important; border-radius: 8px !important;
+  font-family: 'IBM Plex Sans Condensed', system-ui, sans-serif !important;
+  font-size: 16px !important; font-weight: 700 !important; min-height: 46px;
+}
+.btn-only {
+  background: #ffffff !important; color: #0b4ea2 !important;
+  border: 2px solid rgba(11,78,162,0.40) !important; border-radius: 6px !important;
+  font-weight: 700 !important; min-height: 44px;
+}
+.btn-only.active { background: #0b4ea2 !important; color: #ffffff !important; border-color: #0b4ea2 !important; box-shadow: inset 0 -3px 0 #c8102e; }
