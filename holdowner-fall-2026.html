@@ -23,7 +23,7 @@
     --mono:'Space Mono',monospace;--sans:'DM Sans',-apple-system,sans-serif;
   }
   *{box-sizing:border-box;margin:0;padding:0;}
-  body{background:var(--bg);color:#fff;font-family:var(--sans);min-height:100vh;}
+  body{background:var(--bg);color:#17213a;font-family:var(--sans);min-height:100vh;}
   ::-webkit-scrollbar{width:6px;}
   ::-webkit-scrollbar-track{background:transparent;}
   ::-webkit-scrollbar-thumb{background:rgba(243,115,33,0.3);border-radius:3px;}
@@ -48,13 +48,13 @@
   .range-info{display:flex;justify-content:space-between;font-size:12px;color:var(--w30);margin-top:6px;}
   .hours-label{font-size:14px;color:var(--w50);margin-bottom:8px;font-weight:600;}
   .hours-value{color:var(--accent);font-weight:700;font-family:var(--mono);}
-  .sort-select{width:100%;background:var(--w05);border:1px solid var(--w08);border-radius:8px;padding:12px 14px;color:#fff;font-size:14px;outline:none;cursor:pointer;font-family:var(--sans);margin-bottom:16px;}
-  .sort-select option{background:#1a1f2e;}
+  .sort-select{width:100%;background:var(--w05);border:1px solid var(--w08);border-radius:8px;padding:12px 14px;color:#17213a;font-size:14px;outline:none;cursor:pointer;font-family:var(--sans);margin-bottom:16px;}
+  .sort-select option{background:#ffffff;color:#17213a;}
   .vs-buttons{display:flex;gap:8px;margin-bottom:12px;}
   .vs-btn{flex:1;background:var(--w05);border:1px solid var(--w10);border-radius:8px;padding:11px 12px;color:var(--w55);font-size:13px;font-weight:700;cursor:pointer;font-family:var(--sans);transition:all 0.2s;text-align:center;}
-  .vs-btn:hover{border-color:rgba(243,115,33,0.4);color:#fff;}
+  .vs-btn:hover{border-color:rgba(11,78,162,0.4);color:#0b4ea2;}
   .vs-btn.active{background:var(--accent);border-color:var(--accent);color:#0a0f1a;}
-  .vs-badge{font-size:10px;background:rgba(155,93,229,0.25);color:#b98cf0;padding:2px 8px;border-radius:4px;font-weight:700;letter-spacing:0.5px;font-family:var(--mono);}
+  .vs-badge{font-size:10px;background:rgba(11,78,162,0.12);color:#0b4ea2;padding:2px 8px;border-radius:4px;font-weight:700;letter-spacing:0.5px;font-family:var(--mono);}
   .main{max-width:1200px;margin:0 auto;padding:0 20px 40px;}
   .pkg-wrap{margin-bottom:10px;}
   .pkg-card{background:var(--w03);border:2px solid var(--w06);border-radius:12px;padding:16px;cursor:pointer;transition:border-color 0.2s,background 0.2s;}
@@ -87,7 +87,7 @@
   .swing-details{margin-left:44px;margin-top:8px;padding:8px;background:rgba(255,255,255,0.02);border-radius:6px;}
   .swing-detail-row{font-size:12px;color:var(--w40);margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
   .swing-detail-row:last-child{margin-bottom:0;}
-  .swing-badge{background:rgba(155,93,229,0.3);color:#9b5de5;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600;}
+  .swing-badge{background:rgba(11,78,162,0.12);color:#0b4ea2;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600;}
   .run-link{color:var(--accent);font-weight:700;text-decoration:none;padding:3px 10px;border-radius:4px;background:rgba(243,115,33,0.12);border:1px solid rgba(243,115,33,0.25);font-size:12px;font-family:var(--mono);transition:background 0.2s;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;}
   .run-link:hover{background:rgba(243,115,33,0.28);}
   .run-link-icon{font-size:11px;opacity:0.7;}
@@ -481,7 +481,7 @@ function buildDetailHTML(pkg){
         '<span>'+d.info.start+' → '+d.info.finish+'</span>'+
         '<span>'+d.info.worktime+'</span>'+
       '</div>'+
-      (isSwing?'<div style="margin-left:44px;margin-top:6px;font-size:12px;color:#9b5de5;font-weight:600;">Swing: '+d.info.swingdur+'</div>':'')+
+      (isSwing?'<div style="margin-left:44px;margin-top:6px;font-size:12px;color:#0b4ea2;font-weight:600;">Swing: '+d.info.swingdur+'</div>':'')+
       (isSwing?'<div class="swing-details">'+
         d.info.routes.map((rt2)=>'<div class="swing-detail-row">'+routeTag(rt2.r,true)+'<span>'+rt2.pot+' → '+rt2.pit+'</span><span style="color:var(--w30);">('+rt2.stime+')</span></div>').join('')+
       '</div>':'')+
