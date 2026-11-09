@@ -177,11 +177,6 @@ h2.k{margin-bottom:10px}
   .row .d{grid-area:d}.row .run{grid-area:run}.row .t{grid-area:t;white-space:normal}
   .dchip{min-width:0}
 }
-.day-pop-bg{position:fixed;inset:0;background:rgba(8,18,43,.55);z-index:950;display:flex;align-items:center;justify-content:center;padding:16px}
-.day-pop{background:#fff;color:#08122b;border-radius:6px;padding:18px;width:min(92vw,360px);border-top:4px solid #c8102e}
-.day-pop-title{font-size:18px;font-weight:600;margin-bottom:4px}
-.day-pop-sub{font-family:var(--mono);font-size:12px;color:#56627a;margin-bottom:12px}
-.day-pop .pa-submit,.day-pop .pa-ghost{display:block;width:100%;margin:8px 0 0}
 .hd-run{font-family:var(--mono);font-size:13px;font-weight:600;color:#d3e2fa;margin-left:6px}
 .prc-cur{flex:1;min-width:0;font-family:var(--mono);font-size:12px;color:var(--mid);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .prc-cur b{color:var(--bright);font-weight:700;font-size:13px}
@@ -237,6 +232,10 @@ h2.k{margin-bottom:10px}
 
   <section id="view-schedule" hidden>
     <div id="sch-week"></div>
+    <div class="sch-acts">
+      <button class="pa-ghost" id="sch-edit" type="button">Edit</button>
+      <button class="pa-ghost" id="sch-bulk" type="button">Bulk Edit</button>
+    </div>
   </section>
 
   <!-- Bulk Edit: the full schedule editor (picks, vacation, next 4 weeks).
@@ -344,41 +343,21 @@ function setView(v, params) {
   const tab = v === 'bulk' ? 'schedule' : v;
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.view === tab));
   showOnly(v === 'today' ? 'view-today' : v === 'alerts' ? 'view-alerts' : v === 'bulk' ? 'view-bulk' : v === 'swap' ? 'view-swap' : 'view-schedule');
+  if (v === 'schedule') { setWeekEditing(false); }
   if (v === 'bulk') renderSchedule();
   if (v === 'alerts') renderAlerts();
   if (v === 'swap') swap.show(params || {});
 }
 document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => setView(t.dataset.view)));
 
-// SCHEDULE tab: the Weekly Hours week stays read-only (as on the live app).
-// Tapping a day asks: edit this day, or bulk edit. Done from a click on the
-// week's rows, so the week's own render never changes mode.
+// SCHEDULE tab: the Weekly Hours week, read-only until Edit is tapped.
 const week = HV.mount($('sch-week'), { readOnly: true, getProfile: () => ctx.profile, onEditDay: r => openEdit(r) });
-
-function askDay(r) {
-  const oldPop = document.getElementById('day-pop'); if (oldPop) oldPop.remove();
-  const bg = el('div', 'day-pop-bg'); bg.id = 'day-pop';
-  const box = el('div', 'day-pop');
-  const close = () => bg.remove();
-  const one = el('button', 'pa-submit', 'Edit this day'); one.type = 'button';
-  one.addEventListener('click', () => { close(); openEdit(r); });
-  const bulk = el('button', 'pa-ghost', 'Bulk edit'); bulk.type = 'button';
-  bulk.addEventListener('click', () => { close(); setView('bulk'); });
-  const cancel = el('button', 'pa-ghost', 'Cancel'); cancel.type = 'button';
-  cancel.addEventListener('click', close);
-  box.append(el('div', 'day-pop-title', 'Change your schedule'), el('div', 'day-pop-sub', S.fmtDate(r.date)), one, bulk, cancel);
-  bg.appendChild(box);
-  bg.addEventListener('click', e => { if (e.target === bg) close(); });
-  document.body.appendChild(bg);
+function setWeekEditing(on) {
+  $('sch-edit').textContent = on ? 'Done' : 'Edit';
+  week.setReadOnly(!on);
 }
-
-$('sch-week').addEventListener('click', e => {
-  const row = e.target.closest ? e.target.closest('.hv-row') : null;
-  if (!row || !row.parentElement) return;
-  const idx = [...row.parentElement.children].indexOf(row);
-  if (idx < 0 || idx > 6 || !week.state.weekStart) return;
-  askDay(A.resolve(S.addDays(week.state.weekStart, idx), ctx.overrides));
-});
+$('sch-edit').addEventListener('click', () => setWeekEditing(week.state.readOnly));
+$('sch-bulk').addEventListener('click', () => setView('bulk'));
 
 // SWAP tab. Opens to the operator's own district.
 const swap = SW.mount($('swap-body'), {
