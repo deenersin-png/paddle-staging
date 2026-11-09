@@ -850,6 +850,7 @@ function renderToday() {
   const hTop = cardEl.querySelector('.prc-head-top');
   if (hTop) {
     hTop.querySelectorAll('.prc-num, .prc-day').forEach(n => n.remove());
+    const hBot = cardEl.querySelector('.prc-head-bottom'); if (hBot) hBot.remove();   // routes are already on the line above
     const p = currentPiece(c);
     hTop.prepend(curLabel(p));
     if (p) curBus(p);
