@@ -1,0 +1,118 @@
+// Left slide-out menu for every Paddle App page.
+// Adds a hamburger button to the page header (or a floating one if the page
+// has no header), and a drawer that slides in from the left.
+(function () {
+  'use strict';
+  if (window.__paMenu) return;
+  window.__paMenu = true;
+
+  // Pages inside the app, then the Google Site menu.
+  var APP = [
+    ['Paddles',    'index.html'],
+    ['Live',       'block-tracker.html'],
+    ['Hold-downs', 'holdowner-fall-2026.html'],
+    ['Detours',    'detours.html'],
+    ['My run',     'home.html'],
+    ['Swap board', 'home.html?view=swap'],
+    ['Weekly hours', 'hours.html']
+  ];
+  var SITE = [
+    ['Home',      'https://sites.google.com/view/paddleapp/home'],
+    ['SEPTA Now', 'https://septanow.org'],
+    ['TWU Local 234', 'https://www.twulocal234.net/'],
+    ['Spring 2026 old app', 'https://sites.google.com/view/paddleapp/spring2026-old-app'],
+    ['Fall 2025-2026 old app', 'https://sites.google.com/view/paddleapp/fall-2025-2026-old-app'],
+    ['About',     'https://sites.google.com/view/paddleapp/about']
+  ];
+  // Other season / viewer pages count as their parent menu item.
+  var ALIAS = {
+    'fall-2026.html': 'index.html', 'spring2026.html': 'index.html', 'summer2026.html': 'index.html',
+    'holdowner.html': 'holdowner-fall-2026.html', 'holdowner_summer.html': 'holdowner-fall-2026.html',
+    'vac.html': 'holdowner-fall-2026.html', 'swap.html': 'home.html?view=swap'
+  };
+
+  var page = (location.pathname.split('/').pop() || 'index.html').toLowerCase();
+  var here = ALIAS[page] || page;
+  if (page === 'home.html' && /view=swap/.test(location.search)) here = 'home.html?view=swap';
+
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
+
+  function build() {
+    var html = '<div class="pam-scrim" data-pam="close"></div>' +
+      '<aside class="pam-drawer" id="pam-drawer" aria-label="Main menu" aria-hidden="true">' +
+      '<div class="pam-top"><span class="pam-title">Paddle App</span>' +
+      '<button class="pam-x" type="button" aria-label="Close menu" data-pam="close">&times;</button></div>' +
+      '<div class="pam-sec">App</div>';
+    APP.forEach(function (it) {
+      html += '<a href="' + esc(it[1]) + '"' + (it[1] === here ? ' class="on" aria-current="page"' : '') + '>' + esc(it[0]) + '</a>';
+    });
+    html += '<div class="pam-sec">Paddle App site</div>';
+    SITE.forEach(function (it) {
+      html += '<a href="' + esc(it[1]) + '" target="_blank" rel="noopener">' + esc(it[0]) + '<span class="ext" aria-hidden="true">&#8599;</span></a>';
+    });
+    html += '<div class="pam-foot">Not affiliated with SEPTA.</div></aside>';
+    var wrap = document.createElement('div');
+    wrap.id = 'pam-root';
+    wrap.innerHTML = html;
+    document.body.appendChild(wrap);
+    return wrap;
+  }
+
+  function init() {
+    var root = build();
+    var drawer = root.querySelector('.pam-drawer');
+
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pam-btn';
+    btn.setAttribute('aria-label', 'Open menu');
+    btn.setAttribute('aria-controls', 'pam-drawer');
+    btn.setAttribute('aria-expanded', 'false');
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>';
+
+    var hd = document.querySelector('header, .header');
+    if (hd) {
+      var row = hd.querySelector('.header-row') || hd;
+      row.insertBefore(btn, row.firstChild);
+    } else {
+      btn.className += ' pam-fixed';
+      document.body.appendChild(btn);
+    }
+
+    function set(open) {
+      document.documentElement.classList.toggle('pam-open', open);
+      document.body.classList.toggle('pam-lock', open);
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      drawer.setAttribute('aria-hidden', open ? 'false' : 'true');
+      if (open) { var a = drawer.querySelector('a.on') || drawer.querySelector('a'); if (a) a.focus({ preventScroll: true }); }
+      else btn.focus({ preventScroll: true });
+    }
+    btn.addEventListener('click', function () { set(true); });
+    root.addEventListener('click', function (e) {
+      if (e.target.closest('[data-pam="close"]')) set(false);
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && document.documentElement.classList.contains('pam-open')) set(false);
+    });
+    // Swipe left on the open drawer closes it.
+    var sx = null;
+    drawer.addEventListener('touchstart', function (e) { sx = e.touches[0].clientX; }, { passive: true });
+    drawer.addEventListener('touchend', function (e) {
+      if (sx !== null && sx - e.changedTouches[0].clientX > 60) set(false);
+      sx = null;
+    }, { passive: true });
+    // Same-page link (e.g. My run -> Swap tab): let the page handle it, close the menu.
+    drawer.addEventListener('click', function (e) {
+      var a = e.target.closest('a');
+      if (a && a.classList.contains('on')) set(false);
+    });
+  }
+
+  // CSS for the open state keys off <html class="pam-open">.
+  var st = document.createElement('style');
+  st.textContent = '.pam-open .pam-scrim{opacity:1;pointer-events:auto}.pam-open .pam-drawer{transform:none;visibility:visible}';
+  document.head.appendChild(st);
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
