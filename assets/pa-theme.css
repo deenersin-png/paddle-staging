@@ -257,3 +257,21 @@ header, .header { top: 60px !important; }
   font-weight: 700 !important; min-height: 44px;
 }
 .btn-only.active { background: #0b4ea2 !important; color: #ffffff !important; border-color: #0b4ea2 !important; box-shadow: inset 0 -3px 0 #c8102e; }
+
+/* Paddles page day buttons: outlined in their day colour; the selected day is
+   filled solid with white text so it is obvious which day is showing. */
+.day-btn {
+  background: #ffffff !important; border: 2px solid currentColor !important; border-radius: 6px !important;
+  font-weight: 700 !important; font-size: 15px !important; padding: 9px 4px !important;
+  font-family: 'IBM Plex Sans Condensed', system-ui, sans-serif !important;
+  flex: 1 1 0; min-width: 0; text-align: center; white-space: nowrap;
+}
+.day-selector { display: flex !important; gap: 6px !important; width: 100%; }
+.day-btn.sunday { color: #12753a !important; }
+.day-btn.weekday { color: #0b4ea2 !important; }
+.day-btn.saturday { color: #c8102e !important; }
+.day-btn.active { color: #ffffff !important; box-shadow: 0 2px 6px rgba(8,18,43,0.25); }
+.day-btn.active.sunday { background: #12753a !important; border-color: #12753a !important; }
+.day-btn.active.weekday { background: #0b4ea2 !important; border-color: #0b4ea2 !important; }
+.day-btn.active.saturday { background: #c8102e !important; border-color: #c8102e !important; }
+.day-btn.active.sunday, .day-btn.active.weekday, .day-btn.active.saturday { color: #ffffff !important; }
