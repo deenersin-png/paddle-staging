@@ -174,6 +174,11 @@ h2.k{margin-bottom:10px}
   .row .d{grid-area:d}.row .run{grid-area:run}.row .t{grid-area:t;white-space:normal}
   .dchip{min-width:0}
 }
+.hd-run{font-family:var(--mono);font-size:13px;font-weight:600;color:#d3e2fa;margin-left:6px}
+.prc-cur{flex:1;min-width:0;font-family:var(--mono);font-size:12px;color:var(--mid);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prc-cur b{color:var(--bright);font-weight:700;font-size:13px}
+.prc-cur-k{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
+.prc-cur-sep{margin:0 6px;color:var(--dim)}
 </style>
 </head>
 <body>
@@ -182,7 +187,7 @@ h2.k{margin-bottom:10px}
   <div class="hd-left">
     <div class="hd-dot"></div>
     <div>
-      <div class="hd-title">MY RUN</div>
+      <div class="hd-title">MY RUN <span id="hd-run"></span></div>
       <div class="hd-sub"><a href="./">&larr; Paddle App</a> <span id="hd-ctx"></span></div>
     </div>
   </div>
@@ -733,9 +738,33 @@ function checkPush(force) {
   syncPhoneAlerts();
 }
 
+function currentPiece(c) {
+  const ps = (c.run && c.run.pieces) || [];
+  if (!ps.length) return null;
+  const now = typeof c.nowMin === 'number' ? c.nowMin : null;
+  return ps.find(p => now != null && p.startMin != null && p.endMin != null && now >= p.startMin - 5 && now <= p.endMin + 5)
+      || ps.find(p => p.endMin == null || now == null || p.endMin >= now)
+      || ps[0];
+}
+
+function curLabel(p) {
+  const lab = el('div', 'prc-cur');
+  const put = (k, v, id) => {
+    lab.append(el('span', 'prc-cur-k', k + ' '));
+    const b = el('b', null, v); if (id) b.id = id; lab.append(b);
+  };
+  put('Route', p ? p.routeLabel : '—');
+  lab.append(el('span', 'prc-cur-sep', '·'));
+  put('Block', p ? p.block : '—');
+  lab.append(el('span', 'prc-cur-sep', '·'));
+  put('Bus', '—', 'cur-bus');
+  return lab;
+}
+
 function renderToday() {
   const c = ctx.current, body = $('today-body');
   body.textContent = '';
+  $('hd-run').textContent = '';
   if (!c) return;
 
   if (c.mode === 'unknown') {
@@ -777,6 +806,16 @@ function renderToday() {
   top.appendChild(el('div', 'prc-cd-digits', '—')).id = 'cd-digits';
   const dayType = (run && run.dayType) || r.runDayType || r.dayType;
   const cardEl = RC.card(RC.modelFromRun(run, { runNo: r.runNo, dayType }));
+  $('hd-run').textContent = r.runNo ? '· Run #: ' + r.runNo + ' · ' + RC.dayClass(dayType) : '';
+  const hTop = cardEl.querySelector('.prc-head-top');
+  if (hTop) {
+    hTop.querySelectorAll('.prc-num, .prc-day').forEach(n => n.remove());
+    const p = currentPiece(c);
+    hTop.prepend(curLabel(p));
+    if (p) L.vehicleForBlock(p.routes, p.block).then(v => {
+      const b = $('cur-bus'); if (b && v && v.vehicleId) b.textContent = v.vehicleId;
+    }).catch(() => {});
+  }
   if (r.runNo && run && !run.synthetic) attachPaddleLink(cardEl, r, run, c.date);
   body.appendChild(RC.stack(top, cardEl, dayType));
   wakeLock(c.mode === 'live' && ['layover', 'in_service', 'first_departure'].includes(c.st.phase));
