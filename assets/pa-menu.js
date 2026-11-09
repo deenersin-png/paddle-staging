@@ -8,16 +8,10 @@
 
   // Pages inside the app, then the Google Site menu.
   var APP = [
-    ['Paddles',    'index.html'],
-    ['Live',       'block-tracker.html'],
     ['Hold-downs', 'holdowner-fall-2026.html'],
-    ['Detours',    'detours.html'],
-    ['My run',     'home.html'],
-    ['Swap board', 'home.html?view=swap'],
-    ['Weekly hours', 'hours.html']
+    ['Detours',    'detours.html']
   ];
   var SITE = [
-    ['Home',      'https://sites.google.com/view/paddleapp/home'],
     ['SEPTA Now', 'https://septanow.org'],
     ['TWU Local 234', 'https://www.twulocal234.net/'],
     ['Spring 2026 old app', 'https://sites.google.com/view/paddleapp/spring2026-old-app'],
@@ -42,11 +36,11 @@
       '<aside class="pam-drawer" id="pam-drawer" aria-label="Main menu" aria-hidden="true">' +
       '<div class="pam-top"><span class="pam-title">Paddle App</span>' +
       '<button class="pam-x" type="button" aria-label="Close menu" data-pam="close">&times;</button></div>' +
-      '<div class="pam-sec">App</div>';
+      '';
     APP.forEach(function (it) {
       html += '<a href="' + esc(it[1]) + '"' + (it[1] === here ? ' class="on" aria-current="page"' : '') + '>' + esc(it[0]) + '</a>';
     });
-    html += '<div class="pam-sec">Paddle App site</div>';
+    html += '<div class="pam-sec">More</div>';
     SITE.forEach(function (it) {
       html += '<a href="' + esc(it[1]) + '" target="_blank" rel="noopener">' + esc(it[0]) + '<span class="ext" aria-hidden="true">&#8599;</span></a>';
     });
@@ -70,14 +64,27 @@
     btn.setAttribute('aria-expanded', 'false');
     btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>';
 
-    var hd = document.querySelector('header, .header');
-    if (hd) {
-      var row = hd.querySelector('.header-row') || hd;
-      row.insertBefore(btn, row.firstChild);
-    } else {
-      btn.className += ' pam-fixed';
-      document.body.appendChild(btn);
-    }
+    // Top bar: menu button + title on the left, Paddles / Live / sign-in on the right.
+    var bar = document.createElement('div');
+    bar.className = 'pam-bar';
+    var title = document.createElement('span');
+    title.className = 'pam-bar-title';
+    title.textContent = 'Paddle App';
+    var acts = document.createElement('div');
+    acts.className = 'pam-bar-acts';
+    [['Paddles', 'index.html'], ['Live', 'block-tracker.html']].forEach(function (it) {
+      var a = document.createElement('a');
+      a.className = 'pam-link' + (it[1] === here ? ' on' : '');
+      a.href = it[1];
+      a.textContent = it[0];
+      acts.appendChild(a);
+    });
+    var slot = document.getElementById('pa-slot');
+    if (slot) acts.appendChild(slot);
+    bar.appendChild(btn);
+    bar.appendChild(title);
+    bar.appendChild(acts);
+    document.body.insertBefore(bar, document.body.firstChild);
 
     function set(open) {
       document.documentElement.classList.toggle('pam-open', open);

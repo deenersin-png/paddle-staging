@@ -49,3 +49,21 @@
 
 body.pam-lock { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) { .pam-drawer, .pam-scrim { transition: none; } }
+
+/* Top bar: menu button + title, then Paddles / Live / sign-in. */
+.pam-bar {
+  position: sticky; top: 0; z-index: 300; height: 52px; padding: 0 10px 0 6px;
+  display: flex; align-items: center; gap: 6px;
+  background: #07356f; color: #fff;
+}
+.pam-bar .pam-btn { margin: 0; }
+.pam-bar-title { font-family: 'IBM Plex Sans Condensed', system-ui, sans-serif; font-size: 18px; font-weight: 600; letter-spacing: .01em; white-space: nowrap; }
+.pam-bar-acts { margin-left: auto; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.pam-link {
+  font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; text-decoration: none;
+  color: #fff; padding: 8px 9px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.55);
+}
+.pam-link.on { background: #fff; color: #0b4ea2; border-color: #fff; }
+.pam-bar #pa-slot { display: flex; align-items: center; }
+@media (max-width: 400px) { .pam-bar-title { font-size: 16px; } .pam-link { padding: 7px 7px; font-size: 11px; } }
+.pam-bar .pa-btn { color: #fff !important; border-color: rgba(255,255,255,0.7) !important; font-weight: 600; }
