@@ -75,3 +75,31 @@ body.pam-lock { overflow: hidden; }
 .pam-bar .pam-btn svg { width: 28px; height: 28px; }
 .pam-link { font-size: 13px; padding: 9px 11px; }
 @media (max-width: 400px) { .pam-bar-title { font-size: 19px; } .pam-link { font-size: 12px; padding: 8px 8px; } }
+
+/* One top line on every page. Pages load different web fonts, so the bar uses
+   the phone's own system font (how it already looked on Relief Runs). */
+.pam-bar, .pam-bar-title, .pam-link, .pam-bar .pa-btn {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
+}
+.pam-bar-title { font-size: 22px; font-weight: 700; letter-spacing: 0; }
+.pam-bar-icon { width: 30px; height: 30px; border-radius: 7px; flex: 0 0 30px; display: block; }
+.pam-link, .pam-bar .pa-btn {
+  box-sizing: border-box; height: 36px !important; display: inline-flex !important; align-items: center;
+  padding: 0 11px !important; font-size: 13px !important; font-weight: 700 !important;
+  letter-spacing: .02em !important; line-height: 1 !important; border-radius: 6px !important;
+}
+@media (max-width: 400px) {
+  .pam-bar-title { font-size: 19px; }
+  .pam-bar-icon { width: 26px; height: 26px; flex-basis: 26px; }
+  .pam-link, .pam-bar .pa-btn { padding: 0 8px !important; font-size: 12px !important; }
+}
+@media (max-width: 400px) {
+  .pam-bar { gap: 5px; padding: 0 8px 0 2px; }
+  .pam-bar .pam-btn { width: 40px; height: 40px; }
+  .pam-bar .pam-btn svg { width: 24px; height: 24px; }
+  .pam-bar-title { font-size: 18px; }
+  .pam-bar-icon { width: 24px; height: 24px; flex-basis: 24px; border-radius: 6px; }
+  .pam-bar-acts { gap: 5px; }
+  .pam-link, .pam-bar .pa-btn { padding: 0 7px !important; font-size: 12px !important; }
+}
+@media (max-width: 350px) { .pam-bar-title { font-size: 16px; } }

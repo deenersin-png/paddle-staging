@@ -8,7 +8,7 @@
 
   // Pages inside the app, then the Google Site menu.
   var APP = [
-    ['Hold-downs', 'holdowner-fall-2026.html'],
+    ['Relief Runs', 'holdowner-fall-2026.html'],
     ['Detours',    'detours.html'],
     ['About',      'about.html']
   ];
@@ -76,7 +76,13 @@
     var slot = document.getElementById('pa-slot');
     if (!slot) { slot = document.createElement('div'); slot.id = 'pa-slot'; }
     acts.appendChild(slot);
+    var icon = document.createElement('img');
+    icon.className = 'pam-bar-icon';
+    icon.src = 'assets/icon-192.png';
+    icon.alt = '';
+    icon.width = 30; icon.height = 30;
     bar.appendChild(btn);
+    bar.appendChild(icon);
     bar.appendChild(title);
     bar.appendChild(acts);
     document.body.insertBefore(bar, document.body.firstChild);
