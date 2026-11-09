@@ -2371,7 +2371,12 @@ function weaveGhosts(active, ghosts) {
 // refresh that finds the directions in a different order (or one direction
 // briefly empty) can't move the view; it is saved per route (bt_dir_<route>).
 // The mode survives refreshes and route changes for this visit.
-const view = { mode: 'dir', dir: '', follow: false, run: '' };  // run: All Trips shows only this run (depot|runno)
+// The mode (a direction, All Trips or Detours) is also kept across page
+// reloads (bt_view), so a refresh doesn't jump back to the directions.
+const VIEW_MODES = ['dir', 'all', 'detours'];
+function savedMode() { try { const m = localStorage.getItem('bt_view'); return VIEW_MODES.includes(m) ? m : 'dir'; } catch(e) { return 'dir'; } }
+function saveMode(m) { try { localStorage.setItem('bt_view', m); } catch(e) {} }
+const view = { mode: savedMode(), dir: '', follow: false, run: '' };  // run: All Trips shows only this run (depot|runno)
 let lastCards = [];     // annotated cards of the last render (the route's, or a search's)
 let lastEmptyHtml = ''; // message for a direction view when there are no cards
 let refreshing = false; // refresh spinner state, kept across bar redraws
@@ -2403,7 +2408,7 @@ function currentDir() {
 
 // A bottom-bar tap (or a swipe): switch view; a direction pick is remembered.
 function selectView(mode, dir) {
-  view.mode = mode;
+  view.mode = mode; saveMode(mode);
   if (mode === 'dir' && dir) {
     view.dir = dir; view.follow = false;
     try { localStorage.setItem(dirKey(state.route), dir); } catch(e) {}
@@ -3250,7 +3255,7 @@ async function onBusSearch() {
   // (dimmed, route cleared) and come back when the field is cleared.
   document.getElementById('routeSelect').value = '';
   document.querySelector('.input-row').classList.add('searching');
-  view.mode = 'dir'; view.follow = true; view.run = ''; // show the found bus, in its own direction
+  view.mode = 'dir'; saveMode('dir'); view.follow = true; view.run = ''; // show the found bus, in its own direction
   const f = { num, bus: null, block: null, busSeen: null, blockSeen: null };
   state.find = f; state.bus = ''; state.busBlock = ''; state.block = '';
   const superseded = () => state.find !== f; // a route was picked (or another number searched) meanwhile

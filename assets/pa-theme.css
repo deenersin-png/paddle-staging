@@ -198,3 +198,12 @@ header, .header { top: 60px !important; }
 /* PADDLE buttons: white letters on blue. */
 .prc-paddle, .prc-paddle:hover, .prc-paddle:active,
 .btn-paddle, .btn-paddle:hover, .btn-paddle:active { color: #ffffff !important; }
+
+/* Day colours: Weekday blue, Saturday red, Sunday green (Saturday used to be
+   a second blue, too close to Weekday). */
+.day-btn.saturday { color: #c8102e !important; }
+.day-btn.active.saturday { background: rgba(200,16,46,0.10) !important; color: #c8102e !important; }
+.card.day-Saturday::before { background: #c8102e !important; }
+.card.day-Saturday .run-day, .card.day-Saturday .run-num { color: #c8102e !important; }
+.prc.day-Saturday::before, .prc-stack.day-Saturday > .prc-top::before { background: #c8102e !important; }
+.prc.day-Saturday .prc-day, .prc.day-Saturday .prc-num, .prc-stack.day-Saturday .prc-cd-status { color: #c8102e !important; }
