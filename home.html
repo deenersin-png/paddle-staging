@@ -350,8 +350,10 @@ function setView(v, params) {
 }
 document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => setView(t.dataset.view)));
 
-// SCHEDULE tab: tapping a day asks whether to edit that day or bulk edit.
-const week = HV.mount($('sch-week'), { readOnly: false, getProfile: () => ctx.profile, onEditDay: r => askDay(r) });
+// SCHEDULE tab: the Weekly Hours week stays read-only (as on the live app).
+// Tapping a day asks: edit this day, or bulk edit. Done from a click on the
+// week's rows, so the week's own render never changes mode.
+const week = HV.mount($('sch-week'), { readOnly: true, getProfile: () => ctx.profile, onEditDay: r => openEdit(r) });
 
 function askDay(r) {
   const oldPop = document.getElementById('day-pop'); if (oldPop) oldPop.remove();
@@ -369,6 +371,14 @@ function askDay(r) {
   bg.addEventListener('click', e => { if (e.target === bg) close(); });
   document.body.appendChild(bg);
 }
+
+$('sch-week').addEventListener('click', e => {
+  const row = e.target.closest ? e.target.closest('.hv-row') : null;
+  if (!row || !row.parentElement) return;
+  const idx = [...row.parentElement.children].indexOf(row);
+  if (idx < 0 || idx > 6 || !week.state.weekStart) return;
+  askDay(A.resolve(S.addDays(week.state.weekStart, idx), ctx.overrides));
+});
 
 // SWAP tab. Opens to the operator's own district.
 const swap = SW.mount($('swap-body'), {
