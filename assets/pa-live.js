@@ -40,6 +40,10 @@ const ROUTE_ALIASES = {
   'L':  ['L','51'],    '51': ['51','L'],
   'R':  ['R','82'],    '82': ['82','R'],
   'XH': ['XH','81'],   '81': ['81','XH'],
+  // Night lines: the app/pick say MFO/BSO, SEPTA's live feed L1_OWL/B1_OWL,
+  // the timetable data "L1 OWL"/"B1 OWL" - all one route.
+  'MFO':    ['MFO','L1_OWL','L1 OWL'],   'L1_OWL': ['L1_OWL','MFO','L1 OWL'],   'L1 OWL': ['L1 OWL','L1_OWL','MFO'],
+  'BSO':    ['BSO','B1_OWL','B1 OWL'],   'B1_OWL': ['B1_OWL','BSO','B1 OWL'],   'B1 OWL': ['B1 OWL','B1_OWL','BSO'],
 };
 export const aliasesOf = route => ROUTE_ALIASES[route] || [route];
 
