@@ -152,6 +152,12 @@ body.has-bar #content{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .at-time .at-tag{font-size:10px;font-weight:700;letter-spacing:.06em;padding:1px 5px;border-radius:3px;margin-right:6px;background:var(--line);color:var(--mid)}
 .at-time .at-tag.now{background:rgba(61,214,140,.14);color:var(--green)}
 .at-time .at-tag.lay{background:rgba(245,166,35,.14);color:var(--amber)}
+.at-time .at-tag.nth{background:rgba(167,139,250,.16);color:var(--violet)}
+/* All Trips direction filter: [EB/SB] [Both] [WB/NB] */
+.at-dirbar{display:flex;gap:6px;padding:12px 16px 0}
+.at-dirf{flex:1 1 0;min-width:0;height:36px;font-family:inherit;font-size:13px;font-weight:700;border-radius:18px;background:var(--card);color:var(--text-dim);border:1px solid var(--border-light);cursor:pointer;touch-action:manipulation}
+.at-dirf.active{background:var(--accent-dim);color:var(--accent);border-color:var(--accent)}
+.at-dirf:disabled{opacity:.4;cursor:default}
 .at-loc{display:flex;align-items:center;gap:8px;padding:6px 12px;border-top:1px solid var(--line);background:var(--ink3);font-size:13px;font-weight:600;color:var(--bright);min-width:0}
 .at-loc .at-loc-txt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .at-loc .late-tag{font-size:11px;padding:2px 6px;flex-shrink:0}
@@ -2412,7 +2418,7 @@ function weaveGhosts(active, ghosts) {
 const VIEW_MODES = ['dir', 'all', 'detours'];
 function savedMode() { try { const m = localStorage.getItem('bt_view'); return VIEW_MODES.includes(m) ? m : 'dir'; } catch(e) { return 'dir'; } }
 function saveMode(m) { try { localStorage.setItem('bt_view', m); } catch(e) {} }
-const view = { mode: savedMode(), dir: '', follow: false, run: '' };  // run: All Trips shows only this run (depot|runno)
+const view = { mode: savedMode(), dir: '', follow: false, run: '', atDir: '' };  // run: All Trips shows only this run (depot|runno); atDir: All Trips shows only this direction ('' = Both)
 let lastCards = [];     // annotated cards of the last render (the route's, or a search's)
 let lastEmptyHtml = ''; // message for a direction view when there are no cards
 let refreshing = false; // refresh spinner state, kept across bar redraws
@@ -2580,6 +2586,28 @@ function allTripsItems() {
   // A search shows its own block(s) only.
   const only = (state.bus || state.block) ? new Set(lastCards.map(b => String(b.BlockID || ''))) : null;
   const dirOf = t => canonDir((sched.dirNames && sched.dirNames[t.direction]) || 'Direction ' + t.direction);
+  // Each trip's place in its direction for the whole service day on this
+  // route (1st EB, 2nd EB, …), counted over every block and every trip —
+  // done ones too, and whatever a search shows — so a number never changes
+  // during the day and the trip ahead / behind is always N-1 / N+1.
+  const nthOfDay = new Map();
+  {
+    const all = new Map();
+    for (const [blk, raw] of sched.blockTrips) {
+      for (const t of raw) {
+        const s = timeStrToMin(t.start), e = timeStrToMin(t.end);
+        if (s == null || e == null || isPhantomTrip(blk, s)) continue;
+        const dir = dirOf(t), k = blk + '|' + s + '|' + e + '|' + dir;
+        if (!all.has(k)) all.set(k, { k, blk, s, e, dir });
+      }
+    }
+    const count = new Map();
+    [...all.values()].sort((a, b) => a.s - b.s || a.e - b.e || a.blk.localeCompare(b.blk)).forEach(x => {
+      const n = (count.get(x.dir) || 0) + 1;
+      count.set(x.dir, n);
+      nthOfDay.set(x.k, n);
+    });
+  }
   const items = [];
   for (const [blk, raw] of sched.blockTrips) {
     if (only && !only.has(blk)) continue;
@@ -2615,7 +2643,8 @@ function allTripsItems() {
       const inService = liveIdx >= 0 ? liveIdx === i : nowMin >= x.s && nowMin <= x.e;
       // The way a live bus is heading right now (green on its card).
       const cur = first && live && (inService || (liveIdx < 0 && canonDir(live.Direction) === dir));
-      items.push({ blk, s: x.s, e: x.e, dir, left, inService, live: first ? live : null, cur });
+      items.push({ blk, s: x.s, e: x.e, dir, left, inService, live: first ? live : null, cur,
+                   nth: nthOfDay.get(blk + '|' + x.s + '|' + x.e + '|' + dir) || 0 });
       first = false;
     });
   }
@@ -2669,7 +2698,8 @@ function allTripsCardHtml(it, anim, idx) {
   const nums = runs.length ? runs.map(numOf).join('<span class="at-relief">→</span>') : '<div class="prc-num">—</div>';
   const paddles = runs.filter(r => r.link).map(r => '<a class="prc-paddle" href="' + esc(r.link) + '" target="_blank" rel="noopener">' +
     (two ? esc(r.runno) : 'PADDLE') + '</a>').join('');
-  const tag = it.inService ? '<span class="at-tag now">IN SERVICE</span>' : '';
+  const tag = (it.nth ? '<span class="at-tag nth">' + ordinal(it.nth) + ' ' + esc(dirShort(it.dir)) + '</span>' : '') +
+              (it.inService ? '<span class="at-tag now">IN SERVICE</span>' : '');
   let h = '<div class="prc day-' + day + (it.inService ? ' at-now' : '') + (anim ? ' fade-in' : '') + '" style="animation-delay:' + (idx * 0.015) + 's">';
   h += '<div class="prc-head"><div class="prc-head-top">' + nums + '<div class="prc-day">' + esc(day) + '</div>' +
        '<div class="prc-actions">' + (two && paddles ? '<span class="at-paddle-lbl">PADDLE</span>' : '') + paddles + '</div></div>';
@@ -2698,13 +2728,37 @@ function allTripsCardHtml(it, anim, idx) {
   return h + '</div></div>';
 }
 
+// 1 → "1st", 2 → "2nd", 11 → "11th", 22 → "22nd".
+function ordinal(n) {
+  const t = n % 100, o = n % 10;
+  return n + (t >= 11 && t <= 13 ? 'th' : o === 1 ? 'st' : o === 2 ? 'nd' : o === 3 ? 'rd' : 'th');
+}
+
+// Top of All Trips: [EB/SB] [Both] [WB/NB], labelled with this route's own
+// directions. Both is the default; view.atDir holds the one picked.
+function allTripsDirBarHtml() {
+  const dirs = routeDirs();
+  if (view.atDir && !dirs.includes(view.atDir)) view.atDir = '';
+  const es = dirs.find(d => /east|south/i.test(d)) || dirs[0];
+  const wn = dirs.find(d => d !== es) || '';
+  const btn = (d, label) => '<button type="button" class="at-dirf' + (view.atDir === d ? ' active' : '') +
+    '" data-at-dir="' + esc(d || '') + '"' + (d === null ? ' disabled' : '') + '>' + esc(label) + '</button>';
+  return '<div class="at-dirbar">' +
+    (es ? btn(es, dirShort(es)) : btn(null, '—')) +
+    btn('', 'Both') +
+    (wn ? btn(wn, dirShort(wn)) : btn(null, '—')) + '</div>';
+}
+
 function buildAllTripsPage(anim) {
   let items = sched.loaded ? allTripsItems() : [];
   // "Run 558 only": every card that run drives (a relief card counts for both runs).
   const runNo = view.run ? view.run.split('|')[1] : '';
   if (view.run) items = items.filter(it => runsOnBlockDuring(it.blk, it.s, it.e).some(r => runKey(r) === view.run));
+  const dirBar = allTripsDirBarHtml();
+  if (view.atDir) items = items.filter(it => it.dir === view.atDir);
   const buses = new Set(items.map(it => it.blk)).size;
-  let h = '<div class="section-label' + (anim ? ' fade-in' : '') + '">All Trips · ' +
+  let h = dirBar + '<div class="section-label' + (anim ? ' fade-in' : '') + '">All Trips · ' +
+    (view.atDir ? esc(dirShort(view.atDir)) + ' · ' : '') +
     (view.run ? 'Run ' + esc(runNo) + ' · ' + items.length + (items.length === 1 ? ' trip' : ' trips')
               : buses + (buses === 1 ? ' bus' : ' buses')) + '</div>';
   if (!sched.loaded) return h + '<div class="at-empty">Loading the timetable…</div>';
@@ -3114,6 +3168,9 @@ function manageLayoverTimers() {
     // All Trips: one run's cards only / every run again.
     const rf = e.target.closest('[data-run-filter]');
     if (rf) { view.run = rf.dataset.runFilter || ''; drawView(true); window.scrollTo(0, 0); return; }
+    // All Trips: EB/SB only · Both · WB/NB only.
+    const df = e.target.closest('[data-at-dir]');
+    if (df) { if (!df.disabled) { view.atDir = df.dataset.atDir || ''; drawView(true); window.scrollTo(0, 0); } return; }
     // Leaders expand/collapse — only the right-side "Leaders" control toggles
     // the panel; run chips (also on this line) fall through to open their PDF.
     const toggle = e.target.closest('[data-lead-toggle]');
