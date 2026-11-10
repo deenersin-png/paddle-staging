@@ -2291,6 +2291,7 @@ function findBannersHtml() {
   };
   if (!state.bus && f.busSeen) h += seen('Bus ' + f.num + ' is currently offline.', f.busSeen);
   if (!state.block && f.blockSeen) h += seen('Block ' + f.num + ' isn\'t in service now.', f.blockSeen);
+  else if (!state.block && !f.block && f.blockPick) h += seen('Block ' + f.num + ' isn\'t in service now.', f.blockPick);
   if (f.bus && f.block && !isSameRoute(f.bus.route, f.block.route)) {
     const other = state.bus ? 'Block ' + f.num + ' · Route ' + f.block.route : 'Bus ' + f.num + ' · Route ' + f.bus.route;
     h += '<button type="button" class="alert-banner info find-alt" onclick="switchFindView()"><span class="alert-icon">↔</span>' +
@@ -3259,10 +3260,11 @@ function restoreSaved() {
 // that, where it was last seen. As a block: the route it is live on, else
 // the route it is on now per the timetable — only a block running now (out
 // on a trip or between trips) counts; failing that, where it was last seen.
-// Sightings older than SEEN_DAYS don't count. Resets the dropdown to "Select
-// Route" and loads the route showing only those cards: both when they share
-// a route, else the bus's, with a button over to the block's.
-const SEEN_DAYS = 3;
+// Sightings older than SEEN_DAYS don't count — 14, as the poller can miss a
+// bus or block for days (weekends, short trippers). Resets the dropdown to
+// "Select Route" and loads the route showing only those cards: both when they
+// share a route, else the bus's, with a button over to the block's.
+const SEEN_DAYS = 14;
 async function onBusSearch() {
   const num = document.getElementById('busSearch').value.trim();
   if (!num) return;
@@ -3291,10 +3293,6 @@ async function onBusSearch() {
     const st = await fetchWithTimeout(GTFS_OBSERVED_BASE + '/state.json?t=' + Date.now());
     const rows = Object.values(st.blocks || {});
     rows.forEach(r => notePair(r.blockId, r.vehicleId, r.lastSeenAtMs || r.endedAtMs || 0, r.routeId));
-    // The newest sighting matching `pick` within SEEN_DAYS, or null.
-    const at = r => r.lastSeenAtMs || r.endedAtMs || 0;
-    const newest = pick => rows.filter(r => pick(r) && at(r) > Date.now() - SEEN_DAYS * 86400000)
-      .sort((a, c) => at(c) - at(a))[0] || null;
     if (!f.bus) {
       // Not live: its block today from the pairing (newest sighting, not
       // swapped off since), then the route that block is on now or runs next
@@ -3305,17 +3303,15 @@ async function onBusSearch() {
         f.bus = { block: kb.block, route: await routeForBlockNow(kb.block, kb.route, routes) };
       } else {
         // Not out today (or swapped off its block): where it was last seen.
-        const seen = newest(r => String(r.vehicleId) === num);
+        const seen = newestSighting(num, rows, 'bus');
         if (seen) f.busSeen = lastSeenParts(seen, 'bus');
       }
     }
     if (!f.block) {
       f.block = await blockToday(num, rows);
-      // Not running now: its last bus. The poller misses many blocks for
-      // days (short trippers, weekday blocks over a weekend — 5108 last
-      // stamped Friday, 2012 a week back), so a block looks further back
-      // than a bus does, and this browser's own live sightings count too.
-      const seen = !f.block && newestBlockSighting(num, rows);
+      // Not running now: its last bus (5108 last stamped Friday, 2012 a week
+      // back); with none, what today's pick says about it.
+      const seen = !f.block && newestSighting(num, rows, 'block');
       if (seen) f.blockSeen = lastSeenParts(seen, 'block');
       else if (!f.block) f.blockPick = blockPickParts(num);
     }
@@ -3354,15 +3350,18 @@ async function onBusSearch() {
   return loadRoute(f.block.route);
 }
 
-// A searched block's newest sighting within BLOCK_SEEN_DAYS, as a state.json
-// row: the poller's rows plus this browser's pairing (live feed seen here).
-const BLOCK_SEEN_DAYS = 14;
-function newestBlockSighting(num, rows) {
+// A searched number's newest sighting within SEEN_DAYS, as a state.json row —
+// as a block (`as` 'block') or as a bus ('bus'): the poller's rows plus this
+// browser's pairing (live feed seen here).
+function newestSighting(num, rows, as) {
   const at = r => r.lastSeenAtMs || r.endedAtMs || 0;
-  const cands = rows.filter(r => String(r.blockId) === num);
-  for (const [routeId, p] of blockPairs.get(num) || [])
-    cands.push({ blockId: num, routeId, vehicleId: p.vehicleId, lastSeenAtMs: p.ts });
-  return cands.filter(r => at(r) > Date.now() - BLOCK_SEEN_DAYS * 86400000)
+  const key = as === 'block' ? 'blockId' : 'vehicleId';
+  const cands = rows.filter(r => String(r[key]) === num);
+  for (const [blk, byRoute] of blockPairs)
+    for (const [routeId, p] of byRoute)
+      if ((as === 'block' ? blk : p.vehicleId) === num)
+        cands.push({ blockId: blk, routeId, vehicleId: p.vehicleId, lastSeenAtMs: p.ts });
+  return cands.filter(r => at(r) > Date.now() - SEEN_DAYS * 86400000)
     .sort((a, c) => at(c) - at(a))[0] || null;
 }
 
