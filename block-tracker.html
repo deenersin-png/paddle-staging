@@ -333,10 +333,12 @@ a.run-chip:active{opacity:.7}
 .msg.find-msg .sub{font-size:21px;font-weight:800;color:var(--text-dim);line-height:1.4}
 .msg.find-msg .find-sec+.find-sec{margin-top:26px}
 .msg.find-msg .find-icon{display:block;margin:0 auto 12px;border-radius:12px}
+.msg.find-msg .find-icon.blocks{border-radius:0;margin-bottom:14px}
 .find-runs{display:inline-flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:10px}
 .find-run{display:inline-block;padding:8px 18px;border-radius:8px;background:var(--accent);color:#fff;border:2px solid var(--accent);font-size:18px;font-weight:800;text-decoration:none;touch-action:manipulation}
 .find-run:active{opacity:.75}
 .find-banner-icon{border-radius:5px;flex-shrink:0}
+.find-banner-icon.blocks{border-radius:0;width:50px;height:16px;align-self:center}
 .alert-banner .find-runs{margin-top:0;vertical-align:middle}
 .alert-banner .find-run{padding:3px 10px;font-size:13px}
 .find-run.nolink{background:transparent;color:var(--text-dim);border-style:dashed}
@@ -2286,7 +2288,10 @@ function findBannersHtml() {
   let h = '';
   const seen = (what, parts) => {
     const text = parts.filter(p => typeof p === 'string'), runs = parts.filter(p => typeof p !== 'string');
-    return '<div class="alert-banner info"><img class="alert-icon find-banner-icon" src="assets/icon-192.png" alt="" width="20" height="20"><span>' +
+    const icon = what.startsWith('Block')
+      ? '<img class="alert-icon find-banner-icon blocks" src="assets/icon-blocks.png" alt="" width="50" height="16">'
+      : '<img class="alert-icon find-banner-icon" src="assets/icon-192.png" alt="" width="20" height="20">';
+    return '<div class="alert-banner info">' + icon + '<span>' +
       esc(what + ' ' + text.join(', ') + '.') + (runs.length ? ' ' + findPartsHtml(runs) : '') + '</span></div>';
   };
   if (!state.bus && f.busSeen) h += seen('Bus ' + f.num + ' is currently offline.', f.busSeen);
@@ -3332,13 +3337,15 @@ async function onBusSearch() {
     setStatus('idle');
     document.getElementById('routeBar').classList.add('hidden');
     renderBottomBar();
-    const sec = (main, sub) => '<div class="find-sec"><div class="main">' + esc(main) + '</div><div class="sub">' + sub + '</div></div>';
+    // Each section under its own icon: the app's bus for a bus, the wooden
+    // blocks for a block.
+    const sec = (icon, main, sub) => '<div class="find-sec">' + FIND_ICON[icon] + '<div class="main">' + esc(main) + '</div><div class="sub">' + sub + '</div></div>';
     let h = '';
-    if (f.busSeen) h += sec('Bus ' + num + ' is currently offline', findPartsHtml(f.busSeen));
-    if (f.blockSeen) h += sec('Block ' + num + ' isn\'t in service now', findPartsHtml(f.blockSeen));
-    else if (f.blockPick) h += sec('Block ' + num + ' isn\'t in service now', findPartsHtml(f.blockPick));
-    if (!h) h = sec(num + ' not found', 'No bus or block with this number<br>seen in the last ' + SEEN_DAYS + ' days');
-    setContent('<div class="msg find-msg"><img class="find-icon" src="assets/icon-192.png" alt="" width="56" height="56">' + h + '</div>');
+    if (f.busSeen) h += sec('bus', 'Bus ' + num + ' is currently offline', findPartsHtml(f.busSeen));
+    if (f.blockSeen) h += sec('block', 'Block ' + num + ' isn\'t in service now', findPartsHtml(f.blockSeen));
+    else if (f.blockPick) h += sec('block', 'Block ' + num + ' isn\'t in service now', findPartsHtml(f.blockPick));
+    if (!h) h = sec('bus', num + ' not found', 'No bus or block with this number<br>seen in the last ' + SEEN_DAYS + ' days');
+    setContent('<div class="msg find-msg">' + h + '</div>');
     return;
   }
   if (f.bus) {
@@ -3439,6 +3446,12 @@ function lastSeenParts(row, as) {
   }
   return parts;
 }
+
+// Search-result icons: the Paddle App bus for a bus, wooden blocks for a block.
+const FIND_ICON = {
+  bus:   '<img class="find-icon" src="assets/icon-192.png" alt="" width="56" height="56">',
+  block: '<img class="find-icon blocks" src="assets/icon-blocks.png" alt="" width="124" height="40">',
+};
 
 // The not-found message's lines: text, or { runs } — each run a button that
 // opens its paddle (plain text when the pick has no paddle link for it).
