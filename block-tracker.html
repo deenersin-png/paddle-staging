@@ -161,7 +161,7 @@ body.has-bar #content{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .at-nth.yellow{background:#f2b705;border-color:#f2b705;color:#1a1300}
 .at-nth.gray{background:#8a909f;border-color:#8a909f}
 .at-nth.lay{background:#6a3fc1;border-color:#6a3fc1}
-.at-next{margin-left:auto;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.at-next{margin-left:auto;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex-shrink:0;font-family:var(--mono);font-size:13px;font-weight:700}
 .at-due{font-variant-numeric:tabular-nums;color:#6a3fc1}
 .at-due.late{color:#c8102e}
 .at-arrow{color:var(--mid)}
@@ -2780,6 +2780,14 @@ function allTripsCardHtml(it, anim, idx) {
     h += '<div class="at-loc"><span class="at-loc-txt">→ ' + esc(lv.next_stop_name) + '</span>' +
          (lv._notTracking ? '<span class="not-tracking-tag">NOT TRACKING</span>' : '<span class="late-tag ' + lt[0] + '">' + lt[1] + '</span>') + '</div>';
   }
+  // On layover: where it is parked (anchor, not an arrow — it isn't moving),
+  // and the countdown to its next scheduled departure → that trip's number.
+  if (it.layover) {
+    const at = layoverStop(it.blk, it.s);
+    h += '<div class="at-loc lay"><span class="at-loc-txt">⚓ ' + esc(at || 'At terminal') + '</span>' +
+         '<span class="at-next"><span class="at-due" data-due-ms="' + serviceMinToMs(it.s) + '">' + dueText(serviceMinToMs(it.s)) +
+         '</span><span class="at-arrow">→</span>' + numTag(it.nth, 'next') + '</span></div>';
+  }
   // Trips still to do in this card's direction from here, then the bus.
   h += '<div class="at-trips">';
   h += it.done ? '<span class="at-dir done">DONE</span>'
@@ -2790,9 +2798,6 @@ function allTripsCardHtml(it, anim, idx) {
   h += vid ? '<span class="at-bus' + (tip ? ' has-tip" tabindex="0" data-tip="' + esc(tip) : '') + '">' + ICONS.bus + ' ' + esc(vid) + '</span>'
            : '<span class="at-bus unknown">' + ICONS.bus + ' Bus# pending</span>';
   h += '<span class="at-blk">Blk ' + esc(it.blk) + '</span>';
-  // A bus on layover counts down to its next scheduled departure → that trip's number.
-  if (it.layover) h += '<span class="at-next"><span class="at-due" data-due-ms="' + serviceMinToMs(it.s) + '">' +
-    dueText(serviceMinToMs(it.s)) + '</span><span class="at-arrow">→</span>' + numTag(it.nth, 'next') + '</span>';
   return h + '</div></div>';
 }
 
@@ -2819,6 +2824,21 @@ function dueText(dueMs) {
 let lastRouteCards = [];  // every annotated card of the route, also during a search
 
 // This block's trips on the partner routes ("21-42" pieces), as minutes.
+// Where a bus on layover is parked: the last stop of the trip it finished
+// before `nextS` (this route's, or a partner route's when it came over from
+// there), else the first stop of its next trip.
+function layoverStop(blk, nextS) {
+  let best = null, first = '';
+  const look = t => {
+    const s = timeStrToMin(t.start), e = timeStrToMin(t.end);
+    if (s === nextS && t.first) first = t.first;
+    if (e != null && e <= nextS && t.last && (!best || e > best.e)) best = { e, last: t.last };
+  };
+  (sched.blockTrips.get(String(blk)) || []).forEach(look);
+  for (const byBlk of (sched.partnerTT || new Map()).values()) (byBlk.get(String(blk)) || []).forEach(look);
+  return best ? best.last : first;
+}
+
 function partnerTripsOf(blk) {
   const out = [];
   for (const byBlk of (sched.partnerTT || new Map()).values())
