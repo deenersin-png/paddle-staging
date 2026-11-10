@@ -3745,22 +3745,23 @@ function pickRoutes(names) {
 // ["Last seen", "yesterday at 10:42 PM", "on Route 44 Block 9663", "Run 209"]
 // from a state.json row — one line each in the not-found message. For a
 // searched block (`as` 'block') the third line names the bus instead:
-// "on Route 44 Bus 3038". "yesterday"
-// is by the calendar, as a person reads a time; the run goes by its service
-// day (a 1 AM sighting belongs to the evening before) and only when that day
-// ran today's pick.
+// "on Route 44 Bus 3038". The day word and the run both go by SERVICE day:
+// a sighting between midnight and 4 AM belongs to the evening before, so
+// 3404 seen at 1:14 AM reads "last night", not "today" (its runs today
+// hadn't started yet). Older owl sightings read "Monday night" / "Nov 2
+// night". The run is shown only when that service day ran today's pick.
 function lastSeenParts(row, as) {
   const ms = row.lastSeenAtMs || row.endedAtMs;
-  const cal = new Date(ms); cal.setHours(0, 0, 0, 0);
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const ago = Math.round((today - cal) / 86400000);
-  const when = ago <= 0 ? 'today'
-    : ago === 1 ? 'yesterday'
-    : ago < 7 ? cal.toLocaleDateString([], { weekday: 'long' })
-    : cal.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  const owl = inOwlWindow(new Date(ms));
   const day = new Date(ms);
-  if (inOwlWindow(day)) day.setDate(day.getDate() - 1);
+  if (owl) day.setDate(day.getDate() - 1);
   day.setHours(0, 0, 0, 0);
+  const ago = Math.round((serviceMidnightMs() - day.getTime()) / 86400000);
+  const night = owl ? ' night' : '';
+  const when = ago <= 0 ? (owl ? 'tonight' : 'today')
+    : ago === 1 ? (owl ? 'last night' : 'yesterday')
+    : ago < 7 ? day.toLocaleDateString([], { weekday: 'long' }) + night
+    : day.toLocaleDateString([], { month: 'short', day: 'numeric' }) + night;
   // No time of day: the poller's last stamp can be hours before the bus
   // actually finished (9663 stamped 8:29 PM, ran until ~11 PM).
   const parts = ['Last seen ' + when,
