@@ -8,6 +8,7 @@
 
   // Pages inside the app, then the Google Site menu.
   var APP = [
+    ['All Trips',   'block-tracker.html?view=all'],
     ['Relief Runs', 'holdowner-fall-2026.html'],
     ['Detours',    'detours.html'],
     ['About',      'about.html']
@@ -23,6 +24,7 @@
   var page = (location.pathname.split('/').pop() || 'index.html').toLowerCase();
   var here = ALIAS[page] || page;
   if (page === 'home.html' && /view=swap/.test(location.search)) here = 'home.html?view=swap';
+  if (page === 'block-tracker.html' && /view=all/.test(location.search)) here = 'block-tracker.html?view=all';
 
   function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
 

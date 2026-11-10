@@ -152,13 +152,21 @@ body.has-bar #content{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .at-time .at-tag{font-size:10px;font-weight:700;letter-spacing:.06em;padding:1px 5px;border-radius:3px;margin-right:6px;background:var(--line);color:var(--mid)}
 .at-time .at-tag.now{background:rgba(61,214,140,.14);color:var(--green)}
 .at-time .at-tag.lay{background:rgba(245,166,35,.14);color:var(--amber)}
-/* "98-WB": the trip's number for the day, drawn like the PADDLE button. */
+/* "98-WB": the trip's number for the day, drawn like the PADDLE button.
+   Live pages colour it: green in order, red passed by its follower, yellow
+   passed its leader, gray not online, purple LAYOVER. */
 .at-nth{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.06em;background:var(--blue);border:1px solid var(--blue);color:#fff;padding:4px 10px;border-radius:4px;white-space:nowrap;flex-shrink:0}
-/* All Trips direction filter: [EB/SB] [Both] [WB/NB] */
-.at-dirbar{display:flex;gap:6px;padding:12px 16px 0}
-.at-dirf{flex:1 1 0;min-width:0;height:36px;font-family:inherit;font-size:13px;font-weight:700;border-radius:18px;background:var(--card);color:var(--text-dim);border:1px solid var(--border-light);cursor:pointer;touch-action:manipulation}
-.at-dirf.active{background:var(--accent-dim);color:var(--accent);border-color:var(--accent)}
-.at-dirf:disabled{opacity:.4;cursor:default}
+.at-nth.green{background:#1f8a4c;border-color:#1f8a4c}
+.at-nth.red{background:#c8102e;border-color:#c8102e}
+.at-nth.yellow{background:#f2b705;border-color:#f2b705;color:#1a1300}
+.at-nth.gray{background:#8a909f;border-color:#8a909f}
+.at-nth.lay{background:#6a3fc1;border-color:#6a3fc1}
+.at-next{margin-left:auto;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.at-due{font-variant-numeric:tabular-nums;color:#6a3fc1}
+.at-due.late{color:#c8102e}
+.at-arrow{color:var(--mid)}
+/* All Trips: finished trips stay, faded. */
+.at-list .prc.at-done{opacity:.45;filter:grayscale(1)}
 .at-loc{display:flex;align-items:center;gap:8px;padding:6px 12px;border-top:1px solid var(--line);background:var(--ink3);font-size:13px;font-weight:600;color:var(--bright);min-width:0}
 .at-loc .at-loc-txt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .at-loc .late-tag{font-size:11px;padding:2px 6px;flex-shrink:0}
@@ -2243,7 +2251,7 @@ function renderMain(merged, route) {
   document.getElementById('alertArea').innerHTML = '';
   if (live === 0 && atTerm === 0 && schedOnly === 0) {
     document.getElementById('busCount').textContent = 'No active buses';
-    lastCards = [];
+    lastCards = []; lastRouteCards = [];
     lastEmptyHtml = '<div class="msg"><div class="icon">🚌</div><div class="main">No buses on Route ' + esc(route) + '</div><div class="sub">Route may not be running right now<br>All Trips lists what\'s still to come today</div></div>';
     drawView(false);
     return;
@@ -2260,6 +2268,7 @@ function renderMain(merged, route) {
   annotateSchedLeader(merged);
   annotateLeaderTimeline(merged);
   annotatePositions(merged);
+  lastRouteCards = merged;
   lastCards = merged;
   lastEmptyHtml = '';
   drawView(anim);
@@ -2367,6 +2376,7 @@ function renderBusMain(merged, route) {
   annotateSchedLeader(merged);
   annotateLeaderTimeline(merged);
   annotatePositions(merged);
+  lastRouteCards = merged;
   const mine = findCardsFor(merged);
   const what = [];
   if (state.bus) what.push('Bus ' + state.bus + (state.busBlock ? ' · Block ' + state.busBlock : ''));
@@ -2416,10 +2426,15 @@ function weaveGhosts(active, ghosts) {
 // The mode survives refreshes and route changes for this visit.
 // The mode (a direction, All Trips or Detours) is also kept across page
 // reloads (bt_view), so a refresh doesn't jump back to the directions.
-const VIEW_MODES = ['dir', 'all', 'detours'];
-function savedMode() { try { const m = localStorage.getItem('bt_view'); return VIEW_MODES.includes(m) ? m : 'dir'; } catch(e) { return 'dir'; } }
-function saveMode(m) { try { localStorage.setItem('bt_view', m); } catch(e) {} }
-const view = { mode: savedMode(), dir: '', follow: false, run: '', atDir: '' };  // run: All Trips shows only this run (depot|runno); atDir: All Trips shows only this direction ('' = Both)
+// All Trips is its own page in the left menu (block-tracker.html?view=all);
+// the live page's bottom bar is the two directions and Detours.
+const ALL_TRIPS_PAGE = /[?&]view=all(&|$)/.test(location.search);
+// Opening it jumps to now, not to where the browser last left the page.
+if (ALL_TRIPS_PAGE && 'scrollRestoration' in history) history.scrollRestoration = 'manual';
+const VIEW_MODES = ['dir', 'detours'];
+function savedMode() { if (ALL_TRIPS_PAGE) return 'all'; try { const m = localStorage.getItem('bt_view'); return VIEW_MODES.includes(m) ? m : 'dir'; } catch(e) { return 'dir'; } }
+function saveMode(m) { if (ALL_TRIPS_PAGE) return; try { localStorage.setItem('bt_view', m); } catch(e) {} }
+const view = { mode: savedMode(), dir: '', follow: false, run: '', atDir: '', scrollNow: ALL_TRIPS_PAGE };  // run: All Trips shows only this run (depot|runno); atDir: All Trips shows only this direction ('' = Both)
 let lastCards = [];     // annotated cards of the last render (the route's, or a search's)
 let lastEmptyHtml = ''; // message for a direction view when there are no cards
 let refreshing = false; // refresh spinner state, kept across bar redraws
@@ -2462,9 +2477,10 @@ function selectView(mode, dir) {
 }
 
 function viewOrder() {
-  return routeDirs().map(d => ({ mode: 'dir', dir: d })).concat([{ mode: 'all' }, { mode: 'detours' }]);
+  return routeDirs().map(d => ({ mode: 'dir', dir: d })).concat([{ mode: 'detours' }]);
 }
 function swipeView(step) {
+  if (ALL_TRIPS_PAGE) return;
   const order = viewOrder();
   const cur = view.mode === 'dir' ? currentDir() : '';
   const i = order.findIndex(v => v.mode === view.mode && (v.mode !== 'dir' || v.dir === cur));
@@ -2480,10 +2496,20 @@ function drawView(anim) {
   else if (!lastCards.length && lastEmptyHtml) html = '<div class="view-wrap">' + lastEmptyHtml + '</div>';
   else {
     const dir = currentDir();
-    html = '<div class="view-wrap">' + buildDirPage(dir, lastCards.filter(b => canonDir(b.Direction) === dir), anim) + '</div>';
+    html = '<div class="view-wrap">' + buildLiveDirPage(dir, anim) + '</div>';
   }
   setContent(html);
   manageLayoverTimers();
+  // All Trips opens at the first trip not finished yet (on entry and on a
+  // direction pick, not on every refresh).
+  if (view.mode === 'all' && view.scrollNow && sched.loaded) {
+    view.scrollNow = false;
+    const el = document.querySelector('.at-list .prc:not(.at-done)');
+    // Below the sticky top bar + header.
+    const hdr = document.querySelector('.header');
+    const covered = hdr ? hdr.getBoundingClientRect().bottom : 0;
+    if (el) window.scrollTo(0, Math.max(0, el.getBoundingClientRect().top + window.scrollY - covered - 12));
+  }
 }
 
 function renderBottomBar() {
@@ -2495,12 +2521,22 @@ function renderBottomBar() {
   const dirs = routeDirs();
   const cur = view.mode === 'dir' ? currentDir() : '';
   let h = '';
+  if (ALL_TRIPS_PAGE) {
+    // All Trips: [EB/SB] [Both] [WB/NB], this route's own directions; Both is the default.
+    const es = dirs.find(d => /east|south/i.test(d)) || dirs[0];
+    const wn = dirs.find(d => d !== es) || null;
+    const btn = (d, label) => '<button type="button" class="page-dot' + (d != null && view.atDir === d ? ' active' : '') +
+      '" data-at-dir="' + esc(d || '') + '"' + (d == null ? ' disabled' : '') + '>' + esc(label) + '</button>';
+    h += (es ? btn(es, dirShort(es)) : btn(null, '—')) + btn('', 'Both') + (wn ? btn(wn, dirShort(wn)) : btn(null, '—'));
+    h += '<button type="button" class="refresh-btn' + (refreshing ? ' spinning' : '') + '" data-refresh aria-label="Refresh now">&#8635;</button>';
+    if (bar.innerHTML !== h) bar.innerHTML = h;
+    return;
+  }
   for (let i = 0; i < 2; i++) {
     const d = dirs[i];
     h += d ? '<button type="button" class="page-dot' + (d === cur ? ' active' : '') + '" data-view="dir" data-dir="' + esc(d) + '">' + esc(dirShort(d)) + '</button>'
            : '<button type="button" class="page-dot" disabled>—</button>';
   }
-  h += '<button type="button" class="page-dot all-dot' + (view.mode === 'all' ? ' active' : '') + '" data-view="all">All Trips</button>';
   const n = routeDetours.length;
   h += '<button type="button" class="page-dot detour-dot' + (view.mode === 'detours' ? ' active' : '') + '" data-view="detours">Detours' +
        (n ? ' <span class="dot-count">' + n + '</span>' : '') + '</button>';
@@ -2580,35 +2616,43 @@ function buildDirPage(dir, list, anim) {
 // blocks not out yet are all there; live data only marks which trip a live
 // bus is on (a late bus stays until it finishes), its location, and its bus
 // number.
+const tripDirOf = t => canonDir((sched.dirNames && sched.dirNames[t.direction]) || 'Direction ' + t.direction);
+
+// Each trip's place in its direction for the whole service day on this route
+// ("98-WB"), counted over every block and every trip — done ones too, and
+// whatever a search shows — so a number never changes during the day and the
+// trip ahead / behind is always N-1 / N+1. Keyed block|start minute; built
+// once per timetable load.
+let tripNumCache = { src: null, map: null };
+function tripNumbers() {
+  if (tripNumCache.src === sched.blockTrips && tripNumCache.map) return tripNumCache.map;
+  const all = new Map();
+  for (const [blk, raw] of sched.blockTrips) {
+    for (const t of raw) {
+      const s = timeStrToMin(t.start), e = timeStrToMin(t.end);
+      if (s == null || e == null || isPhantomTrip(blk, s)) continue;
+      const k = blk + '|' + s;
+      if (!all.has(k)) all.set(k, { k, blk, s, e, dir: tripDirOf(t) });
+    }
+  }
+  const map = new Map(), count = new Map();
+  [...all.values()].sort((a, b) => a.s - b.s || a.e - b.e || a.blk.localeCompare(b.blk)).forEach(x => {
+    const n = (count.get(x.dir) || 0) + 1;
+    count.set(x.dir, n);
+    map.set(x.k, n);
+  });
+  tripNumCache = { src: sched.blockTrips, map };
+  return map;
+}
+const tripNum = (blk, s) => (s == null ? 0 : tripNumbers().get(String(blk) + '|' + s) || 0);
+
 function allTripsItems() {
   const nowMin = serviceNowMin();
   const byBlock = new Map();
   lastCards.forEach(b => byBlock.set(String(b.BlockID || ''), b));
   // A search shows its own block(s) only.
   const only = (state.bus || state.block) ? new Set(lastCards.map(b => String(b.BlockID || ''))) : null;
-  const dirOf = t => canonDir((sched.dirNames && sched.dirNames[t.direction]) || 'Direction ' + t.direction);
-  // Each trip's place in its direction for the whole service day on this
-  // route (1st EB, 2nd EB, …), counted over every block and every trip —
-  // done ones too, and whatever a search shows — so a number never changes
-  // during the day and the trip ahead / behind is always N-1 / N+1.
-  const nthOfDay = new Map();
-  {
-    const all = new Map();
-    for (const [blk, raw] of sched.blockTrips) {
-      for (const t of raw) {
-        const s = timeStrToMin(t.start), e = timeStrToMin(t.end);
-        if (s == null || e == null || isPhantomTrip(blk, s)) continue;
-        const dir = dirOf(t), k = blk + '|' + s + '|' + e + '|' + dir;
-        if (!all.has(k)) all.set(k, { k, blk, s, e, dir });
-      }
-    }
-    const count = new Map();
-    [...all.values()].sort((a, b) => a.s - b.s || a.e - b.e || a.blk.localeCompare(b.blk)).forEach(x => {
-      const n = (count.get(x.dir) || 0) + 1;
-      count.set(x.dir, n);
-      nthOfDay.set(x.k, n);
-    });
-  }
+  const dirOf = tripDirOf;
   const items = [];
   for (const [blk, raw] of sched.blockTrips) {
     if (only && !only.has(blk)) continue;
@@ -2627,25 +2671,26 @@ function allTripsItems() {
     if (!trips.length) continue;
     const card = byBlock.get(blk);
     const live = card && !card._scheduledOnly && !card._isLayover ? card : null;
-    if (!live && blockPulledIn(blk)) continue;
+    const pulledIn = !live && blockPulledIn(blk);
     // A live bus's own trip (by its live trip id) and everything after it are
     // still to do, even if the timetable says that trip has ended (running
-    // late). Otherwise: a trip that hasn't ended yet.
+    // late). Otherwise: a trip that hasn't ended yet. A pulled-in block is done.
     const liveIdx = live && live.trip != null ? trips.findIndex(x => x.ids.has(String(live.trip))) : -1;
-    const pending = (x, i) => liveIdx >= 0 ? i >= liveIdx : x.e > nowMin;
+    const pending = (x, i) => pulledIn ? false : liveIdx >= 0 ? i >= liveIdx : x.e > nowMin;
 
     let first = true;
     trips.forEach((x, i) => {
-      if (!pending(x, i)) return;
       const dir = dirOf(x.t);
+      const nth = tripNum(blk, x.s);
+      // Finished trips stay on the list, grayed out.
+      if (!pending(x, i)) { items.push({ blk, s: x.s, e: x.e, dir, left: 0, done: true, inService: false, live: null, cur: false, nth }); return; }
       // This trip and the ones after it in the same direction.
       let left = 0;
       for (let j = i; j < trips.length; j++) if (pending(trips[j], j) && dirOf(trips[j].t) === dir) left++;
       const inService = liveIdx >= 0 ? liveIdx === i : nowMin >= x.s && nowMin <= x.e;
       // The way a live bus is heading right now (green on its card).
       const cur = first && live && (inService || (liveIdx < 0 && canonDir(live.Direction) === dir));
-      items.push({ blk, s: x.s, e: x.e, dir, left, inService, live: first ? live : null, cur,
-                   nth: nthOfDay.get(blk + '|' + x.s + '|' + x.e + '|' + dir) || 0 });
+      items.push({ blk, s: x.s, e: x.e, dir, left, inService, live: first ? live : null, cur, nth });
       first = false;
     });
   }
@@ -2699,10 +2744,13 @@ function allTripsCardHtml(it, anim, idx) {
   const nums = runs.length ? runs.map(numOf).join('<span class="at-relief">→</span>') : '<div class="prc-num">—</div>';
   const paddles = runs.filter(r => r.link).map(r => '<a class="prc-paddle" href="' + esc(r.link) + '" target="_blank" rel="noopener">' +
     (two ? esc(r.runno) : 'PADDLE') + '</a>').join('');
-  // The trip's number in its direction for the day ("98-WB"), before the run number.
-  const nth = it.nth ? '<span class="at-nth">' + it.nth + '-' + esc(dirShort(it.dir)) + '</span>' : '';
+  // The trip's number in its direction for the day ("98-WB"), before the run
+  // number; on the live pages coloured by how the bus sits between its leader
+  // and follower (it.tagCls). A bus on layover shows LAYOVER here instead.
+  const numTag = (n, cls) => '<span class="at-nth' + (cls ? ' ' + cls : '') + '">' + (n ? n + '-' + esc(dirShort(it.dir)) : '?-' + esc(dirShort(it.dir))) + '</span>';
+  const nth = it.layover ? '<span class="at-nth lay">LAYOVER</span>' : (it.nth || it.liveView) ? numTag(it.nth, it.tagCls) : '';
   const tag = it.inService ? '<span class="at-tag now">IN SERVICE</span>' : '';
-  let h = '<div class="prc day-' + day + (it.inService ? ' at-now' : '') + (anim ? ' fade-in' : '') + '" style="animation-delay:' + (idx * 0.015) + 's">';
+  let h = '<div class="prc day-' + day + (it.inService ? ' at-now' : '') + (it.done ? ' at-done' : '') + (anim ? ' fade-in' : '') + '" style="animation-delay:' + (idx * 0.015) + 's">';
   h += '<div class="prc-head"><div class="prc-head-top">' + nth + nums + '<div class="prc-day">' + esc(day) + '</div>' +
        '<div class="prc-actions">' + (two && paddles ? '<span class="at-paddle-lbl">PADDLE</span>' : '') + paddles + '</div></div>';
   h += '<div class="prc-head-bottom"><span class="at-time">' + tag + fmtClock(it.s) + ' – ' + fmtClock(it.e) + '</span>' +
@@ -2717,12 +2765,20 @@ function allTripsCardHtml(it, anim, idx) {
   }
   // Trips still to do in this card's direction from here, then the bus.
   h += '<div class="at-trips">';
-  h += '<span class="at-dir' + (it.cur ? ' cur' : '') + '">' + it.left + ' ' + esc(dirShort(it.dir)) + '</span>';
-  const vRaw = lv ? String(lv.VehicleID || '').trim() : '';
+  h += it.done ? '<span class="at-dir done">DONE</span>'
+               : '<span class="at-dir' + (it.cur ? ' cur' : '') + '">' + it.left + ' ' + esc(dirShort(it.dir)) + '</span>';
+  const vRaw = it.vid != null ? String(it.vid) : lv ? String(lv.VehicleID || '').trim() : '';
   const vid = (vRaw && vRaw !== '0' ? vRaw : '') || knownVehicleFor(it.blk);
   h += vid ? '<span class="at-bus">' + ICONS.bus + ' ' + esc(vid) + '</span>'
            : '<span class="at-bus unknown">' + ICONS.bus + ' Bus# pending</span>';
   h += '<span class="at-blk">Blk ' + esc(it.blk) + '</span>';
+  // Live pages: no run filter; a bus on layover counts down to its next
+  // scheduled departure → that trip's number.
+  if (it.liveView) {
+    if (it.layover) h += '<span class="at-next"><span class="at-due" data-due-ms="' + serviceMinToMs(it.s) + '">' +
+      dueText(serviceMinToMs(it.s)) + '</span><span class="at-arrow">→</span>' + numTag(it.nth, 'next') + '</span>';
+    return h + '</div></div>';
+  }
   // Show only this run's trips, or back to every run.
   if (view.run) h += '<button type="button" class="at-runf on" data-run-filter="">Show all runs</button>';
   else if (runs.length) h += '<button type="button" class="at-runf" data-run-filter="' + esc(runKey(runs[0])) + '">' +
@@ -2730,19 +2786,115 @@ function allTripsCardHtml(it, anim, idx) {
   return h + '</div></div>';
 }
 
-// Top of All Trips: [EB/SB] [Both] [WB/NB], labelled with this route's own
-// directions. Both is the default; view.atDir holds the one picked.
-function allTripsDirBarHtml() {
-  const dirs = routeDirs();
-  if (view.atDir && !dirs.includes(view.atDir)) view.atDir = '';
-  const es = dirs.find(d => /east|south/i.test(d)) || dirs[0];
-  const wn = dirs.find(d => d !== es) || '';
-  const btn = (d, label) => '<button type="button" class="at-dirf' + (view.atDir === d ? ' active' : '') +
-    '" data-at-dir="' + esc(d || '') + '"' + (d === null ? ' disabled' : '') + '>' + esc(label) + '</button>';
-  return '<div class="at-dirbar">' +
-    (es ? btn(es, dirShort(es)) : btn(null, '—')) +
-    btn('', 'Both') +
-    (wn ? btn(wn, dirShort(wn)) : btn(null, '—')) + '</div>';
+// Layover countdown to the next SCHEDULED departure: "12:05", "1:02:05",
+// then "DUE +2:13" once the time has passed.
+function dueText(dueMs) {
+  const d = Math.round((dueMs - Date.now()) / 1000);
+  const f = s => { const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+    return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
+  return d > 0 ? f(d) : 'DUE +' + f(-d);
+}
+
+// ── LIVE DIRECTION PAGES ─────────────────────────────────────
+// The two direction buttons show All Trips scorecards for the buses that
+// matter right now in that direction:
+//   • live buses on a trip, and ghosts (a trip that should be running but the
+//     bus isn't online — gray tag);
+//   • under them, buses on layover whose NEXT trip is this direction
+//     (purple LAYOVER, countdown → next trip's number). A bus whose next trip
+//     is on another route shows on that route's page instead.
+// Smallest trip number on top; cards only swap when one bus actually passes
+// another (stop position). Tag colour: green = between its leader and
+// follower, red = its follower passed it, yellow = it passed its leader.
+let lastRouteCards = [];  // every annotated card of the route, also during a search
+
+// This block's trips on the partner routes ("21-42" pieces), as minutes.
+function partnerTripsOf(blk) {
+  const out = [];
+  for (const byBlk of (sched.partnerTT || new Map()).values())
+    for (const t of byBlk.get(String(blk)) || []) {
+      const s = timeStrToMin(t.start), e = timeStrToMin(t.end);
+      if (s != null && e != null) out.push({ s, e });
+    }
+  return out;
+}
+
+// The scheduled trip of this route a card is on (live/ghost) or due to run
+// next (layover): { s, e, dir }.
+function cardTrip(b) {
+  const da = depArrOf(b);
+  if (da.dep == null) return null;
+  return { s: da.dep, e: da.arr, dir: canonDir(b.Direction) };
+}
+
+// Trips of `blk` on this route in `dir` from start minute `s` on.
+function tripsLeftFrom(blk, dir, s) {
+  const seen = new Set();
+  for (const t of sched.blockTrips.get(String(blk)) || []) {
+    const ts = timeStrToMin(t.start);
+    if (ts == null || ts < s || isPhantomTrip(blk, ts) || tripDirOf(t) !== dir) continue;
+    seen.add(ts);
+  }
+  return seen.size || 1;
+}
+
+// Sort the route's cards into this direction's live items.
+function liveDirItems(dir) {
+  const nowMin = serviceNowMin();
+  const show = (state.bus || state.block) ? new Set(lastCards.map(b => String(b.BlockID || ''))) : null;
+  const running = [], layover = [];
+  for (const b of lastRouteCards) {
+    const blk = String(b.BlockID || '');
+    const isLive = !b._scheduledOnly && !b._isLayover;
+    const isGhost = b._scheduledOnly && b._schedState === 'in_service_expected';
+    let isLay = b._scheduledOnly && b._schedState === 'layover_expected';
+    const trip = cardTrip(b);
+    if (!trip) continue;
+    // A live bus whose trip hasn't started yet and hasn't left the first stop
+    // is waiting at the terminal.
+    const waiting = isLive && trip.s > nowMin && (b.next_stop_sequence || 0) <= 1;
+    // In from another route ("21-42"): its last trip there is over and the
+    // next one is here → layover here.
+    if (b._scheduledOnly && b._schedState === 'not_started') {
+      const pt = partnerTripsOf(blk);
+      isLay = pt.some(x => x.e <= nowMin) && !pt.some(x => x.e > nowMin && x.s < trip.s);
+    }
+    // Going to another route before its next trip here → that route's page.
+    if (isLay && partnerTripsOf(blk).some(x => x.e > nowMin && x.s < trip.s)) continue;
+    if (!isLive && !isGhost && !isLay) continue;
+    if (trip.dir !== dir) continue;
+    const it = { blk, s: trip.s, e: trip.e, dir, nth: tripNum(blk, trip.s), liveView: true,
+                 left: tripsLeftFrom(blk, dir, trip.s), cur: isLive && !waiting, inService: isLive && !waiting,
+                 live: isLive && !waiting ? b : null, vid: String(b.VehicleID || '').trim(),
+                 pos: b.next_stop_sequence || 0, ghost: isGhost, mine: !show || show.has(blk) };
+    if (isLay || waiting) { it.layover = true; layover.push(it); } else running.push(it);
+  }
+  // Leader / follower colours among the buses actually online.
+  const online = running.filter(x => !x.ghost && x.nth).sort((a, b) => a.nth - b.nth);
+  running.forEach(x => {
+    if (x.ghost) { x.tagCls = 'gray'; return; }
+    const i = online.indexOf(x);
+    const leader = i > 0 ? online[i - 1] : null, follower = i >= 0 && i < online.length - 1 ? online[i + 1] : null;
+    x.tagCls = follower && follower.pos > x.pos ? 'red' : leader && x.pos > leader.pos ? 'yellow' : 'green';
+  });
+  // Furthest along on top (that's the smallest number unless someone passed);
+  // ghosts hold their number's slot.
+  const order = running.filter(x => !x.ghost).sort((a, b) => b.pos - a.pos || a.nth - b.nth);
+  running.filter(x => x.ghost).sort((a, b) => a.nth - b.nth).forEach(g => {
+    const i = order.findIndex(x => x.nth > g.nth);
+    order.splice(i < 0 ? order.length : i, 0, g);
+  });
+  layover.sort((a, b) => a.s - b.s || a.nth - b.nth);
+  return order.concat(layover).filter(x => x.mine);
+}
+
+function buildLiveDirPage(dir, anim) {
+  const items = liveDirItems(dir);
+  const n = items.filter(x => !x.layover).length, lay = items.length - n;
+  let h = '<div class="section-label' + (anim ? ' fade-in' : '') + '">' + esc(dirShort(dir)) + ' · ' + n + ' bus' + (n !== 1 ? 'es' : '') +
+    (lay ? ' · ' + lay + ' on layover' : '') + '</div>';
+  if (!items.length) return h + '<div class="at-empty">No ' + esc(dirShort(dir)) + ' buses right now</div>';
+  return h + '<div class="at-list">' + items.map((it, i) => allTripsCardHtml(it, anim, i)).join('') + '</div>';
 }
 
 function buildAllTripsPage(anim) {
@@ -2750,10 +2902,10 @@ function buildAllTripsPage(anim) {
   // "Run 558 only": every card that run drives (a relief card counts for both runs).
   const runNo = view.run ? view.run.split('|')[1] : '';
   if (view.run) items = items.filter(it => runsOnBlockDuring(it.blk, it.s, it.e).some(r => runKey(r) === view.run));
-  const dirBar = allTripsDirBarHtml();
+  if (view.atDir && !routeDirs().includes(view.atDir)) view.atDir = '';
   if (view.atDir) items = items.filter(it => it.dir === view.atDir);
   const buses = new Set(items.map(it => it.blk)).size;
-  let h = dirBar + '<div class="section-label' + (anim ? ' fade-in' : '') + '">All Trips · ' +
+  let h = '<div class="section-label' + (anim ? ' fade-in' : '') + '">All Trips · ' +
     (view.atDir ? esc(dirShort(view.atDir)) + ' · ' : '') +
     (view.run ? 'Run ' + esc(runNo) + ' · ' + items.length + (items.length === 1 ? ' trip' : ' trips')
               : buses + (buses === 1 ? ' bus' : ' buses')) + '</div>';
@@ -3123,11 +3275,16 @@ function startTimers() {
 }
 
 function manageLayoverTimers() {
-  const has = !!document.querySelector('[data-layover-since]');
+  const has = !!document.querySelector('[data-layover-since],[data-due-ms]');
   if (has && !layoverInterval) {
     layoverInterval = setInterval(() => {
       document.querySelectorAll('[data-layover-since]').forEach(el => {
         el.textContent = fmtDuration(Date.now() - parseInt(el.dataset.layoverSince));
+      });
+      document.querySelectorAll('[data-due-ms]').forEach(el => {
+        const ms = parseInt(el.dataset.dueMs);
+        el.textContent = dueText(ms);
+        el.classList.toggle('late', ms <= Date.now());
       });
     }, 1000);
   } else if (!has && layoverInterval) {
@@ -3164,9 +3321,6 @@ function manageLayoverTimers() {
     // All Trips: one run's cards only / every run again.
     const rf = e.target.closest('[data-run-filter]');
     if (rf) { view.run = rf.dataset.runFilter || ''; drawView(true); window.scrollTo(0, 0); return; }
-    // All Trips: EB/SB only · Both · WB/NB only.
-    const df = e.target.closest('[data-at-dir]');
-    if (df) { if (!df.disabled) { view.atDir = df.dataset.atDir || ''; drawView(true); window.scrollTo(0, 0); } return; }
     // Leaders expand/collapse — only the right-side "Leaders" control toggles
     // the panel; run chips (also on this line) fall through to open their PDF.
     const toggle = e.target.closest('[data-lead-toggle]');
@@ -3184,6 +3338,9 @@ function manageLayoverTimers() {
 
   document.getElementById('bottomBar').addEventListener('click', e => {
     if (e.target.closest('[data-refresh]')) { refreshNow(); return; }
+    // All Trips: EB/SB only · Both · WB/NB only.
+    const df = e.target.closest('[data-at-dir]');
+    if (df) { if (!df.disabled) { view.atDir = df.dataset.atDir || ''; view.scrollNow = true; lastHTML = ''; drawView(true); } return; }
     const b = e.target.closest('[data-view]');
     if (b && !b.disabled) selectView(b.dataset.view, b.dataset.dir || '');
   });
@@ -3568,7 +3725,7 @@ async function loadRoute(route) {
   lastHTML = '';
   view.dir = '';  // this route's own saved direction (see currentDir)
   view.run = '';
-  lastCards = []; lastEmptyHtml = '';
+  lastCards = []; lastRouteCards = []; lastEmptyHtml = '';
   sched.dirNames = {}; // the old route's; this route's come with its schedule
   renderBottomBar();
 
