@@ -152,7 +152,8 @@ body.has-bar #content{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .at-time .at-tag{font-size:10px;font-weight:700;letter-spacing:.06em;padding:1px 5px;border-radius:3px;margin-right:6px;background:var(--line);color:var(--mid)}
 .at-time .at-tag.now{background:rgba(61,214,140,.14);color:var(--green)}
 .at-time .at-tag.lay{background:rgba(245,166,35,.14);color:var(--amber)}
-.at-time .at-tag.nth{background:rgba(167,139,250,.16);color:var(--violet)}
+/* "98-WB": the trip's number for the day, drawn like the PADDLE button. */
+.at-nth{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.06em;background:var(--blue);border:1px solid var(--blue);color:#fff;padding:4px 10px;border-radius:4px;white-space:nowrap;flex-shrink:0}
 /* All Trips direction filter: [EB/SB] [Both] [WB/NB] */
 .at-dirbar{display:flex;gap:6px;padding:12px 16px 0}
 .at-dirf{flex:1 1 0;min-width:0;height:36px;font-family:inherit;font-size:13px;font-weight:700;border-radius:18px;background:var(--card);color:var(--text-dim);border:1px solid var(--border-light);cursor:pointer;touch-action:manipulation}
@@ -2698,10 +2699,11 @@ function allTripsCardHtml(it, anim, idx) {
   const nums = runs.length ? runs.map(numOf).join('<span class="at-relief">→</span>') : '<div class="prc-num">—</div>';
   const paddles = runs.filter(r => r.link).map(r => '<a class="prc-paddle" href="' + esc(r.link) + '" target="_blank" rel="noopener">' +
     (two ? esc(r.runno) : 'PADDLE') + '</a>').join('');
-  const tag = (it.nth ? '<span class="at-tag nth">' + ordinal(it.nth) + ' ' + esc(dirShort(it.dir)) + '</span>' : '') +
-              (it.inService ? '<span class="at-tag now">IN SERVICE</span>' : '');
+  // The trip's number in its direction for the day ("98-WB"), before the run number.
+  const nth = it.nth ? '<span class="at-nth">' + it.nth + '-' + esc(dirShort(it.dir)) + '</span>' : '';
+  const tag = it.inService ? '<span class="at-tag now">IN SERVICE</span>' : '';
   let h = '<div class="prc day-' + day + (it.inService ? ' at-now' : '') + (anim ? ' fade-in' : '') + '" style="animation-delay:' + (idx * 0.015) + 's">';
-  h += '<div class="prc-head"><div class="prc-head-top">' + nums + '<div class="prc-day">' + esc(day) + '</div>' +
+  h += '<div class="prc-head"><div class="prc-head-top">' + nth + nums + '<div class="prc-day">' + esc(day) + '</div>' +
        '<div class="prc-actions">' + (two && paddles ? '<span class="at-paddle-lbl">PADDLE</span>' : '') + paddles + '</div></div>';
   h += '<div class="prc-head-bottom"><span class="at-time">' + tag + fmtClock(it.s) + ' – ' + fmtClock(it.e) + '</span>' +
        '<div class="prc-routes">' + esc(routes) + '</div></div></div>';
@@ -2726,12 +2728,6 @@ function allTripsCardHtml(it, anim, idx) {
   else if (runs.length) h += '<button type="button" class="at-runf" data-run-filter="' + esc(runKey(runs[0])) + '">' +
     'Run ' + esc(runs[0].runno) + ' only</button>';
   return h + '</div></div>';
-}
-
-// 1 → "1st", 2 → "2nd", 11 → "11th", 22 → "22nd".
-function ordinal(n) {
-  const t = n % 100, o = n % 10;
-  return n + (t >= 11 && t <= 13 ? 'th' : o === 1 ? 'st' : o === 2 ? 'nd' : o === 3 ? 'rd' : 'th');
 }
 
 // Top of All Trips: [EB/SB] [Both] [WB/NB], labelled with this route's own
