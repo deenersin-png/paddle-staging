@@ -170,6 +170,9 @@ body.has-bar #content{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .at-runbtn:hover{border-color:var(--mid)}
 .at-runbtn.nolink{cursor:default}
 .at-runbtn .prc-day{font-size:10px}
+/* Ghost bus number: hover / tap for when it was last seen. */
+.at-bus.has-tip{cursor:help;text-decoration:underline dotted;text-underline-offset:3px}
+.bus-tip{position:fixed;z-index:50;padding:9px 11px;border-radius:6px;background:#1b2333;color:#fff;font-size:12.5px;line-height:1.45;box-shadow:0 6px 20px rgba(0,0,0,.25);pointer-events:none}
 /* Trip Sheets: finished trips stay, faded. */
 .at-list .prc.at-done{opacity:.45;filter:grayscale(1)}
 .at-loc{display:flex;align-items:center;gap:8px;padding:6px 12px;border-top:1px solid var(--line);background:var(--ink3);font-size:13px;font-weight:600;color:var(--bright);min-width:0}
@@ -2783,7 +2786,8 @@ function allTripsCardHtml(it, anim, idx) {
                : '<span class="at-dir' + (it.cur ? ' cur' : '') + '">' + it.left + ' ' + esc(dirShort(it.dir)) + '</span>';
   const vRaw = it.vid != null ? String(it.vid) : lv ? String(lv.VehicleID || '').trim() : '';
   const vid = (vRaw && vRaw !== '0' ? vRaw : '') || knownVehicleFor(it.blk);
-  h += vid ? '<span class="at-bus">' + ICONS.bus + ' ' + esc(vid) + '</span>'
+  const tip = it.ghost && vid ? ghostBusTip(it.blk, vid) : '';
+  h += vid ? '<span class="at-bus' + (tip ? ' has-tip" tabindex="0" data-tip="' + esc(tip) : '') + '">' + ICONS.bus + ' ' + esc(vid) + '</span>'
            : '<span class="at-bus unknown">' + ICONS.bus + ' Bus# pending</span>';
   h += '<span class="at-blk">Blk ' + esc(it.blk) + '</span>';
   // A bus on layover counts down to its next scheduled departure → that trip's number.
@@ -2843,6 +2847,60 @@ function tripsLeftFrom(blk, dir, s) {
   }
   return seen.size || 1;
 }
+
+// For a ghost that still has a bus number: when that bus was seen on the
+// block tonight, from the live-feed sightings —
+//   "3644 first appeared on 9902 at 12:53 AM in SEPTA's live feed, on the
+//    12:30–1:32 AM EB trip. It was last seen at 1:40 AM, right after that
+//    trip finished. It has been off the feed since then."
+function ghostBusTip(blk, vid) {
+  const byRoute = blockPairs.get(String(blk));
+  if (!byRoute) return '';
+  let first = Infinity, last = 0;
+  for (const p of byRoute.values()) if (p.vehicleId === vid && isPairFresh(byRoute, p)) { first = Math.min(first, p.first || p.ts); last = Math.max(last, p.ts); }
+  if (!last || !isFinite(first)) return '';
+  const toMin = ms => serviceNowMin() - (Date.now() - ms) / 60000;
+  const clock = ms => new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const trips = [];
+  for (const t of sched.blockTrips.get(String(blk)) || []) {
+    const s = timeStrToMin(t.start), e = timeStrToMin(t.end);
+    if (s != null && e != null && !isPhantomTrip(blk, s) && !trips.some(x => x.s === s)) trips.push({ s, e, dir: tripDirOf(t) });
+  }
+  trips.sort((a, b) => a.s - b.s);
+  const name = x => fmtClock(x.s) + '–' + fmtClock(x.e) + ' ' + dirShort(x.dir) + ' trip';
+  const during = m => trips.find(x => m >= x.s - 1 && m <= x.e + 1);
+  const before = m => trips.filter(x => x.e < m).pop();
+  const fm = toMin(first), lm = toMin(last);
+  const fT = during(fm);
+  let txt = vid + ' first appeared on ' + blk + ' at ' + clock(first) + ' in SEPTA’s live feed' + (fT ? ', on the ' + name(fT) : '') + '.';
+  if (last - first > 60000) {
+    const lT = during(lm), bT = !lT && before(lm);
+    txt += ' It was last seen at ' + clock(last) +
+      (lT ? (lT === fT ? ', still on that trip' : ', on the ' + name(lT)) : bT ? (bT === fT ? ', right after that trip finished' : ', right after the ' + name(bT) + ' finished') : '') + '.';
+  }
+  const off = Math.round((Date.now() - last) / 60000);
+  return txt + ' It has been off the feed since then' + (off >= 1 ? ' (' + (off >= 60 ? Math.floor(off / 60) + ' h ' + (off % 60) + ' min' : off + ' min') + ').' : '.');
+}
+
+// One floating box for the bus-number notes: hover on a computer, tap on a
+// phone (the card clips anything drawn inside it).
+(function setupBusTips() {
+  let box = null, cur = null;
+  const hide = () => { if (box) box.hidden = true; cur = null; };
+  const show = el => {
+    if (!box) { box = document.createElement('div'); box.className = 'bus-tip'; document.body.appendChild(box); }
+    cur = el; box.textContent = el.dataset.tip; box.hidden = false;
+    const r = el.getBoundingClientRect(), w = Math.min(300, window.innerWidth - 24);
+    box.style.width = w + 'px';
+    box.style.left = Math.max(12, Math.min(r.left, window.innerWidth - w - 12)) + 'px';
+    const h = box.offsetHeight;
+    box.style.top = (r.top - h - 8 > 8 ? r.top - h - 8 : r.bottom + 8) + 'px';
+  };
+  document.addEventListener('mouseover', e => { const el = e.target.closest('[data-tip]'); if (el && el !== cur) show(el); });
+  document.addEventListener('mouseout', e => { const el = e.target.closest('[data-tip]'); if (el && el === cur && !el.contains(e.relatedTarget)) hide(); });
+  document.addEventListener('click', e => { const el = e.target.closest('[data-tip]'); if (el) show(el); else hide(); });
+  window.addEventListener('scroll', hide, { passive: true });
+})();
 
 // Sort the route's cards into this direction's live items.
 function liveDirItems(dir) {
