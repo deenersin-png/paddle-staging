@@ -1,0 +1,21 @@
+/* Block Tracker live map (assets/pa-live-map.js): small bus icons labelled
+   "11-9652", coloured like the cards' number tags. */
+.lm-box{margin:0 0 10px}
+.lm-bar{display:flex;align-items:center;justify-content:flex-end;margin:-4px 0 6px}
+.lm-toggle{font-family:var(--mono,monospace);font-size:11px;font-weight:600;padding:4px 10px;border-radius:4px;border:1px solid var(--border-light,#ccd);background:transparent;color:inherit;cursor:pointer}
+.lm-map{height:260px;border-radius:8px;overflow:hidden;border:1px solid var(--border-light,#ccd);background:#e9eaed}
+.lm-map .leaflet-tile-pane{filter:grayscale(1) contrast(.85) brightness(1.06)}
+.lm-route{stroke:#1565c0}
+.lm-note{font-family:var(--mono,monospace);font-size:10px;line-height:1.5;color:#8a909f;margin-top:4px}
+.lm-wrap{background:none;border:0}
+.lm-bus{position:relative;display:inline-flex;align-items:center;gap:2px;height:18px;padding:0 5px 0 3px;border-radius:9px;
+  font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:700;line-height:1;white-space:nowrap;color:#fff;
+  background:#1f8a4c;border:1px solid rgba(0,0,0,.25);box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.lm-bus svg{width:12px;height:12px;flex-shrink:0}
+.lm-bus.lm-green{background:#1f8a4c}
+.lm-bus.lm-red{background:#c8102e}
+.lm-bus.lm-yellow{background:#f2b705;color:#1a1300}
+.lm-bus.lm-lay{background:#6a3fc1}
+.lm-bus.lm-gray{background:#8a909f}
+.lm-bus.lm-est{border-style:dashed;opacity:.85}
+.lm-stem{position:absolute;left:-4px;top:17px;width:1.5px;background:#333;opacity:.6}

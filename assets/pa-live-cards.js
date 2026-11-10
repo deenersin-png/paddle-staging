@@ -377,7 +377,7 @@ export function scorecardHtml({ model, block, allTrips, buses, nowMin, dirNamesB
   const notOut = !live && model._schedState === 'not_started';
   const inService = live && !waiting;
   const nth = tripNumber(allTrips, t, pullIns);
-  const numTag = cls => '<span class="at-nth' + (cls ? ' ' + cls : '') + '">' + (nth || '?') + '-' + ds + '</span>';
+  const numTag = cls => '<span class="at-nth' + (cls ? ' ' + cls : '') + '">' + (nth || '?') + '</span>';
 
   // Leader / follower colour: the buses online on this route and direction.
   let cls = ghost || notOut ? 'gray' : 'green';

@@ -19,14 +19,14 @@ import { createFeed, loadShapes, SCENARIOS } from './pa-lf-feed.js';
 const LEAFLET_CSS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
 const LEAFLET_JS  = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
 // OpenStreetMap's standard tiles, grayed in pa-lf.css (CARTO's now need a key).
-const TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-const TILES_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+export const TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+export const TILES_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const clock = ms => new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
 
 let leafletP = null;
-function loadLeaflet() {
+export function loadLeaflet() {
   if (window.L && window.L.map) return Promise.resolve(window.L);
   if (!leafletP) {
     leafletP = new Promise((resolve, reject) => {

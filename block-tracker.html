@@ -319,6 +319,7 @@ a.run-chip:active{opacity:.7}
 .fade-in{animation:fadeIn .15s ease-out both}
 </style>
 <link rel="stylesheet" href="assets/pa-scorecard.css">
+<link rel="stylesheet" href="assets/pa-live-map.css">
 <link rel="stylesheet" href="assets/pa-theme.css">
 <link rel="stylesheet" href="assets/pa-menu.css">
 <script src="assets/pa-menu.js" defer></script>
@@ -2456,6 +2457,7 @@ function drawView(anim) {
     html = '<div class="view-wrap">' + buildLiveDirPage(dir, anim) + '</div>';
   }
   setContent(html);
+  if (view.mode === 'dir' && !view.run && document.querySelector('#content .lm-slot')) drawLiveMap(currentDir());
   manageLayoverTimers();
   // All Trips opens at the first trip not finished yet (on entry and on a
   // direction pick, not on every refresh).
@@ -2576,7 +2578,7 @@ function buildDirPage(dir, list, anim) {
 const tripDirOf = t => canonDir((sched.dirNames && sched.dirNames[t.direction]) || 'Direction ' + t.direction);
 
 // Each trip's place in its direction for the whole service day on this route
-// ("98-WB"), counted over every block and every trip — done ones too, and
+// ("98"), counted over every block and every trip — done ones too, and
 // whatever a search shows — so a number never changes during the day and the
 // trip ahead / behind is always N-1 / N+1. Keyed block|start minute; built
 // once per timetable load.
@@ -2708,10 +2710,10 @@ function allTripsCardHtml(it, anim, idx) {
   let runf = '';
   if (view.run) runf = '<button type="button" class="at-runf on" data-run-filter="">' + (ALL_TRIPS_PAGE ? 'Show all runs' : 'Back to live') + '</button>';
   else if (runs.length) runf = '<button type="button" class="at-runf" data-run-filter="' + esc(runKey(runs[0])) + '">Run ' + esc(runs[0].runno) + ' only</button>';
-  // The trip's number in its direction for the day ("98-WB"), before the run
+  // The trip's number in its direction for the day ("98"), before the run
   // number; on the live pages coloured by how the bus sits between its leader
   // and follower (it.tagCls). A bus on layover shows LAYOVER here instead.
-  const numTag = (n, cls) => '<span class="at-nth' + (cls ? ' ' + cls : '') + '">' + (n ? n + '-' + esc(dirShort(it.dir)) : '?-' + esc(dirShort(it.dir))) + '</span>';
+  const numTag = (n, cls) => '<span class="at-nth' + (cls ? ' ' + cls : '') + '">' + (n ? n : '?') + '</span>';
   const nth = it.layover ? '<span class="at-nth lay">LAYOVER</span>' : (it.nth || it.liveView) ? numTag(it.nth, it.tagCls) : '';
   const tag = it.inService ? '<span class="at-tag now">IN SERVICE</span>' : '';
   let h = '<div class="prc day-' + day + (it.inService ? ' at-now' : '') + (it.done ? ' at-done' : '') + (anim ? ' fade-in' : '') + '" style="animation-delay:' + (idx * 0.015) + 's">';
@@ -2896,7 +2898,8 @@ function liveDirItems(dir) {
     const it = { blk, s: trip.s, e: trip.e, dir, nth: tripNum(blk, trip.s), liveView: true,
                  left: tripsLeftFrom(blk, dir, trip.s), cur: isLive && !waiting, inService: isLive && !waiting,
                  live: isLive && !waiting ? b : null, vid: String(b.VehicleID || '').trim(),
-                 pos: b.next_stop_sequence || 0, ghost: isGhost, mine: !show || show.has(blk) };
+                 pos: b.next_stop_sequence || 0, ghost: isGhost, mine: !show || show.has(blk),
+                 lat: isLive ? b.lat : null, lng: isLive ? b.lng : null };
     if (isLay || waiting) { it.layover = true; layover.push(it); } else running.push(it);
   }
   // Leader / follower colours among the buses actually online.
@@ -2923,9 +2926,45 @@ function buildLiveDirPage(dir, anim) {
   const n = items.filter(x => !x.layover).length, lay = items.length - n;
   let h = '<div class="section-label' + (anim ? ' fade-in' : '') + '">' + esc(dirShort(dir)) + ' · ' + n + ' bus' + (n !== 1 ? 'es' : '') +
     (lay ? ' · ' + lay + ' on layover' : '') + '</div>';
+  lastLiveItems = items;
   if (!items.length) return h + '<div class="at-empty">No ' + esc(dirShort(dir)) + ' buses right now</div>';
-  return h + '<div class="at-list">' + items.map((it, i) => allTripsCardHtml(it, anim, i)).join('') + '</div>';
+  return h + liveMapBoxHtml() + '<div class="at-list">' + items.map((it, i) => allTripsCardHtml(it, anim, i)).join('') + '</div>';
 }
+
+// ── LIVE MAP ─────────────────────────────────────────────────
+// Above the cards on the EB / WB pages: every bus on the page as a small bus
+// icon "11-9652" (trip number - block) in its tag's colour. One map element
+// for the whole visit (assets/pa-live-map.js), moved into each redraw's slot
+// so zoom and position survive the refreshes. Hide / Show is remembered.
+let lastLiveItems = [];
+let liveMapP = null;
+const liveMapOn = () => { try { return localStorage.getItem('bt_map') !== 'off'; } catch (e) { return true; } };
+function liveMapBoxHtml() {
+  const on = liveMapOn();
+  return '<div class="lm-box"><div class="lm-bar"><button type="button" class="lm-toggle" data-map-toggle>' + (on ? 'Hide map' : 'Show map') + '</button></div>' +
+    (on ? '<div class="lm-slot"></div>' : '') + '</div>';
+}
+function drawLiveMap(dir) {
+  const slot = document.querySelector('#content .lm-slot');
+  if (!slot) return;
+  if (!liveMapP) liveMapP = import('./assets/pa-live-map.js').then(m => m.createLiveMap());
+  liveMapP.then(m => {
+    m.attach(slot);
+    const nowMin = serviceNowMin();
+    m.update({ route: state.route, dir, nowMin, items: lastLiveItems.map(it => ({
+      nth: it.nth, blk: it.blk, s: it.s, e: it.e, lat: it.lat, lng: it.lng,
+      cls: it.layover ? 'lay' : (it.tagCls || 'green'),
+      layStop: it.layover ? layoverStop(it.blk, it.s) : '',
+      title: (it.vid && it.vid !== '0' ? 'Bus ' + it.vid + ' · ' : '') + 'Block ' + it.blk + (it.layover ? ' · layover, next trip ' + fmtClock(it.s) : ''),
+    })) });
+  }).catch(e => { liveMapP = null; console.error('[live map]', e); });
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('[data-map-toggle]')) return;
+  try { localStorage.setItem('bt_map', liveMapOn() ? 'off' : 'on'); } catch (_) {}
+  lastHTML = '';
+  drawView(false);
+});
 
 function buildAllTripsPage(anim) {
   let items = sched.loaded ? allTripsItems() : [];
