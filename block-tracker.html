@@ -3300,8 +3300,13 @@ async function onBusSearch() {
     }
     if (!f.block) {
       f.block = await blockToday(num, rows);
-      const seen = !f.block && newest(r => String(r.blockId) === num);
+      // Not running now: its last bus. The poller misses many blocks for
+      // days (short trippers, weekday blocks over a weekend — 5108 last
+      // stamped Friday, 2012 a week back), so a block looks further back
+      // than a bus does, and this browser's own live sightings count too.
+      const seen = !f.block && newestBlockSighting(num, rows);
       if (seen) f.blockSeen = lastSeenParts(seen, 'block');
+      else if (!f.block) f.blockPick = blockPickParts(num);
     }
   } catch(e) {
     if (superseded()) return;
@@ -3324,6 +3329,7 @@ async function onBusSearch() {
     let h = '';
     if (f.busSeen) h += sec('Bus ' + num + ' is currently offline', f.busSeen.map(esc).join('<br>'));
     if (f.blockSeen) h += sec('Block ' + num + ' isn\'t in service now', f.blockSeen.map(esc).join('<br>'));
+    else if (f.blockPick) h += sec('Block ' + num + ' isn\'t in service now', f.blockPick.map(esc).join('<br>'));
     if (!h) h = sec(num + ' not found', 'No bus or block with this number<br>seen in the last ' + SEEN_DAYS + ' days');
     setContent('<div class="msg find-msg"><div class="icon">🚌</div>' + h + '</div>');
     return;
@@ -3335,6 +3341,30 @@ async function onBusSearch() {
   }
   state.block = num;
   return loadRoute(f.block.route);
+}
+
+// A searched block's newest sighting within BLOCK_SEEN_DAYS, as a state.json
+// row: the poller's rows plus this browser's pairing (live feed seen here).
+const BLOCK_SEEN_DAYS = 14;
+function newestBlockSighting(num, rows) {
+  const at = r => r.lastSeenAtMs || r.endedAtMs || 0;
+  const cands = rows.filter(r => String(r.blockId) === num);
+  for (const [routeId, p] of blockPairs.get(num) || [])
+    cands.push({ blockId: num, routeId, vehicleId: p.vehicleId, lastSeenAtMs: p.ts });
+  return cands.filter(r => at(r) > Date.now() - BLOCK_SEEN_DAYS * 86400000)
+    .sort((a, c) => at(c) - at(a))[0] || null;
+}
+
+// A block in today's pick that no bus has been seen on lately: what the
+// pick says about it (routes, pull-out / pull-in, runs). null if not in it.
+function blockPickParts(num) {
+  const rec = paddle.byBlock.get(num);
+  if (!rec) return null;
+  const parts = ['No bus seen on it lately'];
+  if (rec.routes.length) parts.push('Today: Route ' + rec.routes.join(', '));
+  if (rec.poTime || rec.piTime) parts.push('Out ' + (rec.poTime || '?') + ' – in ' + (rec.piTime || '?'));
+  if (rec.runs.length) parts.push('Run' + (rec.runs.length > 1 ? 's ' : ' ') + rec.runs.map(r => r.runno).join(' & '));
+  return parts;
 }
 
 // A searched block number's route, or null unless that block is running now
