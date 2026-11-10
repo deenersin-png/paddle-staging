@@ -2314,10 +2314,11 @@ function switchFindView() {
   else { state.bus = f.num; state.busBlock = f.bus.block; state.block = ''; loadRoute(f.bus.route); }
 }
 
-// Why a searched bus has no card, from the scheduled times only: e.g. "Bus
-// 3054 pulled in at 7:42 PM and its last trip ended at 7:26 PM. Last served
-// on Route 52 Block# 9121 (run#: 121)." Parts with no data are left out.
-function doneReason(route) {
+// Why a searched bus has no card, from the scheduled times only, as the
+// search result's lines: ["Due to pull in at 12:18 AM", "Last trip ended at
+// 11:55 PM", "Last served on Route 44 Block 9664", { runs }]. Parts with no
+// data are left out.
+function doneParts(route) {
   const blk = state.busBlock;
   const rec = blk ? paddle.byBlock.get(blk) : null;
   const pi  = rec && rec.piTime ? fmtClock(clockToMin(rec.piTime)) : '';
@@ -2327,13 +2328,29 @@ function doneReason(route) {
     .map(t => timeStrToMin(t.end)).filter(e => e != null);
   const lastEnd = ends.length ? fmtClock(Math.max(...ends)) : '';
   const parts = [];
-  if (pi) parts.push((blockPulledIn(blk) ? 'pulled in at ' : 'is due to pull in at ') + pi);
-  if (lastEnd) parts.push('its last trip ended at ' + lastEnd);
-  let txt = parts.length ? 'Bus ' + state.bus + ' ' + parts.join(' and ') + '. ' : '';
-  txt += 'Last served on Route ' + route + (blk ? ' Block# ' + blk : '');
-  const runs = rec && rec.runs.length ? rec.runs.map(r => r.runno).join(', ') : '';
-  if (runs) txt += ' (run#: ' + runs + ')';
-  return txt + '.';
+  if (pi) parts.push((blockPulledIn(blk) ? 'Pulled in at ' : 'Due to pull in at ') + pi);
+  if (lastEnd) parts.push('Last trip ended at ' + lastEnd);
+  parts.push('Last served on Route ' + route + (blk ? ' Block ' + blk : ''));
+  if (rec && rec.runs.length) parts.push({ runs: rec.runs });
+  return parts;
+}
+
+// A searched block with nothing left today: its route, today's bus if known,
+// and its runs.
+function blockDoneParts(route) {
+  const blk = state.block;
+  const rec = paddle.byBlock.get(blk);
+  const parts = ['Nothing left today on Route ' + route];
+  const bus = knownVehicleFor(blk);
+  if (bus) parts.push('Served by Bus ' + bus);
+  if (rec && rec.runs.length) parts.push({ runs: rec.runs });
+  return parts;
+}
+
+// One search-result section: icon ('bus' / 'block'), headline, lines.
+function findSecHtml(icon, main, parts) {
+  return '<div class="find-sec">' + FIND_ICON[icon] + '<div class="main">' + esc(main) + '</div><div class="sub">' +
+    (typeof parts === 'string' ? parts : findPartsHtml(parts)) + '</div></div>';
 }
 
 function renderBusMain(merged, route) {
@@ -2351,11 +2368,9 @@ function renderBusMain(merged, route) {
   if (!mine.length) {
     document.getElementById('busCount').textContent = what.join(' & ');
     lastCards = [];
-    lastEmptyHtml = state.bus
-      ? '<div class="msg"><div class="icon">🚌</div><div class="main">Bus ' + esc(state.bus) + ' is done for now</div>' +
-        '<div class="sub">' + esc(doneReason(route)) + '</div></div>'
-      : '<div class="msg"><div class="icon">🚌</div><div class="main">Block ' + esc(state.block) + ' is done for now</div>' +
-        '<div class="sub">Nothing left today on Route ' + esc(route) + '</div></div>';
+    lastEmptyHtml = '<div class="msg find-msg">' + (state.bus
+      ? findSecHtml('bus', 'Bus ' + state.bus + ' is done for now', doneParts(route))
+      : findSecHtml('block', 'Block ' + state.block + ' is done for now', blockDoneParts(route))) + '</div>';
     drawView(false);
     return;
   }
@@ -3339,11 +3354,11 @@ async function onBusSearch() {
     renderBottomBar();
     // Each section under its own icon: the app's bus for a bus, the wooden
     // blocks for a block.
-    const sec = (icon, main, sub) => '<div class="find-sec">' + FIND_ICON[icon] + '<div class="main">' + esc(main) + '</div><div class="sub">' + sub + '</div></div>';
+    const sec = findSecHtml;
     let h = '';
-    if (f.busSeen) h += sec('bus', 'Bus ' + num + ' is currently offline', findPartsHtml(f.busSeen));
-    if (f.blockSeen) h += sec('block', 'Block ' + num + ' isn\'t in service now', findPartsHtml(f.blockSeen));
-    else if (f.blockPick) h += sec('block', 'Block ' + num + ' isn\'t in service now', findPartsHtml(f.blockPick));
+    if (f.busSeen) h += sec('bus', 'Bus ' + num + ' is currently offline', f.busSeen);
+    if (f.blockSeen) h += sec('block', 'Block ' + num + ' isn\'t in service now', f.blockSeen);
+    else if (f.blockPick) h += sec('block', 'Block ' + num + ' isn\'t in service now', f.blockPick);
     if (!h) h = sec('bus', num + ' not found', 'No bus or block with this number<br>seen in the last ' + SEEN_DAYS + ' days');
     setContent('<div class="msg find-msg">' + h + '</div>');
     return;
