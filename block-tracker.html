@@ -2931,11 +2931,11 @@ function buildLiveDirPage(dir, anim) {
     (lay ? ' · ' + lay + ' on layover' : '') + '</div>';
   lastLiveItems = items;
   if (!items.length) return h + '<div class="at-empty">No ' + esc(dirShort(dir)) + ' buses right now</div>';
-  return h + liveMapBoxHtml() + '<div class="at-list">' + items.map((it, i) => allTripsCardHtml(it, anim, i)).join('') + '</div>';
+  return h + '<div class="at-list">' + items.map((it, i) => allTripsCardHtml(it, anim, i)).join('') + '</div>' + liveMapBoxHtml();
 }
 
 // ── LIVE MAP ─────────────────────────────────────────────────
-// Above the cards on the EB / WB pages: every bus on the page as a small bus
+// Under the cards on the EB / WB pages: every bus on the page as a small bus
 // icon "#11-9652" (trip number - block) in its tag's colour. One map element
 // for the whole visit (assets/pa-live-map.js), moved into each redraw's slot
 // so zoom and position survive the refreshes. Hide / Show is remembered.
@@ -3374,6 +3374,8 @@ function manageLayoverTimers() {
   let startX = null, startY = null, dragging = false;
 
   content.addEventListener('touchstart', e => {
+    // The live map's own drags and pinches never switch pages.
+    if (e.touches.length > 1 || e.target.closest('.lm-box')) { dragging = false; return; }
     if (!e.target.closest('.view-wrap')) return;
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;

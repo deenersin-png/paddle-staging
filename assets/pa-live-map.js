@@ -77,7 +77,8 @@ export function createLiveMap() {
     if (map) return map;
     const Lf = await loadLeaflet();
     if (map) return map;
-    map = Lf.map(mapEl, { zoomControl: true, attributionControl: true, scrollWheelZoom: false });
+    // Half-level zoom steps so a pinch or a +/- tap doesn't jump too far.
+    map = Lf.map(mapEl, { zoomControl: true, attributionControl: true, scrollWheelZoom: false, zoomSnap: 0.5, zoomDelta: 0.5 });
     Lf.tileLayer(TILES, { maxZoom: 19, attribution: TILES_ATTR }).addTo(map);
     lineLayer = Lf.layerGroup().addTo(map);
     busLayer = Lf.layerGroup().addTo(map);
