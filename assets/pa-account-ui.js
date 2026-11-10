@@ -122,7 +122,42 @@ function initials(p, u) {
   return (email[0] || '?').toUpperCase();
 }
 
+// The profile icon goes straight to My Run. On My Run itself it just brings
+// back the Today tab.
+function goMyRun() {
+  const today = onSetupPage() && document.querySelector('.tab[data-view="today"]');
+  if (today) { today.click(); window.scrollTo(0, 0); return; }
+  location.href = 'home.html';
+}
+
+// Opens the Account window, or the sign-in / create-account window when
+// signed out. Used by the SIGN IN button and the menu's Account item.
+async function openAccount(btn) {
+  if (!user) {
+    if (btn) btn.classList.add('pa-loading');
+    let res = { ok: false, reason: 'error' };
+    try { res = await boot(); } catch (err) { console.warn('[pa] boot failed', err); }
+    if (btn) btn.classList.remove('pa-loading');
+    openModal();
+    if (!res.ok) {
+      showMsg(res.reason === 'unconfigured'
+        ? UNCONFIGURED_MSG
+        : 'Could not reach the sign-in service. Check your connection.', 'err');
+      disableForm();
+    }
+    return;
+  }
+  openModal();
+}
+
+// The menu (pa-menu.js) labels its bottom item "Account" or "Sign in" from this.
+function tellMenu() {
+  document.documentElement.dataset.paAcct = user ? 'in' : 'out';
+  window.dispatchEvent(new CustomEvent('pa:acct', { detail: { signedIn: !!user } }));
+}
+
 function renderButton() {
+  tellMenu();
   if (!slot) return;
   slot.textContent = '';
   slot.classList.add('pa-root');
@@ -130,7 +165,7 @@ function renderButton() {
   if (user) {
     const b = el('button', 'pa-avatar');
     b.type = 'button';
-    b.setAttribute('aria-label', 'Account');
+    b.setAttribute('aria-label', 'My run');
     const c = el('span', 'pa-avatar-circle');
     c.textContent = initials(profile, user);
     b.appendChild(c);
@@ -139,7 +174,7 @@ function renderButton() {
       n.textContent = profile.badgeNumber;
       b.appendChild(n);
     }
-    b.addEventListener('click', openModal);
+    b.addEventListener('click', goMyRun);
     slot.appendChild(b);
     return;
   }
@@ -147,19 +182,7 @@ function renderButton() {
   const b = el('button', 'pa-btn');
   b.type = 'button';
   b.textContent = 'SIGN IN';
-  b.addEventListener('click', async () => {
-    b.classList.add('pa-loading');
-    let res = { ok: false, reason: 'error' };
-    try { res = await boot(); } catch (err) { console.warn('[pa] boot failed', err); }
-    b.classList.remove('pa-loading');
-    openModal();
-    if (!res.ok) {
-      showMsg(res.reason === 'unconfigured'
-        ? UNCONFIGURED_MSG
-        : 'Could not reach the sign-in service. Check your connection.', 'err');
-      disableForm();
-    }
-  });
+  b.addEventListener('click', () => openAccount(b));
   slot.appendChild(b);
 }
 
@@ -385,16 +408,8 @@ function buildSignedIn(body) {
       'Your depot, your runs and your vacation — a couple of minutes, and the app can start counting down.';
   }
 
-  const myrun = el('a', 'pa-ghost');
-  myrun.href = 'home.html';
-  myrun.textContent = 'My run';
-  stack.appendChild(myrun);
-
-  const hours = el('a', 'pa-ghost');
-  hours.href = 'hours.html';
-  hours.textContent = 'Weekly hours';
-  stack.appendChild(hours);
-
+  // My run and Weekly hours are not repeated here: the profile icon at the
+  // top right opens My Run.
   const edit = el('button', 'pa-ghost');
   edit.type = 'button';
   edit.textContent = 'Edit profile';
@@ -665,6 +680,8 @@ function googleMark() {
 // ---- entry ----------------------------------------------------------------
 
 function mount() {
+  // The menu's Account / Sign in item asks for the window with this event.
+  window.addEventListener('pa:open-account', () => openAccount(slot && slot.querySelector('.pa-btn')));
   slot = document.getElementById('pa-slot');
   if (!slot) return;                       // page not wired; do nothing
   renderButton();

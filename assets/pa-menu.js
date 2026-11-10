@@ -26,6 +26,14 @@
   if (page === 'home.html' && /view=swap/.test(location.search)) here = 'home.html?view=swap';
   if (page === 'block-tracker.html' && /view=all/.test(location.search)) here = 'block-tracker.html?view=all';
 
+  // pa-account-ui.js sets <html data-pa-acct="in|out"> once it knows; before
+  // that, go by the "was signed in last visit" flag.
+  function acctLabel() {
+    var s = document.documentElement.dataset.paAcct;
+    if (!s) { try { s = localStorage.getItem('pa_signed_in') === '1' ? 'in' : 'out'; } catch (_) { s = 'out'; } }
+    return s === 'in' ? 'Account' : 'Sign in';
+  }
+
   function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
 
   function build() {
@@ -40,6 +48,11 @@
     SITE.forEach(function (it) {
       html += '<a href="' + esc(it[1]) + '" target="_blank" rel="noopener">' + esc(it[0]) + '<span class="ext" aria-hidden="true">&#8599;</span></a>';
     });
+    // Account / Sign in sits at the bottom, apart from the pages above.
+    html += '<div class="pam-acct"><button type="button" class="pam-acct-btn" data-pam="acct">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">' +
+      '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>' +
+      '<span class="pam-acct-label">' + acctLabel() + '</span></button></div>';
     html += '<div class="pam-foot">Not affiliated with SEPTA.</div></aside>';
     var wrap = document.createElement('div');
     wrap.id = 'pam-root';
@@ -100,7 +113,13 @@
     btn.addEventListener('click', function () { set(true); });
     root.addEventListener('click', function (e) {
       if (e.target.closest('[data-pam="close"]')) set(false);
+      if (e.target.closest('[data-pam="acct"]')) {
+        set(false);
+        window.dispatchEvent(new CustomEvent('pa:open-account'));
+      }
     });
+    var acctLbl = root.querySelector('.pam-acct-label');
+    window.addEventListener('pa:acct', function () { acctLbl.textContent = acctLabel(); });
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape' && document.documentElement.classList.contains('pam-open')) set(false);
     });

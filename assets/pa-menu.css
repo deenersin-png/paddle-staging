@@ -45,7 +45,16 @@
 .pam-drawer a:active { background: #e6ecf6; }
 .pam-drawer a.on { background: #e6ecf6; border-left-color: #c8102e; color: #0b4ea2; font-weight: 600; }
 .pam-drawer a .ext { font-size: 13px; color: #56627a; }
-.pam-foot { margin-top: auto; padding: 14px 16px 22px; font-size: 12px; color: #56627a; }
+.pam-acct { margin-top: auto; border-top: 1px solid #d5dce8; padding: 8px 0 0; }
+.pam-acct-btn {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 14px 16px; min-height: 52px; font: inherit; font-size: 18px; font-weight: 600;
+  color: #0b4ea2; background: none; border: 0; border-left: 4px solid transparent;
+  text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.pam-acct-btn:active { background: #e6ecf6; }
+.pam-acct-btn svg { width: 24px; height: 24px; flex: 0 0 24px; }
+.pam-foot { padding: 6px 16px 22px; font-size: 12px; color: #56627a; }
 
 body.pam-lock { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) { .pam-drawer, .pam-scrim { transition: none; } }
