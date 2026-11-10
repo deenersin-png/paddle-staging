@@ -165,7 +165,12 @@ body.has-bar #content{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
 .at-due{font-variant-numeric:tabular-nums;color:#6a3fc1}
 .at-due.late{color:#c8102e}
 .at-arrow{color:var(--mid)}
-/* All Trips: finished trips stay, faded. */
+/* Run number + day: one button that opens the run's paddle. */
+.at-runbtn{display:inline-flex;align-items:baseline;gap:6px;padding:3px 8px;border:1px solid var(--line3);border-radius:4px;text-decoration:none;white-space:nowrap;flex-shrink:0;cursor:pointer}
+.at-runbtn:hover{border-color:var(--mid)}
+.at-runbtn.nolink{cursor:default}
+.at-runbtn .prc-day{font-size:10px}
+/* Trip Sheets: finished trips stay, faded. */
 .at-list .prc.at-done{opacity:.45;filter:grayscale(1)}
 .at-loc{display:flex;align-items:center;gap:8px;padding:6px 12px;border-top:1px solid var(--line);background:var(--ink3);font-size:13px;font-weight:600;color:var(--bright);min-width:0}
 .at-loc .at-loc-txt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -2252,7 +2257,7 @@ function renderMain(merged, route) {
   if (live === 0 && atTerm === 0 && schedOnly === 0) {
     document.getElementById('busCount').textContent = 'No active buses';
     lastCards = []; lastRouteCards = [];
-    lastEmptyHtml = '<div class="msg"><div class="icon">🚌</div><div class="main">No buses on Route ' + esc(route) + '</div><div class="sub">Route may not be running right now<br>All Trips lists what\'s still to come today</div></div>';
+    lastEmptyHtml = '<div class="msg"><div class="icon">🚌</div><div class="main">No buses on Route ' + esc(route) + '</div><div class="sub">Route may not be running right now<br>Trip Sheets (menu) lists the whole day</div></div>';
     drawView(false);
     return;
   }
@@ -2467,6 +2472,7 @@ function currentDir() {
 // A bottom-bar tap (or a swipe): switch view; a direction pick is remembered.
 function selectView(mode, dir) {
   view.mode = mode; saveMode(mode);
+  view.run = '';  // a bottom-bar tap also leaves a run's trip sheet
   if (mode === 'dir' && dir) {
     view.dir = dir; view.follow = false;
     try { localStorage.setItem(dirKey(state.route), dir); } catch(e) {}
@@ -2493,6 +2499,8 @@ function drawView(anim) {
   let html;
   if (view.mode === 'all') html = '<div class="view-wrap">' + buildAllTripsPage(anim) + '</div>';
   else if (view.mode === 'detours') html = '<div class="view-wrap">' + buildDetoursPage(anim) + '</div>';
+  // "Run 452 only" on a live page: that run's trip sheet until "Back to live".
+  else if (view.run) html = '<div class="view-wrap">' + buildAllTripsPage(anim) + '</div>';
   else if (!lastCards.length && lastEmptyHtml) html = '<div class="view-wrap">' + lastEmptyHtml + '</div>';
   else {
     const dir = currentDir();
@@ -2502,7 +2510,7 @@ function drawView(anim) {
   manageLayoverTimers();
   // All Trips opens at the first trip not finished yet (on entry and on a
   // direction pick, not on every refresh).
-  if (view.mode === 'all' && view.scrollNow && sched.loaded) {
+  if ((view.mode === 'all' || view.run) && view.scrollNow && sched.loaded) {
     view.scrollNow = false;
     const el = document.querySelector('.at-list .prc:not(.at-done)');
     // Below the sticky top bar + header.
@@ -2739,11 +2747,18 @@ function allTripsCardHtml(it, anim, idx) {
   // Each run's routes in paddle order, a two-route piece ("21-42") named by
   // the route it actually drives.
   const routes = runs.length ? [...new Set(runs.flatMap(r => r.pieces.flatMap(pieceRoutes)))].join(' | ') || state.route : state.route;
-  const numOf = r => r.link ? '<a class="prc-num" href="' + esc(r.link) + '" target="_blank" rel="noopener">' + esc(r.runno) + '</a>'
-                            : '<div class="prc-num">' + esc(r.runno) + '</div>';
-  const nums = runs.length ? runs.map(numOf).join('<span class="at-relief">→</span>') : '<div class="prc-num">—</div>';
-  const paddles = runs.filter(r => r.link).map(r => '<a class="prc-paddle" href="' + esc(r.link) + '" target="_blank" rel="noopener">' +
-    (two ? esc(r.runno) : 'PADDLE') + '</a>').join('');
+  // Run number + day as ONE button opening that run's paddle ("452 WEEKDAY");
+  // a relief shows "203" → "424 WEEKDAY", each opening its own paddle.
+  const runBtn = (r, withDay) => {
+    const inner = '<span class="prc-num">' + esc(r ? r.runno : '—') + '</span>' + (withDay ? '<span class="prc-day">' + esc(day) + '</span>' : '');
+    return r && r.link ? '<a class="at-runbtn" href="' + esc(r.link) + '" target="_blank" rel="noopener">' + inner + '</a>'
+                       : '<span class="at-runbtn nolink">' + inner + '</span>';
+  };
+  const nums = runs.length ? runs.map((r, i) => runBtn(r, i === runs.length - 1)).join('<span class="at-relief">→</span>') : runBtn(null, true);
+  // Where PADDLE was: this run's trips only, and the way back.
+  let runf = '';
+  if (view.run) runf = '<button type="button" class="at-runf on" data-run-filter="">' + (ALL_TRIPS_PAGE ? 'Show all runs' : 'Back to live') + '</button>';
+  else if (runs.length) runf = '<button type="button" class="at-runf" data-run-filter="' + esc(runKey(runs[0])) + '">Run ' + esc(runs[0].runno) + ' only</button>';
   // The trip's number in its direction for the day ("98-WB"), before the run
   // number; on the live pages coloured by how the bus sits between its leader
   // and follower (it.tagCls). A bus on layover shows LAYOVER here instead.
@@ -2751,8 +2766,7 @@ function allTripsCardHtml(it, anim, idx) {
   const nth = it.layover ? '<span class="at-nth lay">LAYOVER</span>' : (it.nth || it.liveView) ? numTag(it.nth, it.tagCls) : '';
   const tag = it.inService ? '<span class="at-tag now">IN SERVICE</span>' : '';
   let h = '<div class="prc day-' + day + (it.inService ? ' at-now' : '') + (it.done ? ' at-done' : '') + (anim ? ' fade-in' : '') + '" style="animation-delay:' + (idx * 0.015) + 's">';
-  h += '<div class="prc-head"><div class="prc-head-top">' + nth + nums + '<div class="prc-day">' + esc(day) + '</div>' +
-       '<div class="prc-actions">' + (two && paddles ? '<span class="at-paddle-lbl">PADDLE</span>' : '') + paddles + '</div></div>';
+  h += '<div class="prc-head"><div class="prc-head-top">' + nth + nums + '<div class="prc-actions">' + runf + '</div></div>';
   h += '<div class="prc-head-bottom"><span class="at-time">' + tag + fmtClock(it.s) + ' – ' + fmtClock(it.e) + '</span>' +
        '<div class="prc-routes">' + esc(routes) + '</div></div></div>';
   // Third line: where the bus is now — only while it is live.
@@ -2772,17 +2786,9 @@ function allTripsCardHtml(it, anim, idx) {
   h += vid ? '<span class="at-bus">' + ICONS.bus + ' ' + esc(vid) + '</span>'
            : '<span class="at-bus unknown">' + ICONS.bus + ' Bus# pending</span>';
   h += '<span class="at-blk">Blk ' + esc(it.blk) + '</span>';
-  // Live pages: no run filter; a bus on layover counts down to its next
-  // scheduled departure → that trip's number.
-  if (it.liveView) {
-    if (it.layover) h += '<span class="at-next"><span class="at-due" data-due-ms="' + serviceMinToMs(it.s) + '">' +
-      dueText(serviceMinToMs(it.s)) + '</span><span class="at-arrow">→</span>' + numTag(it.nth, 'next') + '</span>';
-    return h + '</div></div>';
-  }
-  // Show only this run's trips, or back to every run.
-  if (view.run) h += '<button type="button" class="at-runf on" data-run-filter="">Show all runs</button>';
-  else if (runs.length) h += '<button type="button" class="at-runf" data-run-filter="' + esc(runKey(runs[0])) + '">' +
-    'Run ' + esc(runs[0].runno) + ' only</button>';
+  // A bus on layover counts down to its next scheduled departure → that trip's number.
+  if (it.layover) h += '<span class="at-next"><span class="at-due" data-due-ms="' + serviceMinToMs(it.s) + '">' +
+    dueText(serviceMinToMs(it.s)) + '</span><span class="at-arrow">→</span>' + numTag(it.nth, 'next') + '</span>';
   return h + '</div></div>';
 }
 
@@ -2903,9 +2909,9 @@ function buildAllTripsPage(anim) {
   const runNo = view.run ? view.run.split('|')[1] : '';
   if (view.run) items = items.filter(it => runsOnBlockDuring(it.blk, it.s, it.e).some(r => runKey(r) === view.run));
   if (view.atDir && !routeDirs().includes(view.atDir)) view.atDir = '';
-  if (view.atDir) items = items.filter(it => it.dir === view.atDir);
+  if (view.atDir && ALL_TRIPS_PAGE) items = items.filter(it => it.dir === view.atDir);
   const buses = new Set(items.map(it => it.blk)).size;
-  let h = '<div class="section-label' + (anim ? ' fade-in' : '') + '">All Trips · ' +
+  let h = '<div class="section-label' + (anim ? ' fade-in' : '') + '">Trip Sheets · ' +
     (view.atDir ? esc(dirShort(view.atDir)) + ' · ' : '') +
     (view.run ? 'Run ' + esc(runNo) + ' · ' + items.length + (items.length === 1 ? ' trip' : ' trips')
               : buses + (buses === 1 ? ' bus' : ' buses')) + '</div>';
@@ -3318,9 +3324,15 @@ function manageLayoverTimers() {
   }, { passive: true });
 
   content.addEventListener('click', e => {
-    // All Trips: one run's cards only / every run again.
+    // Run N only: that run's trip sheet / back to the list before.
     const rf = e.target.closest('[data-run-filter]');
-    if (rf) { view.run = rf.dataset.runFilter || ''; drawView(true); window.scrollTo(0, 0); return; }
+    if (rf) {
+      const key = rf.dataset.runFilter || '';
+      if (key) { view.liveScroll = window.scrollY; view.run = key; view.scrollNow = true; lastHTML = ''; drawView(true); if (!view.scrollNow) return; window.scrollTo(0, 0); return; }
+      // Back to live / Show all runs: where the list was before.
+      view.run = ''; lastHTML = ''; drawView(true); window.scrollTo(0, view.liveScroll || 0); view.liveScroll = 0;
+      return;
+    }
     // Leaders expand/collapse — only the right-side "Leaders" control toggles
     // the panel; run chips (also on this line) fall through to open their PDF.
     const toggle = e.target.closest('[data-lead-toggle]');

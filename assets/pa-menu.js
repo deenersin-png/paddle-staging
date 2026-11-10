@@ -8,7 +8,7 @@
 
   // Pages inside the app, then the Google Site menu.
   var APP = [
-    ['All Trips',   'block-tracker.html?view=all'],
+    ['Trip Sheets', 'block-tracker.html?view=all'],
     ['Relief Runs', 'holdowner-fall-2026.html'],
     ['Detours',    'detours.html'],
     ['About',      'about.html']
