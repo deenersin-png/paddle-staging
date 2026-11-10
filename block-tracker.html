@@ -3332,7 +3332,8 @@ async function onBusSearch() {
       // Not running now: its last bus (5108 last stamped Friday, 2012 a week
       // back); with none, what today's pick says about it.
       const seen = !f.block && newestSighting(num, rows, 'block');
-      if (seen) f.blockSeen = lastSeenParts(seen, 'block');
+      if (seen && blockRanTodayUnseen(num, seen)) f.blockSeen = blockUnrecordedParts(num, seen);
+      else if (seen) f.blockSeen = lastSeenParts(seen, 'block');
       else if (!f.block) f.blockPick = blockPickParts(num);
     }
   } catch(e) {
@@ -3385,6 +3386,29 @@ function newestSighting(num, rows, as) {
         cands.push({ blockId: blk, routeId, vehicleId: p.vehicleId, lastSeenAtMs: p.ts });
   return cands.filter(r => at(r) > Date.now() - SEEN_DAYS * 86400000)
     .sort((a, c) => at(c) - at(a))[0] || null;
+}
+
+// Did this block go out today (per today's pick) with its newest sighting from
+// an earlier day? The poller misses whole days of a block (it runs a few
+// times a day, not every 10 min), so that sighting's bus is not today's.
+function blockRanTodayUnseen(num, seen) {
+  if ((seen.lastSeenAtMs || seen.endedAtMs || 0) >= serviceMidnightMs()) return false;
+  const rec = paddle.byBlock.get(num);
+  if (!rec || !rec.poTime) return false;
+  const po = clockToMin(rec.poTime);
+  return blockPulledIn(num) || (po != null && serviceNowMin() >= po);
+}
+
+// Its lines then: that it ran today, that today's bus wasn't recorded, the
+// last bus that was (with when), and today's runs.
+function blockUnrecordedParts(num, seen) {
+  const rec = paddle.byBlock.get(num);
+  const last = lastSeenParts(seen, 'block').filter(p => typeof p === 'string');
+  const parts = ['Ran today' + (rec.poTime ? ': out ' + rec.poTime + (rec.piTime ? ' – in ' + rec.piTime : '') : ''),
+    'Today\'s bus wasn\'t recorded',
+    last[0].replace('Last seen', 'Last recorded') + ': ' + last[1].replace(/^on /, '')];
+  if (rec.runs.length) parts.push({ runs: rec.runs });
+  return parts;
 }
 
 // A block in today's pick that no bus has been seen on lately: what the
