@@ -2710,10 +2710,13 @@ function allTripsCardHtml(it, anim, idx) {
   let runf = '';
   if (view.run) runf = '<button type="button" class="at-runf on" data-run-filter="">' + (ALL_TRIPS_PAGE ? 'Show all runs' : 'Back to live') + '</button>';
   else if (runs.length) runf = '<button type="button" class="at-runf" data-run-filter="' + esc(runKey(runs[0])) + '">Run ' + esc(runs[0].runno) + ' only</button>';
-  // The trip's number in its direction for the day ("98"), before the run
+  // The trip's number in its direction for the day ("#98"), before the run
   // number; on the live pages coloured by how the bus sits between its leader
   // and follower (it.tagCls). A bus on layover shows LAYOVER here instead.
-  const numTag = (n, cls) => '<span class="at-nth' + (cls ? ' ' + cls : '') + '">' + (n ? n : '?') + '</span>';
+  // "#39"; with the direction ("#39-EB") where both directions share the
+  // list: Trip Sheets' Both view and a "Run 452 only" sheet.
+  const withDir = view.run || (ALL_TRIPS_PAGE && !view.atDir);
+  const numTag = (n, cls) => '<span class="at-nth' + (cls ? ' ' + cls : '') + '">#' + (n || '?') + (withDir ? '-' + esc(dirShort(it.dir)) : '') + '</span>';
   const nth = it.layover ? '<span class="at-nth lay">LAYOVER</span>' : (it.nth || it.liveView) ? numTag(it.nth, it.tagCls) : '';
   const tag = it.inService ? '<span class="at-tag now">IN SERVICE</span>' : '';
   let h = '<div class="prc day-' + day + (it.inService ? ' at-now' : '') + (it.done ? ' at-done' : '') + (anim ? ' fade-in' : '') + '" style="animation-delay:' + (idx * 0.015) + 's">';
@@ -2933,7 +2936,7 @@ function buildLiveDirPage(dir, anim) {
 
 // ── LIVE MAP ─────────────────────────────────────────────────
 // Above the cards on the EB / WB pages: every bus on the page as a small bus
-// icon "11-9652" (trip number - block) in its tag's colour. One map element
+// icon "#11-9652" (trip number - block) in its tag's colour. One map element
 // for the whole visit (assets/pa-live-map.js), moved into each redraw's slot
 // so zoom and position survive the refreshes. Hide / Show is remembered.
 let lastLiveItems = [];

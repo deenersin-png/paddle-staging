@@ -1,6 +1,6 @@
 // ==========================================================================
 // Paddle App — live direction map for the Block Tracker's EB / WB pages.
-// Every bus on the page as a small bus icon, labelled "11-9652" (its trip
+// Every bus on the page as a small bus icon, labelled "#11-9652" (its trip
 // number in that direction, then its block), in the same colour as its tag
 // on the cards: green / red / yellow by leader-follower order, purple on
 // layover, gray for a bus that should be out but isn't on the live feed.
@@ -63,7 +63,7 @@ function markerOf(it, line, shapes) {
     ll = pointAt(line, f * line.len); est = true;
   }
   if (!ll) return null;
-  return { ll, est, label: (it.nth || '?') + '-' + it.blk, cls: it.cls || 'green', title: it.title || '' };
+  return { ll, est, label: '#' + (it.nth || '?') + '-' + it.blk, cls: it.cls || 'green', title: it.title || '' };
 }
 
 export function createLiveMap() {
