@@ -1,0 +1,54 @@
+/* Paddle App - Leader / Follower view (assets/pa-lf-view.js).
+   Uses the app's palette tokens (amber / green / blue / red / violet, ink,
+   line, dim); assets/pa-theme.css sets their values. Plain and minimal. */
+.lf{font-family:var(--sans,'IBM Plex Sans Condensed',sans-serif);color:var(--text);display:flex;flex-direction:column;gap:8px}
+.lf-mock{font-family:var(--mono,'IBM Plex Mono',monospace);font-size:11px;font-weight:600;letter-spacing:.04em;color:var(--violet);border:1px dashed var(--violet);border-radius:4px;padding:6px 8px;background:var(--violet-dim)}
+.lf-info{font-family:var(--mono,'IBM Plex Mono',monospace);font-size:10px;letter-spacing:.04em;color:var(--dim)}
+.lf-summary{font-size:16px;font-weight:600;line-height:1.35;color:var(--bright);padding:10px 12px;border:1px solid var(--line2);border-radius:4px;background:var(--ink2)}
+.lf-summary.lf-sum-bunch{border-color:var(--red);box-shadow:inset 3px 0 0 var(--red)}
+.lf-warn{font-family:var(--mono,'IBM Plex Mono',monospace);font-size:12px;line-height:1.5;color:var(--red);border:1px solid var(--red);background:var(--red-dim);border-radius:4px;padding:8px 10px}
+.lf-cards{display:flex;flex-direction:column;gap:6px}
+.lf-card{border:1px solid var(--line2);border-radius:4px;background:var(--ink2);padding:10px 12px}
+.lf-card.lf-you{border-color:var(--amber);box-shadow:inset 3px 0 0 var(--amber)}
+.lf-card.lf-bunching{border-color:var(--red)}
+.lf-card.lf-empty{opacity:.75}
+.lf-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.lf-role{font-family:var(--mono,'IBM Plex Mono',monospace);font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--mid);display:flex;align-items:center;gap:6px}
+.lf-role i{font-style:normal;font-weight:500;color:var(--dim);letter-spacing:.06em}
+.lf-dot{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--bright);color:var(--ink2);font-size:10px;letter-spacing:0}
+.lf-you .lf-dot{background:var(--amber)}
+.lf-badge{font-family:var(--mono,'IBM Plex Mono',monospace);font-size:12px;font-weight:600;letter-spacing:.04em;padding:3px 8px;border-radius:3px;border:1px solid currentColor;white-space:nowrap}
+.lf-badge.sm{font-size:10px;padding:1px 5px}
+.k-ontime{color:var(--green);background:var(--green-dim)}
+.k-late{color:var(--red);background:var(--red-dim)}
+.k-early{color:var(--violet);background:var(--violet-dim)}
+.k-none{color:var(--dim);background:transparent;border-style:dashed}
+.lf-id{font-family:var(--mono,'IBM Plex Mono',monospace);font-size:13px;margin-top:6px;color:var(--text)}
+.lf-id b{color:var(--bright)}
+.lf-loc{font-size:14px;margin-top:3px;color:var(--mid)}
+.lf-age{color:var(--dim)}
+.lf-gap{font-family:var(--mono,'IBM Plex Mono',monospace);font-size:12px;margin-top:6px;color:var(--text);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.lf-bunch{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#fff;background:var(--red);border-radius:3px;padding:2px 6px}
+.lf-mapwrap{position:relative}
+.lf-map{height:240px;border:1px solid var(--line2);border-radius:4px;overflow:hidden;background:var(--ink3)}
+.lf-map-note{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:var(--mono,'IBM Plex Mono',monospace);font-size:11px;color:var(--dim)}
+.lf-map .leaflet-tile-pane{filter:grayscale(1) contrast(.85) brightness(1.06)}
+.lf-route{stroke:var(--amber)}
+.lf-mk-wrap{background:none;border:0}
+.lf-mk{position:relative;width:30px;height:30px}
+.lf-mk b{position:absolute;left:5px;top:5px;width:20px;height:20px;border-radius:50%;background:var(--bright);color:#fff;font:600 11px/20px var(--mono,'IBM Plex Mono',monospace);text-align:center;border:2px solid currentColor;box-sizing:border-box}
+.lf-mk-you b{background:var(--amber)}
+.lf-mk.k-ontime,.lf-mk.k-late,.lf-mk.k-early,.lf-mk.k-none{background:none}
+.lf-mk-arrow{position:absolute;left:0;top:0;width:30px;height:30px;font-size:13px;line-height:30px;text-align:right;color:var(--bright);font-weight:800}
+.lf-foot{font-family:var(--mono,'IBM Plex Mono',monospace);font-size:10px;letter-spacing:.03em;color:var(--dim);line-height:1.6}
+.lf-foot b{color:var(--mid)}
+.lf-others{font-family:var(--mono,'IBM Plex Mono',monospace);font-size:11px;color:var(--mid)}
+.lf-others summary{cursor:pointer;color:var(--dim)}
+.lf-others ul{margin:6px 0 0;padding-left:16px;line-height:1.9}
+/* Live data older than 60 s: gray it out. */
+.lf.lf-stale .lf-cards,.lf.lf-stale .lf-summary,.lf.lf-stale .lf-mapwrap{filter:grayscale(1);opacity:.55}
+.lf.lf-stale .lf-foot b{color:var(--red)}
+/* My Run (home.html): the button that opens the view, and the way back. */
+.lf-open{display:block;width:100%;text-align:left;font-family:var(--mono,'IBM Plex Mono',monospace);font-size:12px;font-weight:600;letter-spacing:.04em;padding:9px 12px;margin:0 0 8px;border:1px solid var(--amber);border-radius:4px;background:var(--amber-dim);color:var(--amber);cursor:pointer}
+.lf-back{font-family:var(--mono,'IBM Plex Mono',monospace);font-size:12px;font-weight:600;letter-spacing:.04em;padding:6px 0;margin:0 0 8px;border:0;background:none;color:var(--amber);cursor:pointer}
+.prc-stack.lf-stack > .prc-top{border-radius:6px;border-bottom:1px solid var(--line2)}

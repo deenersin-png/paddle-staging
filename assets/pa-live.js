@@ -146,6 +146,34 @@ export async function fetchRoutes(routes) {
   return out;
 }
 
+/**
+ * Like fetchRoutes, but tells "no buses" apart from "SEPTA did not answer":
+ * { buses, ok }. ok is false only when no endpoint answered for any of the
+ * routes' names - an outage, which the Leader / Follower view reports as
+ * such instead of showing every bus as "no live data". Each bus carries the
+ * route it was fetched under (route_id) when the feed leaves it out.
+ */
+export async function fetchRoutesChecked(routes) {
+  let answered = false;
+  const lists = await Promise.all([...new Set(routes)].map(async route => {
+    for (const name of aliasesOf(route)) {
+      try {
+        const buses = parseTVData(await request(TV_ENDPOINTS, name));
+        answered = true;
+        if (buses.length) return buses.map(b => ({ ...b, route_id: b.route_id || route }));
+      } catch (_) { /* try the next alias */ }
+    }
+    return [];
+  }));
+  const seen = new Set(), out = [];
+  for (const b of lists.flat()) {
+    const key = String(b.VehicleID || b.label || '') + '|' + String(b.BlockID || '');
+    if (seen.has(key)) continue;
+    seen.add(key); out.push(b);
+  }
+  return { buses: out, ok: answered };
+}
+
 function normalize(b) {
   return {
     vehicleId: String(b.VehicleID || b.label || ''),

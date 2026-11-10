@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Leader / Follower</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap" rel="stylesheet">
+<!--
+  Leader / Follower test page: the same view My Run opens, for ANY route and
+  block, without signing in:
+    leader-follower.html?route=21&block=9105
+    leader-follower.html?route=21&block=9105&lfmock=leader-late
+  The countdown here counts to the block's next SCHEDULED departure and never
+  moves with live data. Mock scenarios: see assets/pa-lf-mock.js.
+-->
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --ink:#0a0b0d; --ink2:#13151a; --ink3:#1d2028;
+  --line:rgba(255,255,255,0.07); --line2:rgba(255,255,255,0.13); --line3:rgba(255,255,255,0.22);
+  --dim:#4a4f5e; --mid:#8a909f; --text:#c8cdd8; --bright:#e8ecf4;
+  --amber:#f5a623; --amber-dim:rgba(245,166,35,0.12);
+  --green:#3dd68c; --green-dim:rgba(61,214,140,0.1);
+  --blue:#4d9fff; --blue-dim:rgba(77,159,255,0.1);
+  --red:#ff6b6b; --red-dim:rgba(255,107,107,0.1);
+  --violet:#a78bfa; --violet-dim:rgba(167,139,250,0.1);
+  --sans:'IBM Plex Sans Condensed',sans-serif; --mono:'IBM Plex Mono',monospace;
+}
+body{background:var(--ink);color:var(--text);font-family:var(--sans);min-height:100vh}
+.wrap{max-width:560px;margin:0 auto;padding:14px 16px 40px}
+.hd{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:12px}
+.hd h1{font-family:var(--mono);font-size:15px;font-weight:600;letter-spacing:.04em;color:var(--bright)}
+.hd a{font-family:var(--mono);font-size:11px;color:var(--amber);text-decoration:none}
+.cd{border:1px solid var(--line2);border-radius:4px;background:var(--ink2);padding:12px;margin-bottom:10px;text-align:center}
+.cd-k{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.cd-line{font-family:var(--mono);font-size:12px;color:var(--mid);margin-top:4px}
+.cd-digits{font-family:var(--mono);font-size:40px;font-weight:600;color:var(--bright);margin-top:4px;letter-spacing:.02em}
+.cd-note{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:4px}
+form.pick{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;border:1px solid var(--line);border-radius:4px;padding:10px;margin-bottom:12px;background:var(--ink2)}
+form.pick label{display:flex;flex-direction:column;gap:3px;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+form.pick input,form.pick select{font-family:var(--mono);font-size:14px;padding:6px 8px;border:1px solid var(--line2);border-radius:3px;background:var(--ink);color:var(--bright);min-width:0}
+form.pick input{width:90px}
+form.pick label.grow{flex:1 1 100%}
+form.pick select{width:100%;max-width:100%}
+form.pick button{font-family:var(--mono);font-size:12px;font-weight:600;padding:8px 14px;border-radius:3px;border:1px solid var(--amber);background:var(--amber);color:#fff;cursor:pointer}
+.msg{font-family:var(--mono);font-size:12px;color:var(--mid);line-height:1.6}
+</style>
+<link rel="stylesheet" href="assets/pa-lf.css">
+<link rel="stylesheet" href="assets/pa-theme.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="hd"><h1>Leader / Follower</h1><a href="home.html">My Run ›</a></div>
+  <form class="pick" id="pick">
+    <label>Route <input name="route" id="f-route" inputmode="text" autocomplete="off" placeholder="21"></label>
+    <label>Block <input name="block" id="f-block" inputmode="numeric" autocomplete="off" placeholder="9105"></label>
+    <label class="grow">Test data <select name="lfmock" id="f-mock"><option value="">Live (real)</option></select></label>
+    <button type="submit">Show</button>
+  </form>
+  <div class="cd" id="cd" hidden>
+    <div class="cd-k" id="cd-k">Next scheduled departure</div>
+    <div class="cd-line" id="cd-line"></div>
+    <div class="cd-digits" id="cd-digits">—</div>
+    <div class="cd-note">Scheduled time only. Does not move with your leader or follower.</div>
+  </div>
+  <div id="lf"></div>
+</div>
+<script type="module">
+import * as S from './assets/pa-schedule.js';
+import * as L from './assets/pa-live.js';
+import { mountLF } from './assets/pa-lf-view.js';
+import { mockFromUrl, SCENARIOS } from './assets/pa-lf-feed.js';
+
+const $ = id => document.getElementById(id);
+const qs = new URLSearchParams(location.search);
+const route = (qs.get('route') || '').trim(), block = (qs.get('block') || '').trim();
+const mock = mockFromUrl();
+for (const [k, v] of Object.entries(SCENARIOS)) $('f-mock').add(new Option(k + ' — ' + v, k));
+$('f-route').value = route; $('f-block').value = block; $('f-mock').value = mock || '';
+$('pick').addEventListener('submit', e => {
+  e.preventDefault();
+  const p = new URLSearchParams();
+  p.set('route', $('f-route').value.trim()); p.set('block', $('f-block').value.trim());
+  if ($('f-mock').value) p.set('lfmock', $('f-mock').value);
+  location.search = p.toString();
+});
+
+// The block's trips for today's day type, loaded once. Before 4 AM the
+// service day is still yesterday's on GTFS's clock (24:xx trips).
+let dayP = null;
+function day() {
+  if (!dayP) dayP = (async () => {
+    const overrides = await S.loadCalendarOverrides().catch(() => ({}));
+    const early = new Date().getHours() < S.SERVICE_DAY_START_HR;
+    const iso = early ? S.addDays(S.todayIso(), -1) : S.todayIso();
+    const dayType = S.dayTypeFor(iso, overrides);
+    const trips = await S.routeTrips(S.gtfsRoutesOfLabel(route), dayType);
+    return { iso, dayType, trips, mine: trips.filter(t => t.block === block) };
+  })();
+  dayP.catch(() => { dayP = null; });
+  return dayP;
+}
+const nowMinFor = iso => S.nowMinutes() + S.daysBetween(iso, S.todayIso()) * 1440;
+
+async function getContext() {
+  const d = await day();
+  if (!d.mine.length) return { message: 'Block ' + block + ' has no ' + d.dayType + ' trips on route ' + route + '.' };
+  const nowMin = nowMinFor(d.iso);
+  const myTrip = S.relevantTrip(d.mine, nowMin);
+  return { block, routes: S.routesOfLabel(route), trips: d.trips, myTrip, pullIns: null, knownBus: L.knownBus };
+}
+
+// Countdown: the block's next scheduled departure. Schedule only.
+async function startCountdown() {
+  let d;
+  try { d = await day(); } catch (_) { return; }
+  if (!d.mine.length) return;
+  $('cd').hidden = false;
+  const tick = () => {
+    const nowMin = nowMinFor(d.iso);
+    const next = S.nextDeparture(d.mine, nowMin);
+    if (!next) { $('cd-k').textContent = 'Done for the day'; $('cd-line').textContent = ''; $('cd-digits').textContent = '—'; return; }
+    $('cd-k').textContent = 'Next scheduled departure';
+    $('cd-line').textContent = 'Block ' + block + ' · ' + S.fmtClock(next.s) + ' from ' + next.first;
+    const ms = S.minToMs(d.iso, next.s) - Date.now();
+    const s = Math.max(0, Math.floor(ms / 1000));
+    const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), sec = s % 60;
+    $('cd-digits').textContent = (h ? h + ':' : '') + String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
+  };
+  tick(); setInterval(tick, 1000);
+}
+
+function start() {
+  startCountdown();
+  mountLF($('lf'), { getContext, mock });
+}
+
+if (!route || !block) {
+  $('lf').innerHTML = '<div class="msg">Enter a route and block (e.g. 21 and 9105). Pick a test-data scenario to try the view without real buses.</div>';
+} else start();
+</script>
+</body>
+</html>

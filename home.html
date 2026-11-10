@@ -186,6 +186,7 @@ h2.k{margin-bottom:10px}
 .prc-cur-sep{margin:0 6px;color:var(--dim)}
 </style>
 <link rel="stylesheet" href="assets/pa-scorecard.css">
+<link rel="stylesheet" href="assets/pa-lf.css">
 <link rel="stylesheet" href="assets/pa-theme.css">
 <link rel="stylesheet" href="assets/pa-menu.css">
 <script src="assets/pa-menu.js" defer></script>
@@ -286,6 +287,8 @@ import { computeState, phaseLabel } from './assets/pa-countdown.js';
 import * as L from './assets/pa-live.js';
 import * as C from './assets/pa-live-cards.js';
 import * as RC from './assets/pa-run-card.js';
+import { mountLF } from './assets/pa-lf-view.js';
+import { mockFromUrl } from './assets/pa-lf-feed.js';
 import { loadProfile, loadProfileSafe, ensureUser } from './assets/pa-store.js';
 import * as N from './assets/pa-notify.js';
 import * as E from './assets/pa-edit-sheet.js';
@@ -299,7 +302,9 @@ import { initFirebase } from './assets/pa-firebase.js';
 const $ = id => document.getElementById(id);
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
 
+const LF_MOCK = mockFromUrl();
 const ctx = {
+  lfOpen: new URLSearchParams(location.search).has('lf') || !!LF_MOCK, lfView: null, lfEl: null,
   user: null, profile: null, overrides: {}, gtfs: {}, view: 'today',
   current: null,                 // { mode:'live'|'next'|'none', date, r, run, st, nowMin }
   trips: new Map(),              // date -> Map(block -> trips[])
@@ -804,6 +809,7 @@ function curLabel(p) {
 
 function renderToday() {
   const c = ctx.current, body = $('today-body');
+  if (ctx.lfView && !(ctx.lfOpen && c && c.mode === 'live')) { ctx.lfView.destroy(); ctx.lfView = ctx.lfEl = null; }
   body.textContent = '';
   $('hd-run').textContent = '';
   if (!c) return;
@@ -846,6 +852,25 @@ function renderToday() {
   top.appendChild(el('div', 'prc-cd-status', statusLine(c)));
   top.appendChild(el('div', 'prc-cd-digits', '—')).id = 'cd-digits';
   const dayType = (run && run.dayType) || r.runDayType || r.dayType;
+  // Leader / Follower view: the same SCHEDULED countdown on top, then only
+  // the three buses (leader, you, follower). Nothing in it feeds the countdown.
+  if (ctx.lfOpen && c.mode === 'live') {
+    $('hd-run').textContent = r.runNo ? '· Run #: ' + r.runNo + ' · ' + RC.dayClass(dayType) : '';
+    const stackEl = el('div', 'prc-stack lf-stack day-' + RC.dayClass(dayType));
+    top.classList.add('prc-top');
+    stackEl.appendChild(top);
+    const back = el('button', 'lf-back', '‹ Back to My Run'); back.type = 'button';
+    back.addEventListener('click', closeLF);
+    if (!ctx.lfView) {
+      ctx.lfEl = el('div');
+      ctx.lfView = mountLF(ctx.lfEl, { getContext: lfContext, mock: LF_MOCK });
+    }
+    body.append(back, stackEl, ctx.lfEl);
+    wakeLock(['layover', 'in_service', 'first_departure'].includes(c.st.phase));
+    $('meta').textContent = metaLine();
+    tick();
+    return;
+  }
   const cardEl = RC.card(RC.modelFromRun(run, { runNo: r.runNo, dayType }));
   $('hd-run').textContent = r.runNo ? '· Run #: ' + r.runNo + ' · ' + RC.dayClass(dayType) : '';
   const hTop = cardEl.querySelector('.prc-head-top');
@@ -865,6 +890,9 @@ function renderToday() {
   // feeds the countdown above.
   const lb = el('div', 'live-sect'); lb.id = 'leader-box';
   lb.appendChild(el('div', 'live-h', 'Your leaders · live · info only'));
+  const lfBtn = el('button', 'lf-open', 'Leader / Follower ›'); lfBtn.type = 'button';
+  lfBtn.addEventListener('click', openLF);
+  lb.appendChild(lfBtn);
   const lcards = el('div', 'leader-cards'); lcards.id = 'leader-cards';
   lcards.innerHTML = ctx.leaderHtml || '<div class="leader-line">Looking up the buses ahead of you…</div>';
   lb.appendChild(lcards);
@@ -910,6 +938,35 @@ function metaLine() {
 }
 
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+// ---- leader / follower view (informational) -------------------------------
+
+function openLF() { ctx.lfOpen = true; renderToday(); window.scrollTo(0, 0); }
+function closeLF() {
+  ctx.lfOpen = false;
+  if (ctx.lfView) { ctx.lfView.destroy(); ctx.lfView = ctx.lfEl = null; }
+  renderToday(); refreshLeader();
+}
+
+// What the Leader / Follower view needs, from the run on now: the piece's
+// block and TransitView routes, every trip on its GTFS routes and my trip on
+// THEIR clock (pa-schedule leaderTrips), and the pick's pull-ins so a
+// finished block is never a leader or follower.
+async function lfContext() {
+  const c = ctx.current;
+  if (!c || c.mode !== 'live' || !c.run) return { message: 'Leader / Follower shows while you are on a run.' };
+  if (c.run.synthetic) return { message: 'This run has no block in the paddle, so there is no leader or follower to show.' };
+  const p = currentPiece(c);
+  if (!p) return { message: 'No piece in progress.' };
+  const mine = (tripsFor(c.date).get(p.block) || []).filter(t => p.startMin == null || (t.s >= p.startMin - 5 && t.s <= p.endMin + 5));
+  if (!mine.length) return { message: 'Loading your block’s trips…' };
+  const { all } = await S.leaderTrips(p, c.run.dayType, c.nowMin);
+  const my = S.relevantTrip(mine, c.nowMin);
+  const shift = (my && my.dayShift) || 0;
+  const myTrip = my && (all.find(t => t.tripId === my.tripId) || { ...my, s: my.s - shift, e: my.e - shift });
+  const table = await allBlockPaddles(c).catch(() => null);
+  return { block: p.block, routes: p.routes, trips: all, myTrip, pullIns: S.pullInMap(table), knownBus: L.knownBus };
+}
 
 // ---- leader (informational) ----------------------------------------------
 
