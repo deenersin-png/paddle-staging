@@ -1,0 +1,69 @@
+/* Paddle App scorecards: block-tracker live pages + Trip Sheets, and My Run's
+   leader cards (home.html). Moved out of block-tracker.html so both match. */
+/* SCORECARDS (Live pages, Trip Sheets, My Run leaders) — the Paddle App's run scorecard (assets/pa-run-card.css), with
+   that page's tokens set on the list only so they can't touch this page's. */
+.at-list{--ink:#0a0b0d;--ink2:#13151a;--ink3:#1d2028;--line:rgba(255,255,255,0.07);--line2:rgba(255,255,255,0.13);--line3:rgba(255,255,255,0.22);
+  --dim:#4a4f5e;--mid:#8a909f;--text:#c8cdd8;--bright:#e8ecf4;--amber:#f5a623;--green:#3dd68c;--green-dim:rgba(61,214,140,0.1);--blue:#4d9fff;--violet:#a78bfa;
+  --sans:'IBM Plex Sans Condensed','Inter',sans-serif;--mono:'IBM Plex Mono',ui-monospace,monospace;padding:12px 16px 20px}
+.at-list .prc{margin-bottom:10px}
+.at-list .prc.at-now{border-color:var(--line3)}
+.at-list .prc-head{border-bottom:none}
+.at-list .prc-head-bottom{justify-content:space-between;gap:10px}
+.at-list .prc-actions{gap:5px}
+.at-relief{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--mid);margin:0 -2px}
+.at-paddle-lbl{font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:.06em;color:var(--dim)}
+.at-time{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--mid);white-space:nowrap;font-variant-numeric:tabular-nums}
+.at-time .at-tag{font-size:10px;font-weight:700;letter-spacing:.06em;padding:1px 5px;border-radius:3px;margin-right:6px;background:var(--line);color:var(--mid)}
+.at-time .at-tag.now{background:rgba(61,214,140,.14);color:var(--green)}
+.at-time .at-tag.lay{background:rgba(245,166,35,.14);color:var(--amber)}
+/* "98-WB": the trip's number for the day, drawn like the PADDLE button.
+   Live pages colour it: green in order, red passed by its follower, yellow
+   passed its leader, gray not online, purple LAYOVER. */
+.at-nth{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.06em;background:var(--blue);border:1px solid var(--blue);color:#fff;padding:4px 10px;border-radius:4px;white-space:nowrap;flex-shrink:0}
+.at-nth.green{background:#1f8a4c;border-color:#1f8a4c}
+.at-nth.red{background:#c8102e;border-color:#c8102e}
+.at-nth.yellow{background:#f2b705;border-color:#f2b705;color:#1a1300}
+.at-nth.gray{background:#8a909f;border-color:#8a909f}
+.at-nth.lay{background:#6a3fc1;border-color:#6a3fc1}
+.at-next{margin-left:auto;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex-shrink:0;font-family:var(--mono);font-size:13px;font-weight:700}
+.at-due{font-variant-numeric:tabular-nums;color:#6a3fc1}
+.at-due.late{color:#c8102e}
+.at-arrow{color:var(--mid)}
+/* Arrows drawn like the layover anchor: same blue, same weight. */
+.at-ico{color:#1565c0;font-weight:800;font-size:15px;line-height:1}
+/* Run number + day: one button that opens the run's paddle. */
+.at-runbtn{display:inline-flex;align-items:baseline;gap:6px;padding:3px 8px;border:1px solid var(--line3);border-radius:4px;text-decoration:none;white-space:nowrap;flex-shrink:0;cursor:pointer}
+.at-runbtn:hover{border-color:var(--mid)}
+.at-runbtn.nolink{cursor:default}
+.at-runbtn .prc-day{font-size:10px}
+/* Ghost bus number: hover / tap for when it was last seen. */
+.at-bus.has-tip{cursor:help;text-decoration:underline dotted;text-underline-offset:3px}
+.bus-tip{position:fixed;z-index:50;padding:9px 11px;border-radius:6px;background:#1b2333;color:#fff;font-size:12.5px;line-height:1.45;box-shadow:0 6px 20px rgba(0,0,0,.25);pointer-events:none}
+/* Trip Sheets: finished trips stay, faded. */
+.at-list .prc.at-done{opacity:.45;filter:grayscale(1)}
+.at-loc{display:flex;align-items:center;gap:8px;padding:6px 12px;border-top:1px solid var(--line);background:var(--ink3);font-size:13px;font-weight:600;color:var(--bright);min-width:0}
+.at-loc .at-loc-txt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.at-loc .late-tag{font-size:11px;padding:2px 6px;flex-shrink:0}
+.at-trips{display:flex;align-items:center;gap:8px;padding:7px 12px;border-top:1px solid var(--line);font-family:var(--mono);font-size:13px;font-weight:700;color:var(--bright);flex-wrap:wrap}
+.at-dir{padding:2px 7px;border-radius:3px;background:rgba(77,159,255,.12);color:var(--blue);white-space:nowrap}
+.at-dir.done{background:var(--line);color:var(--dim)}
+.at-dir.cur{background:rgba(61,214,140,.16);color:var(--green);box-shadow:inset 0 0 0 1px rgba(61,214,140,.45)}
+.at-blk{font-size:11px;font-weight:600;color:var(--mid);white-space:nowrap}
+.at-runf{margin-left:auto;padding:3px 9px;border-radius:3px;border:1px solid var(--line3);background:transparent;color:var(--mid);font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;cursor:pointer}
+.at-runf:hover{color:var(--bright);border-color:var(--mid)}
+.at-runf.on{border-color:var(--amber);color:var(--amber);background:rgba(245,166,35,.1)}
+.at-empty .at-runf{margin:10px auto 0;display:block}
+.at-bus{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:3px;background:var(--line2);color:var(--bright);white-space:nowrap}
+.at-bus svg{width:13px;height:13px;fill:currentColor}
+.at-bus.unknown{background:transparent;border:1px dashed var(--line3);color:var(--mid)}
+.at-empty{text-align:center;padding:40px 16px;color:var(--text-dim)}
+
+/* My Run (home.html): the late / not-tracking tags carry their own colours,
+   as block-tracker's page-wide .late-tag rules aren't there. */
+.pa-sc .late-tag{font-weight:700;border-radius:5px}
+.pa-sc .late-tag.ontime{background:rgba(18,117,58,.12);color:#12753a}
+.pa-sc .late-tag.early,.pa-sc .late-tag.mild{background:rgba(242,183,5,.2);color:#7a5200}
+.pa-sc .late-tag.bad{background:rgba(200,16,46,.1);color:#c8102e}
+.pa-sc .not-tracking-tag{font-size:11px;font-weight:700;padding:2px 6px;border-radius:5px;background:rgba(230,120,0,.14);color:#b35c00;flex-shrink:0}
+.pa-sc{padding:0}
+.pa-sc .at-note{padding:6px 12px;border-top:1px solid var(--line);font-size:12px;color:var(--mid)}

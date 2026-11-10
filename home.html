@@ -185,6 +185,7 @@ h2.k{margin-bottom:10px}
 .prc-cur-k{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
 .prc-cur-sep{margin:0 6px;color:var(--dim)}
 </style>
+<link rel="stylesheet" href="assets/pa-scorecard.css">
 <link rel="stylesheet" href="assets/pa-theme.css">
 <link rel="stylesheet" href="assets/pa-menu.css">
 <script src="assets/pa-menu.js" defer></script>
@@ -973,6 +974,7 @@ async function refreshLeader() {
       await L.learnPairs(f.piece.routes, buses, f.block); // keep its bus number between trips
       const model = C.buildBusModel({ block: f.block, allTrips: f.all, buses, nowMin: f.nowMin, dirNamesByRoute: names, pullIns, pullOuts, knownBus: L.knownBus });
       if (model._doneForDay) continue;                  // pulled in, or out of service
+      f.buses = buses; f.names = names;
       leaders.push({ f, model });
     }
     if (!leaders.length) { show(lineHtml('No bus is scheduled ahead of you for the rest of the run.')); return; }
@@ -988,9 +990,13 @@ async function refreshLeader() {
         : model.VehicleID
         ? 'Bus ' + model.VehicleID + ' isn’t sending live data right now — likely between trips at the terminal.'
         : 'No live data for block ' + f.block + ' — it may not be in service.';
-      const html = C.busCardHtml(model, { rec: recs[i], leadersOpen: ctx.leadersOpen.has(f.block), note });
-      return '<div class="bt leader-card" data-block="' + esc(f.block) + '">' + html + '</div>';
-    }).join(''));
+      // The live tracker's scorecard (block-tracker's EB / WB pages).
+      const html = C.scorecardHtml({ model, block: f.block, allTrips: f.all, buses: f.buses, nowMin: f.nowMin,
+        dirNamesByRoute: f.names, pullIns, rec: recs[i], dayType: c.run.dayType, note })
+        || C.busCardHtml(model, { rec: recs[i], leadersOpen: ctx.leadersOpen.has(f.block), note });
+      return '<div class="leader-card" data-block="' + esc(f.block) + '">' + html + '</div>';
+    }).join('').replace(/^/, '<div class="at-list pa-sc">') + '</div>');
+    C.startDueTicker();
   } catch (_) { show(lineHtml(navigator.onLine ? 'Live lookup failed — no leader data right now.' : 'Leader location unavailable — offline.')); }
   clearInterval(ctx.leaderTimer);
   ctx.leaderTimer = setInterval(() => { if (document.visibilityState === 'visible') refreshLeader(); }, 30000);

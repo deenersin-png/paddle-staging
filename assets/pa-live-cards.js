@@ -310,6 +310,126 @@ export function busCardHtml(bus, { rec = null, leadersOpen = false, note = '' } 
   return h + end;
 }
 
+// ---- scorecards (block-tracker live pages) ---------------------------------------
+// My Run's leader cards in the live pages' scorecard format: the trip's
+// number for the day ("98-WB", coloured by leader / follower), the run
+// number + day as one paddle button, the trip times, where the bus is (➜ next
+// stop, or ⚓ where it is parked with the countdown to its next scheduled
+// departure ➜ that trip's number), then trips left, bus and block. Styles in
+// assets/pa-scorecard.css; wrap the cards in <div class="at-list pa-sc">.
+
+const DAY_LABEL = { weekday: 'Weekday', saturday: 'Saturday', sunday: 'Sunday' };
+
+/** "12:05", "1:02:05", then "DUE +2:13" once the time has passed. */
+export function dueText(dueMs) {
+  const d = Math.round((dueMs - Date.now()) / 1000);
+  const f = x => { const h = Math.floor(x / 3600), m = Math.floor(x % 3600 / 60), sec = x % 60;
+    return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(sec).padStart(2, '0'); };
+  return d > 0 ? f(d) : 'DUE +' + f(-d);
+}
+
+/** Keeps every [data-due-ms] countdown on the page ticking (started once). */
+let dueTicker = null;
+export function startDueTicker() {
+  if (dueTicker) return;
+  dueTicker = setInterval(() => {
+    document.querySelectorAll('[data-due-ms]').forEach(el => {
+      const ms = parseInt(el.dataset.dueMs);
+      el.textContent = dueText(ms);
+      el.classList.toggle('late', ms <= Date.now());
+    });
+  }, 1000);
+}
+
+// A trip's place in its route + direction for the whole day (1, 2, 3 …),
+// over every block, finished trips too, so it never changes.
+function tripNumber(allTrips, t, pullIns) {
+  const seen = new Set();
+  const list = allTrips.filter(x => x.route === t.route && x.dir === t.dir && !isPhantomTrip(x, pullIns))
+    .filter(x => { const k = x.block + '|' + x.s; return !seen.has(k) && seen.add(k); })
+    .sort((a, b) => a.s - b.s || a.e - b.e || String(a.block).localeCompare(String(b.block)));
+  const i = list.findIndex(x => x.block === t.block && x.s === t.s);
+  return i < 0 ? 0 : i + 1;
+}
+
+// The run on the block when trip `t` starts: the latest piece to start by
+// then, else the first. Pick times are clock minutes; owl trips run past 24:00.
+function runForTrip(rec, t) {
+  if (!rec || !rec.runs || !rec.runs.length) return null;
+  const at = m => (m < 4 * 60 && t.s >= 1440 ? m + 1440 : m);
+  let best = null;
+  for (const r of rec.runs) if (isFinite(r.sortMin) && at(r.sortMin) <= t.s + 1 && (!best || at(r.sortMin) > at(best.sortMin))) best = r;
+  return best || rec.runs[0];
+}
+
+export function scorecardHtml({ model, block, allTrips, buses, nowMin, dirNamesByRoute = {}, pullIns = null, rec = null, dayType = 'weekday', note = '' }) {
+  const blk = String(block);
+  const trips = allTrips.filter(t => t.block === blk && !isPhantomTrip(t, pullIns)).sort((a, b) => a.s - b.s);
+  const live = !model._scheduledOnly;
+  let t = live && model.trip != null ? trips.find(x => x.tripId === String(model.trip)) : null;
+  if (!t && model._depMin != null) t = trips.find(x => x.s === model._depMin);
+  if (!t) return '';
+  const dirOf = x => (dirNamesByRoute[x.route] || {})[x.dir] || String(x.dir);
+  const ds = esc(dirShort(dirOf(t)));
+  const waiting = live && t.s > nowMin && (parseInt(model.next_stop_sequence) || 0) <= 1;
+  const ghost = !live && model._schedState === 'in_service_expected';
+  const layover = waiting || (!live && model._schedState === 'layover_expected');
+  const notOut = !live && model._schedState === 'not_started';
+  const inService = live && !waiting;
+  const nth = tripNumber(allTrips, t, pullIns);
+  const numTag = cls => '<span class="at-nth' + (cls ? ' ' + cls : '') + '">' + (nth || '?') + '-' + ds + '</span>';
+
+  // Leader / follower colour: the buses online on this route and direction.
+  let cls = ghost || notOut ? 'gray' : 'green';
+  if (inService) {
+    const byTrip = new Map(allTrips.map(x => [x.tripId, x]));
+    const online = [];
+    for (const b of buses || []) {
+      const bt = b.trip != null ? byTrip.get(String(b.trip)) : null;
+      if (!bt || bt.route !== t.route || bt.dir !== t.dir || bt.s > nowMin) continue;
+      online.push({ blk: String(b.BlockID || ''), n: tripNumber(allTrips, bt, pullIns), pos: parseInt(b.next_stop_sequence) || 0 });
+    }
+    online.sort((a, b) => a.n - b.n);
+    const i = online.findIndex(x => x.blk === blk);
+    if (i >= 0) {
+      const me = online[i], lead = online[i - 1], fol = online[i + 1];
+      cls = fol && fol.pos > me.pos ? 'red' : lead && me.pos > lead.pos ? 'yellow' : 'green';
+    }
+  }
+
+  const day = DAY_LABEL[dayType] || 'Weekday';
+  const run = runForTrip(rec, t);
+  const inner = '<span class="prc-num">' + esc(run ? run.runno : '—') + '</span><span class="prc-day">' + esc(day) + '</span>';
+  const runBtn = run && run.link ? '<a class="at-runbtn" href="' + esc(run.link) + '" target="_blank" rel="noopener">' + inner + '</a>'
+                                 : '<span class="at-runbtn nolink">' + inner + '</span>';
+  let h = '<div class="prc day-' + day + (inService ? ' at-now' : '') + '">';
+  h += '<div class="prc-head"><div class="prc-head-top">' + (layover ? '<span class="at-nth lay">LAYOVER</span>' : numTag(cls)) + runBtn + '</div>';
+  h += '<div class="prc-head-bottom"><span class="at-time">' + (inService ? '<span class="at-tag now">IN SERVICE</span>' : '') +
+       fmtClock(t.s) + ' – ' + fmtClock(t.e) + '</span><div class="prc-routes">' + esc(t.route) + '</div></div></div>';
+  if (inService && model.next_stop_name) {
+    const late = parseInt(model.late) || 0;
+    const lt = late === 0 ? ['ontime', 'On Time'] : late < 0 ? ['early', Math.abs(late) + 'm early'] : [late < LATE_BAD ? 'mild' : 'bad', '+' + late + 'm late'];
+    h += '<div class="at-loc"><span class="at-loc-txt"><span class="at-ico">➜</span> ' + esc(model.next_stop_name) + '</span>' +
+         (model._notTracking ? '<span class="not-tracking-tag">NOT TRACKING</span>' : '<span class="late-tag ' + lt[0] + '">' + lt[1] + '</span>') + '</div>';
+  }
+  if (layover) {
+    // Parked where its last trip ended (any route), else where the next one leaves.
+    const prev = allTrips.filter(x => x.block === blk && x.e <= t.s && !isPhantomTrip(x, pullIns)).sort((a, b) => b.e - a.e)[0];
+    const at = (prev && prev.last) || t.first || 'At terminal';
+    const dueMs = Date.now() + (t.s - nowMin) * 60000;
+    h += '<div class="at-loc"><span class="at-loc-txt">⚓ ' + esc(at) + '</span><span class="at-next"><span class="at-due" data-due-ms="' +
+         Math.round(dueMs) + '">' + dueText(dueMs) + '</span><span class="at-arrow at-ico">➜</span>' + numTag('next') + '</span></div>';
+  }
+  const left = new Set(trips.filter(x => x.route === t.route && x.dir === t.dir && x.s >= t.s).map(x => x.s)).size || 1;
+  const vRaw = String(model.VehicleID || '').trim();
+  const vid = vRaw && vRaw !== '0' ? vRaw : '';
+  h += '<div class="at-trips"><span class="at-dir' + (inService ? ' cur' : '') + '">' + left + ' ' + ds + '</span>' +
+       (vid ? '<span class="at-bus">' + ICONS.bus + ' ' + esc(vid) + '</span>' : '<span class="at-bus unknown">' + ICONS.bus + ' Bus# pending</span>') +
+       '<span class="at-blk">Blk ' + esc(blk) + '</span></div>';
+  if (note) h += '<div class="at-note">' + esc(note) + '</div>';
+  return h + '</div>';
+}
+
 // ---- detour cards (detours.html renderDetours) --------------------------------
 
 export function detourCardsHtml(cards) {
