@@ -332,6 +332,14 @@ a.run-chip:active{opacity:.7}
 .msg.find-msg .main{font-size:21px;font-weight:800;color:var(--text)}
 .msg.find-msg .sub{font-size:21px;font-weight:800;color:var(--text-dim);line-height:1.4}
 .msg.find-msg .find-sec+.find-sec{margin-top:26px}
+.msg.find-msg .find-icon{display:block;margin:0 auto 12px;border-radius:12px}
+.find-runs{display:inline-flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:10px}
+.find-run{display:inline-block;padding:8px 18px;border-radius:8px;background:var(--accent);color:#fff;border:2px solid var(--accent);font-size:18px;font-weight:800;text-decoration:none;touch-action:manipulation}
+.find-run:active{opacity:.75}
+.find-banner-icon{border-radius:5px;flex-shrink:0}
+.alert-banner .find-runs{margin-top:0;vertical-align:middle}
+.alert-banner .find-run{padding:3px 10px;font-size:13px}
+.find-run.nolink{background:transparent;color:var(--text-dim);border-style:dashed}
 .retry-btn{display:inline-block;margin-top:16px;padding:10px 24px;background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent);border-radius:8px;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation}
 .retry-btn:active{opacity:.7}
 
@@ -2276,8 +2284,11 @@ function findBannersHtml() {
   const f = state.find;
   if (!f) return '';
   let h = '';
-  const seen = (what, parts) => '<div class="alert-banner info"><span class="alert-icon">🚌</span><span>' +
-    esc(what + ' ' + parts[0] + ' ' + parts.slice(1).join(', ') + '.') + '</span></div>';
+  const seen = (what, parts) => {
+    const text = parts.filter(p => typeof p === 'string'), runs = parts.filter(p => typeof p !== 'string');
+    return '<div class="alert-banner info"><img class="alert-icon find-banner-icon" src="assets/icon-192.png" alt="" width="20" height="20"><span>' +
+      esc(what + ' ' + text.join(', ') + '.') + (runs.length ? ' ' + findPartsHtml(runs) : '') + '</span></div>';
+  };
   if (!state.bus && f.busSeen) h += seen('Bus ' + f.num + ' is currently offline.', f.busSeen);
   if (!state.block && f.blockSeen) h += seen('Block ' + f.num + ' isn\'t in service now.', f.blockSeen);
   if (f.bus && f.block && !isSameRoute(f.bus.route, f.block.route)) {
@@ -3327,11 +3338,11 @@ async function onBusSearch() {
     renderBottomBar();
     const sec = (main, sub) => '<div class="find-sec"><div class="main">' + esc(main) + '</div><div class="sub">' + sub + '</div></div>';
     let h = '';
-    if (f.busSeen) h += sec('Bus ' + num + ' is currently offline', f.busSeen.map(esc).join('<br>'));
-    if (f.blockSeen) h += sec('Block ' + num + ' isn\'t in service now', f.blockSeen.map(esc).join('<br>'));
-    else if (f.blockPick) h += sec('Block ' + num + ' isn\'t in service now', f.blockPick.map(esc).join('<br>'));
+    if (f.busSeen) h += sec('Bus ' + num + ' is currently offline', findPartsHtml(f.busSeen));
+    if (f.blockSeen) h += sec('Block ' + num + ' isn\'t in service now', findPartsHtml(f.blockSeen));
+    else if (f.blockPick) h += sec('Block ' + num + ' isn\'t in service now', findPartsHtml(f.blockPick));
     if (!h) h = sec(num + ' not found', 'No bus or block with this number<br>seen in the last ' + SEEN_DAYS + ' days');
-    setContent('<div class="msg find-msg"><div class="icon">🚌</div>' + h + '</div>');
+    setContent('<div class="msg find-msg"><img class="find-icon" src="assets/icon-192.png" alt="" width="56" height="56">' + h + '</div>');
     return;
   }
   if (f.bus) {
@@ -3363,7 +3374,7 @@ function blockPickParts(num) {
   const parts = ['No bus seen on it lately'];
   if (rec.routes.length) parts.push('Today: Route ' + rec.routes.join(', '));
   if (rec.poTime || rec.piTime) parts.push('Out ' + (rec.poTime || '?') + ' – in ' + (rec.piTime || '?'));
-  if (rec.runs.length) parts.push('Run' + (rec.runs.length > 1 ? 's ' : ' ') + rec.runs.map(r => r.runno).join(' & '));
+  if (rec.runs.length) parts.push({ runs: rec.runs });
   return parts;
 }
 
@@ -3415,8 +3426,9 @@ function lastSeenParts(row, as) {
   const day = new Date(ms);
   if (inOwlWindow(day)) day.setDate(day.getDate() - 1);
   day.setHours(0, 0, 0, 0);
-  const time = new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  const parts = ['Last seen', when + ' at ' + time,
+  // No time of day: the poller's last stamp can be hours before the bus
+  // actually finished (9663 stamped 8:29 PM, ran until ~11 PM).
+  const parts = ['Last seen ' + when,
     'on Route ' + row.routeId + (as === 'block' ? ' Bus ' + row.vehicleId : ' Block ' + row.blockId)];
   const rec = paddle.byBlock.get(String(row.blockId));
   if (rec && rec.runs.length && dayTypeOfDate(day) === getDayType()) {
@@ -3424,9 +3436,19 @@ function lastSeenParts(row, as) {
     // relief run has no pull-out time, so with one of those, list them all.
     const m = msToServiceMin(ms, day.getTime());
     const out = rec.runs.every(r => r.sortMin !== Infinity) && rec.runs.filter(r => r.sortMin <= m).pop();
-    parts.push(out ? 'Run ' + out.runno : 'Run' + (rec.runs.length > 1 ? 's ' : ' ') + rec.runs.map(r => r.runno).join(' & '));
+    parts.push({ runs: out ? [out] : rec.runs });
   }
   return parts;
+}
+
+// The not-found message's lines: text, or { runs } — each run a button that
+// opens its paddle (plain text when the pick has no paddle link for it).
+function findPartsHtml(parts) {
+  return parts.map(p => typeof p === 'string' ? esc(p)
+    : '<span class="find-runs">' + p.runs.map(r => r.link
+        ? '<a class="find-run" href="' + esc(r.link) + '" target="_blank" rel="noopener">Run ' + esc(r.runno) + '</a>'
+        : '<span class="find-run nolink">Run ' + esc(r.runno) + '</span>').join('') + '</span>'
+  ).join('<br>');
 }
 
 async function loadRoute(route) {
