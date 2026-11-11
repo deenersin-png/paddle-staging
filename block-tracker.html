@@ -651,18 +651,33 @@ function withoutOldSchedule(list) {
 // liner had no timetable here between midnight and 4 AM. Yesterday's own
 // copy of the same early trip (same trip_id, long done) is dropped, so a live
 // bus's trip id finds tonight's.
+//
+// From 11 PM on (not just after midnight) tonight's night liners count, and a
+// night liner's block is known by its PADDLE too (a run starting 11 PM-4 AM,
+// see isNightRunStart): route 21 block 9902 is Run 52, out 12:23 AM on L1 OWL,
+// and its first Route 21 trip is 5:44 AM - this route's timetable alone can't
+// tell it is tonight's, so at 1:37 AM those trips showed as long DONE.
 function serviceDayTrips(data) {
   const trips = dayTrips(data, getDayType());
-  if (!inOwlWindow(new Date())) return trips;
+  if (!inNightWindow(new Date())) return trips;
   // A block that goes out before 4 AM comes with its whole run, not just its
   // trips before 4: route 42 block 9102 (out 1:27 AM, trips 1:34-10:38 AM)
   // otherwise "ended" at 4:25 until the day turned over at 4:00.
   const owlEnd = SERVICE_DAY_START_HR * 60;
   const plus24 = t => String(t).replace(/^(\d+)/, h => String(parseInt(h, 10) + 24));
-  const today = dayTrips(data, dayTypeOfDate(new Date()));
-  const nightBlocks = new Set(today.filter(t => (timeStrToMin(t.start) ?? Infinity) < owlEnd).map(t => String(t.block_id)));
+  const today = dayTrips(data, dayTypeOfDate(nightRunsDate()));
+  const byTT = new Set(today.filter(t => (timeStrToMin(t.start) ?? Infinity) < owlEnd).map(t => String(t.block_id)));
+  // By the paddle: the night liner's trips up to its own pull-in (night liners
+  // run as late as 3:17 PM; a later trip on that block is another run's).
+  const byPick = paddle.nightBlocks || new Map();
+  const tonight = t => {
+    const b = String(t.block_id);
+    if (byTT.has(b)) return true;
+    const pi = byPick.get(b);
+    return pi != null && (timeStrToMin(t.start) ?? Infinity) < pi;
+  };
   const early = today
-    .filter(t => nightBlocks.has(String(t.block_id)))
+    .filter(tonight)
     .map(t => ({ ...t, start: plus24(t.start), end: plus24(t.end) }));
   // Yesterday's own copies of those trips (same ids, long done) go.
   const ids = new Set(early.map(t => String(t.trip_id)));
@@ -773,6 +788,11 @@ async function loadScheduleData(route) {
     }
     if (!data || reqId !== schedRequestId) return;
 
+    // Tonight's night liners are known from the pick (serviceDayTrips), and
+    // the stale-copy check below needs it too: wait for it; a failed load just
+    // skips both.
+    if (paddleReady) { try { await paddleReady; } catch(e) {} }
+    if (reqId !== schedRequestId) return;
     const trips = serviceDayTrips(data);
     const blockTrips = new Map();
     const order = [];
@@ -783,9 +803,6 @@ async function loadScheduleData(route) {
     }
     if (reqId !== schedRequestId) return;
 
-    // Needs today's pick (below), so wait for it; a failed load just skips it.
-    if (paddleReady) { try { await paddleReady; } catch(e) {} }
-    if (reqId !== schedRequestId) return;
     dropStaleCopies(blockTrips, order);
     const partnerTT = await loadPartnerTimetables(route, blockTrips);
     if (reqId !== schedRequestId) return;
@@ -998,64 +1015,139 @@ async function loadDetours(route) {
   if (state.route && !ticking) { lastHTML = ''; tick(); }
 }
 
+// ── WHICH DAY A RUN BELONGS TO ──
+// A run that STARTS between 11 PM and 4 AM is a night liner of the NEXT day
+// (it reports the evening before: Wednesday's Run 51 reports Tuesday 11:54 PM).
+// A run that starts earlier and finishes after midnight belongs to the day it
+// started. The fall pick has no run starting 10-11 PM and no morning run
+// running past midnight, so the rule never has to guess.
+//
+// So from 11 PM to 4 AM the night liners on the street are the NEXT day's
+// (their paddles come from the next day's pick: Friday 11:54 PM = Saturday's
+// Run 51), counted on from tonight's 24:00 ("tonight frame"); the rest of the
+// day they are this day's own, which ran this morning ("morning frame").
+const NIGHT_FROM_HR = 23;
+function isNightRunStart(min) { return min != null && isFinite(min) && (min >= NIGHT_FROM_HR * 60 || min < SERVICE_DAY_START_HR * 60); }
+function inNightWindow(d) { const h = d.getHours(); return h >= NIGHT_FROM_HR || h < SERVICE_DAY_START_HR; }
+// The calendar date whose night liners run tonight (the day after the service day).
+function nightRunsDate() { const d = serviceDate(); d.setDate(d.getDate() + 1); return d; }
+// What the pick below was built for; it is rebuilt when this changes (11 PM, 4 AM).
+function paddleLoadKey() { return localISODate() + '|' + (inNightWindow(new Date()) ? 'night' : 'day'); }
+// A run's start ("2023-10-11 11:54 PM") as clock minutes; else its first pull-out.
+function runStartMin(row) {
+  const m = clockToMin(String(row.start || ''));
+  return isFinite(m) ? m : clockToMin(String(row.pot1 || ''));
+}
+
 async function loadPaddleData() {
   if (paddle.loaded || paddle.loading) return;
   paddle.loading = true;
   try {
     const manifest = await fetch(PADDLE_BASE + '/manifest.json').then(r => r.json());
     const day = getDayType();
-    const dayLabel = day.charAt(0).toUpperCase() + day.slice(1);
+    const night = inNightWindow(new Date());
+    const owl = inOwlWindow(new Date());
+    // Night liners: tonight's (the next day's pick) from 11 PM to 4 AM, else this day's own.
+    const nDay = night ? dayTypeOfDate(nightRunsDate()) : day;
+    const cap = d => d.charAt(0).toUpperCase() + d.slice(1);
+    const loadKey = paddleLoadKey();
     const byBlock = new Map();
+    const nightBlocks = new Map();   // tonight's night-liner blocks → their latest pull-in (clock min)
+    const todayByBlock = new Map();  // after midnight: the new day's other runs, for "today's run" in a search
     const routesByDepot = new Map(); // depot label → Set(route id)
     const depots = (manifest.districts || []).map(d => d.label || d.name);
     paddle.depotIds = new Map((manifest.districts || []).map(d => [d.label || d.name, d.name]));
 
+    // Service-day minutes of a pick time on a run. A day run: an early-AM time
+    // is after midnight (24:00+). A night liner: tonight's run from 24:00 on
+    // (its 11:54 PM report stays 23:54), or this morning's run as it was.
+    const dayMin = t => pickPieceMin(t);
+    const nightMin = t => {
+      const m = clockToMin(String(t || '').trim());
+      if (!isFinite(m)) return null;
+      if (night) return m >= NIGHT_FROM_HR * 60 ? m : m + 1440;
+      return m >= NIGHT_FROM_HR * 60 ? m - 1440 : m;
+    };
+
     await Promise.allSettled((manifest.districts || []).map(async district => {
-      if (!district.days || !district.days.includes(dayLabel)) return;
+      const runsOn = d => !!(district.days && district.days.includes(cap(d)));
+      if (!runsOn(day) && !runsOn(nDay)) return;
       const slug = district.name;
       const depot = district.label || slug;
       const depotRoutes = new Set();
       routesByDepot.set(depot, depotRoutes);
-      let schedText = '', pdfsText = '';
+      let dayText = '', nText = '', pdfsText = '';
       try {
-        [schedText, pdfsText] = await Promise.all([
-          fetch(PADDLE_BASE + '/' + slug + '/' + day + '.csv').then(r => r.ok ? r.text() : ''),
+        [dayText, nText, pdfsText] = await Promise.all([
+          runsOn(day) ? fetch(PADDLE_BASE + '/' + slug + '/' + day + '.csv').then(r => r.ok ? r.text() : '') : '',
+          nDay !== day && runsOn(nDay) ? fetch(PADDLE_BASE + '/' + slug + '/' + nDay + '.csv').then(r => r.ok ? r.text() : '') : '',
           fetch(PADDLE_BASE + '/' + slug + '/pdfs.csv').then(r => r.ok ? r.text() : ''),
         ]);
       } catch(e) { return; }
 
-      // runno → paddle-PDF link, for today's day only
-      const runLink = new Map();
-      for (const row of parseCSV(pdfsText)) {
-        if (!row.runno || (row.day || '') !== dayLabel) continue;
-        // Phones open the mobile link; a PC the desktop one (the mobile link
-        // makes a desktop browser save the PDF instead of opening it), as the
-        // Paddle App's viewer does.
-        const phone = window.innerWidth <= 768;
-        const link = ((phone ? row.moblink || row.pclink : row.pclink || row.moblink) || '').trim();
-        if (link) runLink.set(String(row.runno), link);
-      }
+      // runno → paddle-PDF link, for one day type
+      const pdfRows = parseCSV(pdfsText);
+      const linksFor = d => {
+        const runLink = new Map();
+        for (const row of pdfRows) {
+          if (!row.runno || (row.day || '') !== cap(d)) continue;
+          // Phones open the mobile link; a PC the desktop one (the mobile link
+          // makes a desktop browser save the PDF instead of opening it), as the
+          // Paddle App's viewer does.
+          const phone = window.innerWidth <= 768;
+          const link = ((phone ? row.moblink || row.pclink : row.pclink || row.moblink) || '').trim();
+          if (link) runLink.set(String(row.runno), link);
+        }
+        return runLink;
+      };
+      const dayLinks = linksFor(day), nLinks = nDay === day ? dayLinks : linksFor(nDay);
+      const dayRows = parseCSV(dayText);
+      const nRows = nDay === day ? dayRows : parseCSV(nText);
 
-      for (const row of parseCSV(schedText)) {
+      // This day's day / evening runs, plus the night liners (see above).
+      const use = [];
+      dayRows.forEach(row => { if (!isNightRunStart(runStartMin(row))) use.push({ row, isNight: false, links: dayLinks }); });
+      nRows.forEach(row => { if (isNightRunStart(runStartMin(row))) use.push({ row, isNight: true, links: nLinks }); });
+
+      // From 11 PM the next day's day runs by block, so a search after
+      // midnight can say when a block's run TODAY goes out.
+      if (night) nRows.forEach(row => {
+        if (isNightRunStart(runStartMin(row))) return;
         const runno = String(row.runno || '').trim();
-        if (!runno) continue;
-        // The run as the Paddle App's scorecard shows it: number, its routes
-        // in paddle order, its paddle link. Shared by its pieces below.
-        const run = { runno, depot, link: runLink.get(runno) || '', routes: [], pieces: [] };
+        if (!runno) return;
         for (let i = 1; i <= 10; i++) {
           const b = (row['b' + i] || '').trim();
           if (!b || b === '0') continue;
-          if (!byBlock.has(b)) byBlock.set(b, { poTime: '', piTime: '', runs: [], routes: [], segs: [] });
+          if (!todayByBlock.has(b)) todayByBlock.set(b, { poTime: '', poMin: null, runs: [] });
+          const t = todayByBlock.get(b);
+          const pot = (row['pot' + i] || '').trim();
+          const m = clockToMin(pot);
+          if ((row['potype' + i] || '').trim().toUpperCase() === 'O' && isFinite(m) && (t.poMin == null || m < t.poMin)) { t.poMin = m; t.poTime = pot; }
+          if (!t.runs.some(r => r.runno === runno)) t.runs.push({ runno, link: nLinks.get(runno) || '', sortMin: isFinite(m) ? m : Infinity });
+        }
+      });
+
+      for (const { row, isNight, links } of use) {
+        const runno = String(row.runno || '').trim();
+        if (!runno) continue;
+        const pm = isNight ? nightMin : dayMin;
+        // The run as the Paddle App's scorecard shows it: number, its routes
+        // in paddle order, its paddle link. Shared by its pieces below.
+        const run = { runno, depot, link: links.get(runno) || '', routes: [], pieces: [], night: isNight };
+        for (let i = 1; i <= 10; i++) {
+          const b = (row['b' + i] || '').trim();
+          if (!b || b === '0') continue;
+          if (!byBlock.has(b)) byBlock.set(b, { poTime: '', piTime: '', poMin: null, piMin: null, runs: [], routes: [], segs: [] });
           const rec = byBlock.get(b);
           const rt = (row['r' + i] || '').trim();
           if (rt && !rec.routes.includes(rt)) rec.routes.push(rt);
           if (rt && !run.routes.includes(rt)) run.routes.push(rt);
           pickRoutes(rt ? [rt] : []).forEach(r => depotRoutes.add(r));
-          // This run's piece of the block, service-day minutes (an early-AM
-          // time is after midnight, so 24:00+), for "which run is on the
-          // block at this time".
-          const s = pickPieceMin(row['pot' + i]), e = pickPieceMin(row['pit' + i]);
-          const seg = { run, blk: b, rt, s, e: e != null && s != null && e < s ? e + 1440 : e };
+          // This run's piece of the block, service-day minutes, for "which
+          // run is on the block at this time".
+          const s = pm(row['pot' + i]), e0 = pm(row['pit' + i]);
+          const e = e0 != null && s != null && e0 < s ? e0 + 1440 : e0;
+          const seg = { run, blk: b, rt, s, e };
           rec.segs.push(seg);
           run.pieces.push(seg);
           const potype = (row['potype' + i] || '').trim().toUpperCase();
@@ -1064,19 +1156,27 @@ async function loadPaddleData() {
           const pit = (row['pit' + i] || '').trim();
           // Some blocks list more than one pull-out / pull-in (29 on a fall-2026
           // weekday, e.g. 5554: in at 3:23 PM and 4:14 PM). Keep the EARLIEST
-          // pull-out and the LATEST pull-in, so a block is only ever treated as
-          // finished after its last possible pull-in — never too early.
-          if (potype === 'O' && pot && (!rec.poTime || clockToMin(pot) < clockToMin(rec.poTime))) rec.poTime = pot;
-          if (pitype === 'I' && pit && (!rec.piTime || (pullInKey(pit) ?? -1) > (pullInKey(rec.piTime) ?? -1))) rec.piTime = pit;
+          // pull-out and the LATEST pull-in (service-day minutes), so a block
+          // is only ever treated as finished after its last possible pull-in.
+          if (potype === 'O' && pot && s != null && (rec.poMin == null || s < rec.poMin)) { rec.poTime = pot; rec.poMin = s; }
+          if (pitype === 'I' && pit && e != null && (rec.piMin == null || e > rec.piMin)) { rec.piTime = pit; rec.piMin = e; }
+          if (isNight && night) {
+            const ci = clockToMin(pit);
+            if (isFinite(ci) && ci < NIGHT_FROM_HR * 60) nightBlocks.set(b, Math.max(nightBlocks.get(b) || 0, ci));
+          }
           if (!rec.runs.some(r => r.runno === runno)) {
-            rec.runs.push({ runno, link: runLink.get(runno) || '', sortMin: clockToMin(pot) });
+            rec.runs.push({ runno, link: links.get(runno) || '', sortMin: s ?? Infinity });
           }
         }
       }
     }));
 
     for (const rec of byBlock.values()) rec.runs.sort((a, b) => a.sortMin - b.sortMin);
+    for (const t of todayByBlock.values()) t.runs.sort((a, b) => a.sortMin - b.sortMin);
     paddle.byBlock = byBlock;
+    paddle.nightBlocks = nightBlocks;
+    paddle.todayByBlock = todayByBlock;
+    paddle.loadKey = loadKey;
     paddle.depots = depots.filter(d => routesByDepot.has(d) && routesByDepot.get(d).size);
     paddle.routesByDepot = routesByDepot;
     paddle.loaded = true;
@@ -1504,16 +1604,13 @@ function pullInKey(t) {
 }
 
 // This block's final pull-in (service-day minutes), or null if the pick has none.
-// In owl hours a night liner's block (out after midnight, e.g. 12:05 AM, in
-// during the morning) is running tonight's trips 24 h on (serviceDayTrips),
-// so its pull-in moves with them; otherwise it would count as pulled in.
+// From 11 PM a night liner's block (out after midnight, e.g. 12:05 AM, in
+// during the morning) is tonight's run, already counted 24 h on by
+// loadPaddleData (rec.piMin), like its trips (serviceDayTrips).
 function blockPullInMin(blk) {
   const rec = paddle.byBlock.get(String(blk));
   if (!rec || !rec.piTime) return null;
-  const pi = pullInKey(rec.piTime);
-  const po = rec.poTime ? clockToMin(rec.poTime) : null;
-  if (pi != null && pi < 1440 && po != null && po < SERVICE_DAY_START_HR * 60 && inOwlWindow(new Date())) return pi + 1440;
-  return pi;
+  return rec.piMin != null ? rec.piMin : pullInKey(rec.piTime);
 }
 
 function blockPulledIn(blk) {
@@ -2310,7 +2407,24 @@ function doneParts(route) {
   if (lastEnd) parts.push('Last trip ended at ' + lastEnd);
   parts.push('Last served on Route ' + route + (blk ? ' Block ' + blk : ''));
   if (rec && rec.runs.length) parts.push({ runs: rec.runs });
-  return parts;
+  return parts.concat(todayRunParts(blk));
+}
+
+// Between midnight and 4 AM a block that is done ran LAST NIGHT (a run that
+// started before 11 PM belongs to the day it started); its run today hasn't
+// started yet. Its lines for that: when today's run goes out, and which run.
+// Empty the rest of the day.
+function todayRunParts(blk) {
+  if (!blk || !inOwlWindow(new Date())) return [];
+  const t = paddle.todayByBlock && paddle.todayByBlock.get(String(blk));
+  if (!t) return ['No run on this block today'];
+  return ['Today’s run hasn’t started' + (t.poTime ? ' · out at ' + fmtClock(clockToMin(t.poTime)) : ''),
+    { runs: t.runs }];
+}
+// The headline for a searched bus / block with nothing left: after midnight
+// it is last night's run that is done, not today's.
+function doneHeadline(what) {
+  return inOwlWindow(new Date()) ? what + ': last night’s run is done' : what + ' is done for now';
 }
 
 // A searched block with nothing left today: its route, today's bus if known,
@@ -2318,11 +2432,11 @@ function doneParts(route) {
 function blockDoneParts(route) {
   const blk = state.block;
   const rec = paddle.byBlock.get(blk);
-  const parts = ['Nothing left today on Route ' + route];
+  const parts = [(inOwlWindow(new Date()) ? 'Nothing left tonight on Route ' : 'Nothing left today on Route ') + route];
   const bus = knownVehicleFor(blk);
   if (bus) parts.push('Served by Bus ' + bus);
   if (rec && rec.runs.length) parts.push({ runs: rec.runs });
-  return parts;
+  return parts.concat(todayRunParts(blk));
 }
 
 // One search-result section: icon ('bus' / 'block'), headline, lines.
@@ -2348,8 +2462,8 @@ function renderBusMain(merged, route) {
     document.getElementById('busCount').textContent = what.join(' & ');
     lastCards = [];
     lastEmptyHtml = '<div class="msg find-msg">' + (state.bus
-      ? findSecHtml('bus', 'Bus ' + state.bus + ' is done for now', doneParts(route))
-      : findSecHtml('block', 'Block ' + state.block + ' is done for now', blockDoneParts(route))) + '</div>';
+      ? findSecHtml('bus', doneHeadline('Bus ' + state.bus), doneParts(route))
+      : findSecHtml('block', doneHeadline('Block ' + state.block), blockDoneParts(route))) + '</div>';
     drawView(false);
     return;
   }
@@ -3658,6 +3772,7 @@ function fillDepots() {
   dsel.value = depot;
   const route = fillRoutes(depot, lsGet('bt_route'));
   if (state.find) { document.getElementById('routeSelect').value = ''; return; } // a search is showing; leave it
+  if (view.tsPrevRoute != null) { document.getElementById('routeSelect').value = state.route; return; } // Trip Sheets search moved the route; leave it
   if (route && route !== state.route) { lsSet('bt_route', route); loadRoute(route); }
   // The depot was changed elsewhere (Paddles page) and the route shown from
   // the last visit belongs to another depot: ask for one of this depot's routes.
@@ -3839,7 +3954,7 @@ function blockRanTodayUnseen(num, seen) {
   if ((seen.lastSeenAtMs || seen.endedAtMs || 0) >= serviceMidnightMs()) return false;
   const rec = paddle.byBlock.get(num);
   if (!rec || !rec.poTime) return false;
-  const po = clockToMin(rec.poTime);
+  const po = rec.poMin != null ? rec.poMin : clockToMin(rec.poTime);
   return blockPulledIn(num) || (po != null && serviceNowMin() >= po);
 }
 
@@ -4126,6 +4241,15 @@ const IDLE_HTML = document.getElementById('content').innerHTML;
 
   // Load holiday overrides first so getDayType() is correct before any
   // schedule/paddle fetch reads it.
+  // 11 PM and 4 AM change which runs are tonight's / today's (the night-liner
+  // rule, see isNightRunStart): a page left open rebuilds the pick and the
+  // timetable then.
+  setInterval(() => {
+    if (!paddle.loaded || paddle.loading || paddle.loadKey === paddleLoadKey()) return;
+    paddle.loaded = false;
+    paddleReady = loadPaddleData().then(() => { if (state.route) loadScheduleData(state.route); });
+  }, 60000);
+
   paddleReady = loadCalendarOverrides().then(() => {
     const p = loadPaddleData();
     if (state.route) onRouteChange();
