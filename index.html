@@ -1004,6 +1004,36 @@ body.older-pick .hd-season-select {
   border-radius: 6px; padding: 4px 6px !important; font-weight: 700;
 }
 body.older-pick .hd-dot { display: none; }
+
+/* Day buttons in capitals: SUNDAY (86) / WEEKDAY (184) / SATURDAY (118). */
+.day-btn { text-transform: uppercase; letter-spacing: .03em; }
+@media (max-width: 400px) { .day-btn { font-size: 11px !important; letter-spacing: 0; padding-left: 4px !important; padding-right: 4px !important; min-width: 0 !important; } }
+
+/* "RUN#:" before the run number on every card. */
+.run-num::before {
+  content: "RUN#:"; font-size: .6em; font-weight: 700; letter-spacing: .03em;
+  margin-right: .3em; position: relative; top: -.12em;
+}
+/* Card top line stays ONE line at any card width: it shrinks, never wraps. */
+.card { container-type: inline-size; }
+.card-head-top { flex-wrap: nowrap !important; white-space: nowrap; min-width: 0; overflow: hidden; }
+.card-head-top > * { min-width: 0; }
+/* The day word (the card colour already says it) gives up room first. */
+.card-head-top .run-day { flex-shrink: 20; overflow: hidden; text-overflow: ellipsis; }
+.card-head-top .run-actions { flex-shrink: 1; min-width: 0; }
+.card-head-top .run-picked-badge { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+@container (max-width: 360px) {
+  .card-head-top { gap: 6px; padding-left: 8px; padding-right: 8px; }
+  .run-num { font-size: 17px; }
+  .run-day { font-size: 10px; letter-spacing: .02em; }
+  .btn-paddle { padding: 3px 7px; }
+  .run-actions { gap: 5px; }
+  .run-picked-badge { letter-spacing: 0; padding: 2px 4px; }
+}
+@container (max-width: 300px) {
+  .card-head-top { gap: 4px; }
+  .run-num { font-size: 15px; }
+}
 </style>
 <link rel="stylesheet" href="assets/pa-menu.css">
 <script src="assets/pa-menu.js" defer></script>

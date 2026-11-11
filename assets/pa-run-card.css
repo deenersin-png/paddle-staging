@@ -96,3 +96,21 @@
   .prc-routes{font-size:10px}
   .prc-day{font-size:11px}
 }
+
+/* "RUN#:" before every run number (My Run, Trip Sheets, Live, leader cards). */
+.prc-num::before{content:"RUN#:";font-size:.6em;font-weight:700;letter-spacing:.03em;margin-right:.3em;position:relative;top:-.12em}
+/* Top line stays ONE line on any card width: it shrinks instead of wrapping.
+   The card is the size container; text sizes step down as the card narrows. */
+.prc{container-type:inline-size}
+.prc-head-top{flex-wrap:nowrap;white-space:nowrap;min-width:0;overflow:hidden}
+.prc-head-top>*{min-width:0}
+.prc-head-top .prc-day{flex-shrink:1;overflow:hidden;text-overflow:ellipsis}
+@container (max-width:360px){
+  .prc-head-top{gap:6px;padding-left:8px;padding-right:8px}
+  .prc-num{font-size:17px}
+  .prc-day{font-size:10px;letter-spacing:.02em}
+}
+@container (max-width:300px){
+  .prc-head-top{gap:4px}
+  .prc-num{font-size:15px}
+}

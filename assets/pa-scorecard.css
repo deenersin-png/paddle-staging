@@ -70,3 +70,19 @@
 /* The app's bus picture (assets/icon-192.png, as next to the menu button) wherever a bus icon shows. */
 .bus-ico{width:14px;height:14px;border-radius:3px;object-fit:contain;flex-shrink:0;vertical-align:-2px}
 .bus-ico.big{width:48px;height:48px;border-radius:10px;vertical-align:middle}
+
+/* One-line top row on the scorecards (see pa-run-card.css): the run button and
+   the "Run N only" button may shrink; a relief's second number skips "RUN#:". */
+.at-relief + .at-runbtn .prc-num::before{content:none}
+.prc-head-top .at-runbtn{flex-shrink:1;min-width:0;overflow:hidden}
+.prc-head-top .prc-actions{flex-shrink:1;min-width:0;margin-left:auto}
+.prc-head-top .at-runf{overflow:hidden;text-overflow:ellipsis;min-width:0;flex-shrink:1}
+@container (max-width:360px){
+  .at-nth{padding:3px 6px;letter-spacing:.02em}
+  .at-runbtn{padding:2px 5px;gap:4px}
+  .at-runf{padding:3px 6px;font-size:10px;letter-spacing:.02em}
+  .at-relief{font-size:11px}
+}
+@container (max-width:300px){
+  .at-runbtn .prc-day{display:none}
+}
