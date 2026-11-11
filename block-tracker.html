@@ -2427,7 +2427,7 @@ function findBannersHtml() {
       ? '<img class="alert-icon find-banner-icon blocks" src="assets/icon-blocks.png" alt="" width="50" height="16">'
       : '<img class="alert-icon find-banner-icon" src="assets/icon-192.png" alt="" width="20" height="20">';
     return '<div class="alert-banner info">' + icon + '<span>' +
-      esc(what + ' ' + text.join(', ') + '.') + (runs.length ? ' ' + findPartsHtml(runs) : '') + '</span></div>';
+      esc(what + ' ' + text.join(', ').replace(/^Last seen, /, 'Last seen ') + '.') + (runs.length ? ' ' + findPartsHtml(runs) : '') + '</span></div>';
   };
   if (!state.bus && f.busSeen) h += seen('Bus ' + f.num + ' is currently offline.', f.busSeen);
   if (!state.block && f.blockSeen) h += seen('Block ' + f.num + ' isn\'t in service now.', f.blockSeen);
@@ -4260,13 +4260,15 @@ function lastSeenParts(row, as) {
   day.setHours(0, 0, 0, 0);
   const ago = Math.round((owlServiceMidnightMs() - day.getTime()) / 86400000);
   const night = owl ? ' night' : '';
-  const when = ago <= 0 ? (owl ? 'tonight' : 'today')
-    : ago === 1 ? (owl ? 'last night' : 'yesterday')
+  // A recent sighting has no day word at all (user, 2026-11-11): around
+  // midnight "today" / "yesterday" / "last night" read wrong - 9663 seen
+  // before midnight said "today" at 3 AM. Older ones keep it ("Monday", "Nov 2").
+  const when = ago <= 1 ? ''
     : ago < 7 ? day.toLocaleDateString([], { weekday: 'long' }) + night
     : day.toLocaleDateString([], { month: 'short', day: 'numeric' }) + night;
   // No time of day: the poller's last stamp can be hours before the bus
   // actually finished (9663 stamped 8:29 PM, ran until ~11 PM).
-  const parts = ['Last seen ' + when,
+  const parts = ['Last seen' + (when ? ' ' + when : ''),
     'on Route ' + row.routeId + (as === 'block' ? ' Bus ' + row.vehicleId : ' Block ' + row.blockId)];
   const rec = paddle.byBlock.get(String(row.blockId));
   if (rec && rec.runs.length && dayTypeOfDate(day) === getDayType()) {
