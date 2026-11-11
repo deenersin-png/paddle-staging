@@ -21,3 +21,18 @@
 .lm-bus.lm-gray{background:#8a909f}
 .lm-bus.lm-est{border-style:dashed;opacity:.85}
 .lm-stem{position:absolute;left:-4px;top:17px;width:1.5px;background:#333;opacity:.6}
+
+/* The map stays UNDER the page's fixed bottom bar (EB / WB / Detours /
+   refresh): Leaflet's own layers use z-index 400-1000, so keep them inside
+   the map's own stacking context. */
+.lm-box, .lm-map { position: relative; z-index: 0; isolation: isolate; }
+/* Close to the last scorecard: no big gap between the cards and the map. */
+.at-list:has(+ .lm-box) { padding-bottom: 4px; }
+.lm-box { margin: 0 0 10px; }
+.lm-bar { margin: 0 16px 4px; }
+/* "Hide map" sits inside the map's top-right corner (not a row of its own),
+   so the map starts right under the last scorecard. With the map hidden it
+   is a normal row again ("Show map"). */
+.lm-box:has(.lm-map) .lm-bar { position: absolute; top: 8px; right: 8px; margin: 0; z-index: 1001; }
+.lm-box:has(.lm-map) .lm-toggle { background: #fff; color: #08122b; border-color: rgba(8,18,43,.35); box-shadow: 0 1px 4px rgba(8,18,43,.25); }
+.at-list:has(+ .lm-box) { padding-bottom: 8px; }

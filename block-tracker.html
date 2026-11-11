@@ -1630,7 +1630,8 @@ function refreshPairs() {
 //  done               — finished its last trip
 function scheduledBlockStatus(blk, nowMin) {
   const trips = (sched.blockTrips.get(String(blk)) || [])
-    .map(t => ({ s: timeStrToMin(t.start), e: timeStrToMin(t.end), dir: t.direction, headsign: t.headsign, first: t.first, last: t.last }))
+    .map(t => ({ s: timeStrToMin(t.start), e: timeStrToMin(t.end), dir: t.direction, headsign: t.headsign, first: t.first, last: t.last,
+                 part: t.lastNight ? 'last' : t.tonight ? 'tonight' : 'today' }))
     .filter(x => x.s != null && x.e != null)
     .sort((a, b) => a.s - b.s);
   if (!trips.length) return null;
@@ -1640,7 +1641,12 @@ function scheduledBlockStatus(blk, nowMin) {
   for (let i = 0; i < trips.length; i++) {
     if (nowMin >= trips[i].s && nowMin <= trips[i].e) return { state: 'in_service_expected', trip: trips[i] };
     if (i < trips.length - 1 && nowMin > trips[i].e && nowMin < trips[i + 1].s)
-      return { state: 'layover_expected', dueOutMin: trips[i + 1].s, trip: trips[i + 1] };
+      // Last night's run done, today's not out yet (3:26 AM, route 40 block
+      // 9327: in after 2 AM, out at 2:44 PM) - in the depot, not on layover.
+      // Same between today's run and tonight's night liner.
+      return trips[i].part !== trips[i + 1].part
+        ? { state: 'not_started', dueOutMin: trips[i + 1].s, trip: trips[i + 1] }
+        : { state: 'layover_expected', dueOutMin: trips[i + 1].s, trip: trips[i + 1] };
   }
   return { state: 'done', trip: last };
 }
