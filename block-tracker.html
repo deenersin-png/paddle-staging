@@ -2816,13 +2816,17 @@ function allTripsItems() {
     if (only && !only.has(blk)) continue;
     // The feed can list one trip twice under two trip ids (route 38 block
     // 9260: 963851 and 5630, both 10:53-11:50 EB); count it once, matching
-    // a live bus on either id.
+    // a live bus on either id. Also two versions of one trip: route 40
+    // block 9331 lists every EB trip twice, "2nd-Lombard" 5:39-6:50 PM and
+    // "2nd-Lombard via Pine St" 5:39-6:51 PM - one bus, one trip (keyed by
+    // start and direction; the later end kept so it never ends too early).
     const byKey = new Map();
     for (const t of raw) {
       const s = timeStrToMin(t.start), e = timeStrToMin(t.end);
       if (s == null || e == null || isPhantomTrip(blk, s)) continue;
-      const k = s + '|' + e + '|' + t.direction;
-      if (byKey.has(k)) byKey.get(k).ids.add(String(t.trip_id));
+      const k = s + '|' + t.direction;
+      const had = byKey.get(k);
+      if (had) { had.ids.add(String(t.trip_id)); if (e > had.e) { had.e = e; had.t = t; } }
       else byKey.set(k, { t, s, e, ids: new Set([String(t.trip_id)]) });
     }
     const trips = [...byKey.values()].sort((a, b) => a.s - b.s || a.e - b.e);
@@ -2842,9 +2846,13 @@ function allTripsItems() {
       const nth = tripNum(blk, x.s);
       // Finished trips stay on the list, grayed out.
       if (!pending(x, i)) { items.push({ blk, s: x.s, e: x.e, dir, left: 0, done: true, inService: false, live: null, cur: false, nth }); return; }
-      // This trip and the ones after it in the same direction.
+      // This trip and the ones after it in the same direction - of the same
+      // run of the block: last night's leftover trips count only last
+      // night's (Run 572's 1:49 AM WB is its last: "1 WB", not 5 with
+      // today's evening trips on block 9331), today's only today's.
+      const part = t => t.lastNight ? 'last' : t.tonight ? 'tonight' : 'today';
       let left = 0;
-      for (let j = i; j < trips.length; j++) if (pending(trips[j], j) && dirOf(trips[j].t) === dir) left++;
+      for (let j = i; j < trips.length; j++) if (pending(trips[j], j) && dirOf(trips[j].t) === dir && part(trips[j].t) === part(x.t)) left++;
       const inService = liveIdx >= 0 ? liveIdx === i : nowMin >= x.s && nowMin <= x.e;
       // The way a live bus is heading right now (green on its card).
       const cur = first && live && (inService || (liveIdx < 0 && canonDir(live.Direction) === dir));
@@ -3010,9 +3018,15 @@ function cardTrip(b) {
 // Trips of `blk` on this route in `dir` from start minute `s` on.
 function tripsLeftFrom(blk, dir, s) {
   const seen = new Set();
-  for (const t of sched.blockTrips.get(String(blk)) || []) {
+  const list = sched.blockTrips.get(String(blk)) || [];
+  // Only the trips of the same run of the block: last night's leftovers
+  // (midnight-4 AM) apart from today's, tonight's night liner apart too.
+  const part = t => t.lastNight ? 'last' : t.tonight ? 'tonight' : 'today';
+  const own = list.find(t => timeStrToMin(t.start) === s);
+  for (const t of list) {
     const ts = timeStrToMin(t.start);
     if (ts == null || ts < s || isPhantomTrip(blk, ts) || tripDirOf(t) !== dir) continue;
+    if (own && part(t) !== part(own)) continue;
     seen.add(ts);
   }
   return seen.size || 1;
