@@ -290,6 +290,8 @@ a.run-chip:active{opacity:.7}
 .node-bottom{display:flex;align-items:center;gap:7px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border)}
 
 /* SECTION LABELS */
+.ts-also{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:6px;padding:8px 16px 4px;font-size:13px;font-weight:700;color:var(--text-dim)}
+.ts-route{padding:5px 10px;border-radius:6px;border:1.5px solid #0b4ea2;background:#fff;color:#0b4ea2;font:inherit;font-weight:800;cursor:pointer}
 .section-label{padding:10px 16px 8px;font-size:15px;font-weight:800;color:var(--text);letter-spacing:.04em;text-transform:uppercase;text-align:center;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--card);margin:4px 0}
 
 /* MESSAGES */
@@ -2394,7 +2396,7 @@ if (ALL_TRIPS_PAGE && 'scrollRestoration' in history) history.scrollRestoration 
 const VIEW_MODES = ['dir', 'detours'];
 function savedMode() { if (ALL_TRIPS_PAGE) return 'all'; try { const m = localStorage.getItem('bt_view'); return VIEW_MODES.includes(m) ? m : 'dir'; } catch(e) { return 'dir'; } }
 function saveMode(m) { if (ALL_TRIPS_PAGE) return; try { localStorage.setItem('bt_view', m); } catch(e) {} }
-const view = { mode: savedMode(), dir: '', follow: false, run: '', atDir: '', scrollNow: ALL_TRIPS_PAGE };  // run: All Trips shows only this run (depot|runno); atDir: All Trips shows only this direction ('' = Both)
+const view = { mode: savedMode(), dir: '', follow: false, run: '', blk: '', tsMiss: '', tsPrevRoute: null, atDir: '', scrollNow: ALL_TRIPS_PAGE };  // blk / tsMiss / tsPrevRoute: Trip Sheets search (see tripSheetSearch)  // run: All Trips shows only this run (depot|runno); atDir: All Trips shows only this direction ('' = Both)
 let lastCards = [];     // annotated cards of the last render (the route's, or a search's)
 let lastEmptyHtml = ''; // message for a direction view when there are no cards
 let refreshing = false; // refresh spinner state, kept across bar redraws
@@ -2979,15 +2981,26 @@ function buildAllTripsPage(anim) {
   // "Run 558 only": every card that run drives (a relief card counts for both runs).
   const runNo = view.run ? view.run.split('|')[1] : '';
   if (view.run) items = items.filter(it => runsOnBlockDuring(it.blk, it.s, it.e).some(r => runKey(r) === view.run));
+  // Trip Sheets search, 4 digits: that block's trips.
+  if (view.blk) items = items.filter(it => it.blk === view.blk);
   if (view.atDir && !routeDirs().includes(view.atDir)) view.atDir = '';
   if (view.atDir && ALL_TRIPS_PAGE) items = items.filter(it => it.dir === view.atDir);
   const buses = new Set(items.map(it => it.blk)).size;
+  const nTrips = items.length + (items.length === 1 ? ' trip' : ' trips');
+  // Trip Sheets search found no such run / block: say so.
+  if (view.tsMiss) return '<div class="section-label' + (anim ? ' fade-in' : '') + '">Trip Sheets · Search</div>' +
+    '<div class="at-empty">' + view.tsMiss + '</div>';
   let h = '<div class="section-label' + (anim ? ' fade-in' : '') + '">Trip Sheets · ' +
     (view.atDir ? esc(dirShort(view.atDir)) + ' · ' : '') +
-    (view.run ? 'Run ' + esc(runNo) + ' · ' + items.length + (items.length === 1 ? ' trip' : ' trips')
-              : buses + (buses === 1 ? ' bus' : ' buses')) + '</div>';
+    (view.run ? 'Run ' + esc(runNo) + ' · ' + nTrips
+     : view.blk ? 'Block ' + esc(view.blk) + ' · ' + nTrips
+     : buses + (buses === 1 ? ' bus' : ' buses')) + '</div>';
+  // The run / block also drives other routes: one tap to see those trips.
+  const other = (view.run || view.blk) ? tsOtherRoutes() : [];
+  if (other.length) h += '<div class="ts-also">Also on ' + other.map(r =>
+    '<button type="button" class="ts-route" data-ts-route="' + esc(r) + '">Route ' + esc(r) + '</button>').join(' ') + '</div>';
   if (!sched.loaded) return h + '<div class="at-empty">Loading the timetable…</div>';
-  if (!items.length) return h + '<div class="at-empty">No trips left today' + (view.run ? ' for Run ' + esc(runNo) + ' on Route ' : ' on Route ') + esc(state.route) +
+  if (!items.length) return h + '<div class="at-empty">No trips today' + (view.run ? ' for Run ' + esc(runNo) + ' on Route ' : view.blk ? ' for Block ' + esc(view.blk) + ' on Route ' : ' on Route ') + esc(state.route) +
     (view.run ? ' <button type="button" class="at-runf on" data-run-filter="">Show all runs</button>' : '') + '</div>';
   return h + '<div class="at-list">' + items.map((it, i) => allTripsCardHtml(it, anim, i)).join('') + '</div>';
 }
@@ -3401,11 +3414,19 @@ function manageLayoverTimers() {
     const rf = e.target.closest('[data-run-filter]');
     if (rf) {
       const key = rf.dataset.runFilter || '';
-      if (key) { view.liveScroll = window.scrollY; view.run = key; view.scrollNow = true; lastHTML = ''; drawView(true); if (!view.scrollNow) return; window.scrollTo(0, 0); return; }
+      const box = document.getElementById('busSearch');
+      if (key) {
+        if (ALL_TRIPS_PAGE) { box.value = key.split('|')[1]; view.blk = ''; view.tsMiss = ''; }
+        view.liveScroll = window.scrollY; view.run = key; view.scrollNow = true; lastHTML = ''; drawView(true); if (!view.scrollNow) return; window.scrollTo(0, 0); return;
+      }
       // Back to live / Show all runs: where the list was before.
+      if (ALL_TRIPS_PAGE && box.value) { box.value = ''; tripSheetClear(); window.scrollTo(0, view.liveScroll || 0); view.liveScroll = 0; return; }
       view.run = ''; lastHTML = ''; drawView(true); window.scrollTo(0, view.liveScroll || 0); view.liveScroll = 0;
       return;
     }
+    // Trip Sheets search: "Also on Route 42" opens that route's trips.
+    const tr = e.target.closest('[data-ts-route]');
+    if (tr) { tsOpenRoute(tr.dataset.tsRoute); window.scrollTo(0, 0); return; }
     // Leaders expand/collapse — only the right-side "Leaders" control toggles
     // the panel; run chips (also on this line) fall through to open their PDF.
     const toggle = e.target.closest('[data-lead-toggle]');
@@ -3476,9 +3497,117 @@ async function onRouteChange() {
   return loadRoute(route);
 }
 
+// ── TRIP SHEETS SEARCH ───────────────────────────────────────
+// On Trip Sheets the box finds a RUN (1-3 digits, in the selected depot) or a
+// BLOCK (4 digits) and shows its trip sheet straight away, digit by digit:
+// "1" → Run 1, "12" → Run 12, "123" → Run 123, "9157" → Block 9157. If it
+// drives another route, that route opens; emptying the box (✕) goes back to
+// the list and route from before the search. Live keeps its bus search.
+let tsTimer = 0, tsSeq = 0;
+
+// Every pick run (today's day), once each.
+function allPickRuns() {
+  const seen = new Set(), out = [];
+  for (const rec of paddle.byBlock.values()) for (const seg of rec.segs || []) {
+    const k = runKey(seg.run);
+    if (!seen.has(k)) { seen.add(k); out.push(seg.run); }
+  }
+  return out;
+}
+// Routes a run / block drives, in paddle order (pick names, e.g. "21-42" → 21, 42).
+function routesOfPieces(pieces) {
+  const out = [];
+  pieces.slice().sort((a, b) => (a.s ?? 0) - (b.s ?? 0))
+    .forEach(p => pickRoutes(p.rt ? [p.rt] : []).forEach(r => { if (!out.some(x => isSameRoute(x, r))) out.push(r); }));
+  return out;
+}
+function tsSubjectRoutes() {
+  if (view.run) {
+    const run = allPickRuns().find(r => runKey(r) === view.run);
+    return run ? routesOfPieces(run.pieces) : [];
+  }
+  if (view.blk) {
+    const rec = paddle.byBlock.get(view.blk);
+    return rec ? routesOfPieces(rec.segs || []) : [];
+  }
+  return [];
+}
+function tsOtherRoutes() { return tsSubjectRoutes().filter(r => !isSameRoute(r, state.route)); }
+
+// Open `route` (unless it is the one showing) without leaving the search.
+function tsOpenRoute(route) {
+  if (!route || isSameRoute(route, state.route)) return;
+  if (view.tsPrevRoute == null) view.tsPrevRoute = state.route || '';
+  const keep = { run: view.run, blk: view.blk };
+  const sel = document.getElementById('routeSelect');
+  fillRoutes(document.getElementById('depotSelect').value, route);
+  if (!sel.value) { sel.insertAdjacentHTML('beforeend', '<option value="' + esc(route) + '">Route ' + esc(route) + '</option>'); sel.value = route; }
+  loadRoute(sel.value);          // clears view.run; put the search back
+  view.run = keep.run; view.blk = keep.blk; view.scrollNow = true;
+}
+
+async function tripSheetSearch(digits) {
+  const my = ++tsSeq;
+  if (paddleReady) { try { await paddleReady; } catch (_) {} }
+  if (my !== tsSeq) return;      // another digit came in meanwhile
+  const depot = document.getElementById('depotSelect').value;
+  view.tsMiss = ''; view.run = ''; view.blk = ''; view.scrollNow = true;
+  if (digits.length === 4) {
+    const rec = paddle.byBlock.get(digits);
+    const onRoute = sched.loaded && sched.blockTrips && sched.blockTrips.has(digits);
+    if (!rec && !onRoute) view.tsMiss = 'No Block ' + esc(digits) + ' today';
+    else {
+      view.blk = digits;
+      const routes = rec ? routesOfPieces(rec.segs || []) : [];
+      // Not on the showing route's timetable (or the pick puts it elsewhere):
+      // open the next route it drives ("21-42" block 9101 → Route 42).
+      const hereByPick = !routes.length || routes.some(r => isSameRoute(r, state.route));
+      if (!(onRoute || (!sched.loaded && hereByPick))) {
+        const next = routes.find(r => !isSameRoute(r, state.route));
+        if (next) { tsOpenRoute(next); return; }
+      }
+    }
+  } else {
+    const n = Number(digits);
+    const runs = allPickRuns().filter(r => Number(r.runno) === n);
+    const run = runs.find(r => r.depot === depot) || (!depot ? runs[0] : null);
+    if (!run) view.tsMiss = 'No Run ' + esc(digits) + (depot ? ' at ' + esc(depot) : '') + ' today';
+    else {
+      view.run = runKey(run);
+      const routes = routesOfPieces(run.pieces);
+      // Open a route the run really drives: the pick says "21-42", but the
+      // showing route's timetable may not have any of its blocks (run 101,
+      // block 9101: Route 42 only) - then the next of its routes.
+      const hereByPick = routes.some(r => isSameRoute(r, state.route));
+      const hereByTT = !sched.loaded || !sched.blockTrips || run.pieces.some(p => sched.blockTrips.has(String(p.blk)));
+      if (routes.length && !(hereByPick && hereByTT)) {
+        const next = routes.find(r => !isSameRoute(r, state.route));
+        if (next) { tsOpenRoute(next); return; }
+      }
+    }
+  }
+  lastHTML = '';
+  drawView(true);
+  if (view.tsMiss) window.scrollTo(0, 0);
+}
+
+// The box emptied: the full list again, on the route from before the search.
+function tripSheetClear() {
+  ++tsSeq; clearTimeout(tsTimer);
+  const prev = view.tsPrevRoute;
+  view.run = ''; view.blk = ''; view.tsMiss = ''; view.tsPrevRoute = null; view.scrollNow = true;
+  if (prev && !isSameRoute(prev, state.route)) {
+    fillRoutes(document.getElementById('depotSelect').value, prev);
+    loadRoute(document.getElementById('routeSelect').value || prev);
+    return;
+  }
+  lastHTML = '';
+  if (state.route) drawView(true);
+}
+
 function endSearch() {
   state.bus = ''; state.busBlock = ''; state.block = ''; state.find = null;
-  view.follow = false; view.run = '';
+  view.follow = false; view.run = ''; view.blk = ''; view.tsMiss = ''; view.tsPrevRoute = null;
   document.getElementById('busSearch').value = '';
   document.querySelector('.input-row').classList.remove('searching');
 }
@@ -3954,6 +4083,12 @@ const IDLE_HTML = document.getElementById('content').innerHTML;
     dsel.value = sd;
   }
 
+  if (ALL_TRIPS_PAGE) {
+    const box = document.getElementById('busSearch');
+    box.placeholder = 'Run / Block #';
+    box.setAttribute('aria-label', 'Find a run (up to 3 digits) or a block (4 digits)');
+  }
+
   state.route = routeSel.value;
   loadPairs(); // today's block↔bus pairs seen earlier in this browser
 
@@ -3962,6 +4097,7 @@ const IDLE_HTML = document.getElementById('content').innerHTML;
   document.getElementById('busForm').addEventListener('submit', e => {
     e.preventDefault();
     document.getElementById('busSearch').blur(); // close the phone keyboard
+    if (ALL_TRIPS_PAGE) return;  // Trip Sheets searches as you type
     onBusSearch();
   });
   // Digits only; the 4th digit starts the search. Field emptied (✕ or
@@ -3969,6 +4105,14 @@ const IDLE_HTML = document.getElementById('content').innerHTML;
   document.getElementById('busSearch').addEventListener('input', e => {
     const digits = e.target.value.replace(/\D/g, '').slice(0, 4);
     if (digits !== e.target.value) e.target.value = digits;
+    // Trip Sheets: run (1-3 digits) or block (4), shown as you type.
+    if (ALL_TRIPS_PAGE) {
+      clearTimeout(tsTimer);
+      if (!digits) { tripSheetClear(); return; }
+      if (digits.length === 4) e.target.blur(); // a block is complete: close the keyboard
+      tsTimer = setTimeout(() => tripSheetSearch(digits), 120);
+      return;
+    }
     if (digits.length === 4) {
       if (!state.find || digits !== state.find.num) { e.target.blur(); onBusSearch(); } // blur closes the phone keyboard
       return;
