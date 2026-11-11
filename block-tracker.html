@@ -332,13 +332,13 @@ a.run-chip:active{opacity:.7}
     <!-- Depot first; the route list then holds only that depot's routes (from
          today's pick). Both remembered (bt_depot / bt_route). -->
     <div class="route-select-wrap depot-wrap">
-      <select id="depotSelect" class="route-select depot-select" aria-label="Depot">
+      <select id="depotSelect" class="route-select depot-select" aria-label="Depot" autocomplete="off">
         <option value="">Depot</option>
       </select>
       <span class="select-arrow">▾</span>
     </div>
     <div class="route-select-wrap">
-      <select id="routeSelect" class="route-select" aria-label="Route">
+      <select id="routeSelect" class="route-select" aria-label="Route" autocomplete="off">
         <option value="">Route</option>
       </select>
       <span class="select-arrow">▾</span>
@@ -446,6 +446,10 @@ const GTFS_OBSERVED_BASE = 'https://deenersin-png.github.io/septa-gtfs/data-obse
 // Absolute URL so it works both locally and when this page is hosted inside
 // the septa-scheduler repo itself.
 const PADDLE_BASE = 'https://deenersin-png.github.io/septa-scheduler/data';
+// The Paddles page's id for the current pick (index.html SEASONS current:true).
+// The depot is app-wide: a change here is also saved as that page's depot
+// (paddleDepot_<pick>) so the account never holds two different depots.
+const CURRENT_PICK_ID = 'fall2026';
 
 // SEPTA's BusDetours API doesn't send CORS headers, and corsproxy.io now
 // refuses requests without an API key (401), so it is read with JSONP like
@@ -1002,6 +1006,7 @@ async function loadPaddleData() {
     const byBlock = new Map();
     const routesByDepot = new Map(); // depot label → Set(route id)
     const depots = (manifest.districts || []).map(d => d.label || d.name);
+    paddle.depotIds = new Map((manifest.districts || []).map(d => [d.label || d.name, d.name]));
 
     await Promise.allSettled((manifest.districts || []).map(async district => {
       if (!district.days || !district.days.includes(dayLabel)) return;
@@ -3532,18 +3537,25 @@ function fillDepots() {
 
 // The depot is app-wide (bt_depot, also written by the Paddles page): when
 // another open tab changes it, follow along here.
-window.addEventListener('storage', e => {
-  if (e.key !== 'bt_depot' || !paddle.loaded || state.find) return;
+function followSharedDepot() {
+  if (!paddle.loaded || state.find) return;
+  const want = lsGet('bt_depot');
   const dsel = document.getElementById('depotSelect');
-  if (!paddle.depots.includes(e.newValue) || dsel.value === e.newValue) return;
-  dsel.value = e.newValue;
+  if (!paddle.depots.includes(want) || dsel.value === want) return;
+  dsel.value = want;
   onDepotChange();
-});
+}
+window.addEventListener('storage', e => { if (e.key === 'bt_depot') followSharedDepot(); });
+// Back button / app brought back: the page may come from memory, unreloaded.
+window.addEventListener('pageshow', e => { if (e.persisted) followSharedDepot(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') followSharedDepot(); });
 
 function onDepotChange() {
   const depot = document.getElementById('depotSelect').value;
   if (!depot) return;
   lsSet('bt_depot', depot);
+  const pid = paddle.depotIds && paddle.depotIds.get(depot);
+  if (pid && lsGet('paddleDepot_' + CURRENT_PICK_ID) !== pid) lsSet('paddleDepot_' + CURRENT_PICK_ID, pid);
   // Keep the route when this depot runs it too; else wait for a pick.
   const route = fillRoutes(depot, state.find ? lsGet('bt_route') : state.route || lsGet('bt_route'));
   if (route) { if (state.find || route !== state.route) onRouteChange(); return; }

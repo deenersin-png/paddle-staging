@@ -376,6 +376,13 @@ export async function attach(userId) {
       // Skip our own in-flight write echoing back.
       if (snap.metadata.hasPendingWrites) return;
       const data = snap.data();
+      // A change made on THIS device after the cloud copy was written wins:
+      // e.g. depot changed on Live, then Paddles opened before that change
+      // reached the cloud - the older cloud copy must not undo it.
+      const cloudMs = data.updatedAt?.toMillis ? data.updatedAt.toMillis() : 0;
+      let localMs = 0;
+      try { localMs = Number(localStorage.getItem(LOCAL_STAMP) || 0); } catch (_) {}
+      if (cloudMs && localMs > cloudMs) { flush(tool); return; }
       const incoming = { ...data };
       delete incoming.updatedAt;
       // Compare only the fields this tool actually owns locally, so an extra

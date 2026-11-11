@@ -1020,10 +1020,10 @@ body.older-pick .hd-dot { display: none; }
   <div class="hd-depot">
     <div class="hd-dot"></div>
     <div class="hd-selects">
-      <select class="hd-season-select" id="season-select" onchange="changeSeason()">
+      <select class="hd-season-select" id="season-select" autocomplete="off" onchange="changeSeason()">
         <option value="">Loading...</option>
       </select>
-      <select class="hd-depot-select" id="district-select" onchange="changeDistrict()">
+      <select class="hd-depot-select" id="district-select" autocomplete="off" onchange="changeDistrict()">
         <option value="">Loading districts...</option>
       </select>
     </div>
@@ -1292,7 +1292,10 @@ async function changeSeason() {
   const select = document.getElementById('season-select');
   const season = PAGE_SEASONS.find(s => s.id === select.value) || PAGE_SEASONS[0];
   STATE.currentSeason = season.id;
-  try { localStorage.setItem(OLDER_PICKS ? 'paddleOldSeason' : 'paddleSeason', season.id); } catch (_) {}
+  try {
+    const key = OLDER_PICKS ? 'paddleOldSeason' : 'paddleSeason';
+    if (localStorage.getItem(key) !== season.id) localStorage.setItem(key, season.id);
+  } catch (_) {}
   document.documentElement.dataset.paPick = season.label;
   const bn = document.getElementById('older-banner-pick');
   if (bn) bn.textContent = season.label;
@@ -1337,12 +1340,17 @@ function districtByLabel(label) {
   if (!label || !STATE.manifest || !STATE.manifest.districts) return null;
   return STATE.manifest.districts.find(d => (d.label || d.name) === label) || null;
 }
-window.addEventListener('storage', e => {
-  if (OLDER_PICKS || e.key !== 'bt_depot') return;
-  const d = districtByLabel(e.newValue);
+function followSharedDepot() {
+  if (OLDER_PICKS) return;
+  const d = districtByLabel(sharedDepot());
   const select = document.getElementById('district-select');
   if (d && select.value !== d.name) { select.value = d.name; changeDistrict(); }
-});
+}
+window.addEventListener('storage', e => { if (e.key === 'bt_depot') followSharedDepot(); });
+// Back button: the phone may show this page from memory without reloading it,
+// and a page kept that way misses changes made on Live / Trip Sheets.
+window.addEventListener('pageshow', e => { if (e.persisted) followSharedDepot(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') followSharedDepot(); });
 
 // Bumped on every district load. Each load captures its own token and drops
 // its results if a newer load has started meanwhile - otherwise two overlapping
@@ -1354,7 +1362,11 @@ async function changeDistrict() {
   const select = document.getElementById('district-select');
   STATE.currentDistrict = select.value;
   if (!STATE.currentDistrict) return;
-  localStorage.setItem('paddleDepot_' + STATE.currentSeason, STATE.currentDistrict);
+  // Write only real changes: every write counts as "changed on this device
+  // just now" for the account sync (pa-store.js), and must not on page load.
+  if (localStorage.getItem('paddleDepot_' + STATE.currentSeason) !== STATE.currentDistrict) {
+    localStorage.setItem('paddleDepot_' + STATE.currentSeason, STATE.currentDistrict);
+  }
   if (!OLDER_PICKS) {
     const d = STATE.manifest.districts.find(x => x.name === STATE.currentDistrict);
     const label = d && (d.label || d.name);
