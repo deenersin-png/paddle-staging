@@ -56,6 +56,21 @@ function seatInfo(v) {
   })[v] || { t: '—', c: 'na', show: false };
 }
 
+// Passenger load from the live feed (estimated_seat_availability), as a
+// colour-coded tag for the card's bottom-right corner. No data → nothing.
+const LOAD_INFO = {
+  EMPTY:                      { t: 'Empty',      c: 'empty' },
+  MANY_SEATS_AVAILABLE:       { t: 'Many', x: ' Seats', c: 'many' },
+  FEW_SEATS_AVAILABLE:        { t: 'Few',  x: ' Seats', c: 'few' },
+  STANDING_ROOM_ONLY:         { t: 'Standing',   c: 'standing' },
+  CRUSHED_STANDING_ROOM_ONLY: { t: 'Crowded',    c: 'full' },
+  FULL:                       { t: 'Full',       c: 'full' }
+};
+function loadTagHtml(v) {
+  const s = LOAD_INFO[v];
+  return s ? '<span class="at-load ' + s.c + '" title="Passenger load">' + ICONS.seat + ' ' + s.t + (s.x ? '<span class="ld-x">' + s.x + '</span>' : '') + '</span>' : '';
+}
+
 // ---- model -------------------------------------------------------------------
 
 /**
@@ -426,7 +441,8 @@ export function scorecardHtml({ model, block, allTrips, buses, nowMin, dirNamesB
   const vid = vRaw && vRaw !== '0' ? vRaw : '';
   h += '<div class="at-trips"><span class="at-dir' + (inService ? ' cur' : '') + '">' + left + ' ' + ds + '</span>' +
        (vid ? '<span class="at-bus">' + ICONS.bus + ' ' + esc(vid) + '</span>' : '<span class="at-bus unknown">' + ICONS.bus + ' Bus# pending</span>') +
-       '<span class="at-blk">Blk ' + esc(blk) + '</span></div>';
+       '<span class="at-blk">Blk #: ' + esc(blk) + '</span>' +
+       (live ? loadTagHtml(model.estimated_seat_availability) : '') + '</div>';
   if (note) h += '<div class="at-note">' + esc(note) + '</div>';
   return h + '</div>';
 }
