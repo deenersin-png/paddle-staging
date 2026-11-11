@@ -29,9 +29,8 @@ body{background:#eef2f8;color:#08122b;font-family:'IBM Plex Sans Condensed',syst
 /* Depot picker band, like Live / Trip Sheets. */
 .po-head{position:sticky;top:60px;z-index:200;background:#0b4ea2;padding:8px 16px 12px;border-bottom:3px solid #c8102e}
 .po-title{color:#fff;font-size:19px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;text-align:center;margin:0 0 8px}
-.po-select-wrap{position:relative;flex:1 1 0;min-width:0}
-.po-selects{display:flex;gap:8px}
-.po-selects .po-select{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.po-select-wrap{position:relative}
+.po-route-wrap{margin-top:8px}
 .po-select{width:100%;appearance:none;-webkit-appearance:none;background:#fff;color:#0b4ea2;border:0;border-bottom:3px solid #c8102e;border-radius:8px;
   font:inherit;font-size:17px;font-weight:700;padding:10px 36px 9px 12px;box-shadow:0 2px 6px rgba(8,18,43,.25)}
 .po-arrow{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#c8102e;pointer-events:none;font-size:14px}
@@ -43,12 +42,6 @@ body{background:#eef2f8;color:#08122b;font-family:'IBM Plex Sans Condensed',syst
 
 /* One event: the time line on top of the Paddle App run card. */
 .po-ev{margin-bottom:12px;scroll-margin-top:calc(68px + var(--po-hh,190px))}
-/* Search field: Trip Sheets' (white, red bottom line). */
-.po-search{display:block;width:100%;margin-top:8px;background:#fff;color:#0b4ea2;border:0;border-bottom:3px solid #c8102e;border-radius:8px;
-  font:inherit;font-size:17px;font-weight:700;padding:10px 12px 9px;min-height:46px;box-shadow:0 2px 6px rgba(8,18,43,.25);outline:none}
-.po-search::placeholder{color:#56627a;font-weight:600}
-.po-search:focus{box-shadow:0 0 0 3px rgba(255,209,0,.55)}
-.po-search-wrap{position:relative}
 .po-time{display:flex;align-items:center;gap:8px;padding:7px 12px;font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;color:#fff;background:#0b4ea2}
 .po-time .po-kind{font-size:10px;letter-spacing:.08em;padding:2px 6px;border-radius:3px;background:rgba(255,255,255,.2)}
 .po-time .po-clock{font-size:16px}
@@ -87,24 +80,16 @@ body{background:#eef2f8;color:#08122b;font-family:'IBM Plex Sans Condensed',syst
 
 <div class="po-head">
   <h1 class="po-title">Pull Outs &amp; Pull Ins</h1>
-  <!-- Depot, then Route (narrows the list to that route; "All routes" = all). -->
-  <div class="po-selects">
-    <div class="po-select-wrap">
-      <select id="depotSelect" class="po-select" aria-label="Depot" autocomplete="off"><option value="">Loading depots…</option></select>
-      <span class="po-arrow">▾</span>
-    </div>
-    <div class="po-select-wrap">
-      <select id="routeSelect" class="po-select" aria-label="Route" autocomplete="off"><option value="">All routes</option></select>
-      <span class="po-arrow">▾</span>
-    </div>
+  <!-- Depot, then Route (where the search field was): the route narrows the
+       list ("All routes" = all). -->
+  <div class="po-select-wrap">
+    <select id="depotSelect" class="po-select" aria-label="Depot" autocomplete="off"><option value="">Loading depots…</option></select>
+    <span class="po-arrow">▾</span>
   </div>
-  <!-- Search (run 1-3 digits, block 4), its Run / Block buttons, the day tags.
-       No bus: buses aren't assigned until they pull out. -->
-  <form id="poForm" class="po-search-wrap" role="search" action="#">
-    <input id="poSearch" class="po-search" type="search" inputmode="numeric" enterkeyhint="search" maxlength="4" data-pa-clear
-           autocomplete="off" placeholder="Run / Block #" aria-label="Find a run (1-3 digits) or block (4 digits)">
-  </form>
-  <div id="poTypes" class="pa-types" role="group" aria-label="Result type" hidden></div>
+  <div class="po-select-wrap po-route-wrap">
+    <select id="routeSelect" class="po-select" aria-label="Route" autocomplete="off"><option value="">All routes</option></select>
+    <span class="po-arrow">▾</span>
+  </div>
   <div id="poDays" class="pa-days" role="group" aria-label="Day"></div>
 </div>
 
@@ -146,7 +131,6 @@ let events = { out: [], in: [] }, loadSeq = 0, dayKey = '';
 // Day tags: today's day (live: next / past, "in 5 min") or another day of the
 // depot's schedule (that day's list, plain). Search: run or block number.
 let selDay = '';                    // '' = today
-let q = '', qFinal = false, typeChoice = '';
 // Route dropdown: '' = all routes. An event's route (e.rt) is the one its
 // block runs at that pull-out / pull-in (a "21-42" piece: the trip then, else the next).
 let routeSel = lsGet('po_route');
@@ -271,26 +255,6 @@ function dueText(min, now) {
   return d > 0 ? 'in ' + t.trim() : t.trim() + ' ago';
 }
 
-// ---- search: a run (1-3 digits) or a block (4) --------------------------
-// While typing, numbers that start the same match; once final (800 ms, the
-// search key, leaving the box, or a 4th digit) only that run / block.
-const matchAs = (e, type) => type === 'run'
-  ? q.length <= 3 && (qFinal ? e.x.run.runNo === q : e.x.run.runNo.startsWith(q))
-  : (qFinal ? q.length === 4 && e.block === q : e.block.startsWith(q));
-function searchState() {
-  if (!q) return null;
-  const n = { run: new Set(), block: new Set() };
-  for (const e of inView()) for (const t of ['run', 'block']) if (matchAs(e, t)) n[t].add(e.x.run.runNo);
-  const types = ['run', 'block'].map(t => ({ type: t, match: n[t].size > 0, n: n[t].size }));
-  return { types, sel: PaTags.pickType(types, typeChoice) };
-}
-function renderTypes(st) {
-  const row = $('poTypes');
-  if (!st) { row.hidden = true; row.innerHTML = ''; return; }
-  const html = PaTags.typeBar(st.types, st.sel);
-  if (row.innerHTML !== html) row.innerHTML = html;
-  row.hidden = false;
-}
 function renderDays() {
   const dist = curDist();
   const days = dist && dist.days && dist.days.length ? dist.days : PaTags.STD_DAYS;
@@ -302,10 +266,8 @@ function renderDays() {
 
 function render(scroll) {
   const all = inView(), now = nowMin(), other = otherDay();
-  const st = searchState();
-  renderTypes(st);
   renderDays();
-  const list = st ? all.filter(e => st.sel && matchAs(e, st.sel)) : all;
+  const list = all;
   document.querySelectorAll('.po-tab').forEach(b => b.classList.toggle('on', b.dataset.po === view));
   const label = $('depotSelect').value;
   const word = view === 'out' ? 'Pull Outs' : 'Pull Ins';
@@ -313,8 +275,7 @@ function render(scroll) {
   $('poLabel').innerHTML = esc(word) + ' · ' + list.length + '<span class="po-sub">' + esc(label) + (routeSel ? ' · Route ' + esc(routeSel) : '') + ' · ' + esc(dayName) + ' · earliest to latest</span>';
   const box = $('poList');
   if (!list.length) {
-    const what = st && qFinal ? (q.length === 4 ? 'Block ' : 'Run ') + q : '';
-    box.innerHTML = '<div class="po-msg">No ' + esc(word.toLowerCase()) + (what ? ' for ' + esc(what) : '') + (routeSel ? ' on Route ' + esc(routeSel) : '') + (other ? ' on ' + esc(selDay) : ' today') + '</div>';
+    box.innerHTML = '<div class="po-msg">No ' + esc(word.toLowerCase()) + (routeSel ? ' on Route ' + esc(routeSel) : '') + (other ? ' on ' + esc(selDay) : ' today') + '</div>';
     return;
   }
   box.innerHTML = '';
@@ -342,7 +303,7 @@ function render(scroll) {
     box.appendChild(wrap);
   });
   PaTags.resolveBlockTags(box);
-  if (scroll && (other || st)) window.scrollTo(0, 0);
+  if (scroll && other) window.scrollTo(0, 0);
   else if (scroll) {
     const target = box.querySelector('.po-ev.next') || box.lastElementChild;
     if (target && nextIdx !== 0) requestAnimationFrame(() => target.scrollIntoView({ block: 'start' }));
@@ -355,7 +316,7 @@ function render(scroll) {
 setInterval(() => {
   const now = nowMin(), key = todayIso() + '|' + (now < OWL_END ? 'owl' : now >= NIGHT_FROM ? 'late' : 'day');
   if (key !== dayKey) { build(); return; }
-  if (otherDay() || q) return;
+  if (otherDay()) return;
   const list = inView();
   const nextIdx = list.findIndex(e => e.min >= now - 2);
   document.querySelectorAll('#poList .po-ev').forEach((el, i) => {
@@ -387,39 +348,6 @@ $('poDays').addEventListener('click', e => {
   selDay = d === todayName() ? '' : d;
   build();
 });
-// Run / Block buttons.
-$('poTypes').addEventListener('click', e => {
-  const b = e.target.closest('[data-pa-type]');
-  if (!b || b.disabled) return;
-  typeChoice = b.dataset.paType;
-  render(true);
-});
-// The search box: same rule as Paddles / Trip Sheets.
-(function () {
-  const box = $('poSearch');
-  let timer = 0;
-  const settle = () => {
-    clearTimeout(timer); timer = 0;
-    const was = qFinal;
-    qFinal = !!q;
-    if (document.activeElement === box) box.blur();
-    if (qFinal !== was) render(true);
-  };
-  $('poForm').addEventListener('submit', e => { e.preventDefault(); settle(); });
-  box.addEventListener('blur', settle);
-  box.addEventListener('input', () => {
-    const d = box.value.replace(/\D/g, '').slice(0, 4);
-    if (d !== box.value) box.value = d;
-    clearTimeout(timer); timer = 0;
-    q = d; qFinal = false;
-    if (!q) typeChoice = '';
-    render(!q);
-    if (!q) return;
-    if (q.length === 4) { settle(); return; }
-    timer = setTimeout(settle, 800);
-  });
-})();
-
 // The depot is app-wide: bt_depot (label), like Paddles / Live / Trip Sheets.
 $('depotSelect').addEventListener('change', () => { lsSet('bt_depot', $('depotSelect').value); build(); });
 window.addEventListener('storage', e => {
