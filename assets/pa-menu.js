@@ -6,6 +6,16 @@
   if (window.__paMenu) return;
   window.__paMenu = true;
 
+  // Every page with the menu also gets the red ✕ clear button in its search
+  // boxes (assets/pa-clear.js), loaded from the same folder as this file.
+  (function () {
+    var me = document.currentScript && document.currentScript.src;
+    var s = document.createElement('script');
+    s.src = me ? me.replace(/pa-menu\.js(\?.*)?$/, 'pa-clear.js') : 'assets/pa-clear.js';
+    s.defer = true;
+    document.head.appendChild(s);
+  })();
+
   // Pages inside the app, then the Google Site menu.
   var APP = [
     ['Trip Sheets', 'block-tracker.html?view=all'],
