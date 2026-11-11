@@ -40,11 +40,18 @@ body{background:#eef2f8;color:#08122b;font-family:'IBM Plex Sans Condensed',syst
 .po-msg{text-align:center;padding:48px 16px;color:#56627a;font-size:15px}
 
 /* One event: the time line on top of the Paddle App run card. */
-.po-ev{margin-bottom:12px;scroll-margin-top:185px}
+.po-ev{margin-bottom:12px;scroll-margin-top:calc(68px + var(--po-hh,190px))}
+/* Search field: Trip Sheets' (white, red bottom line). */
+.po-search{display:block;width:100%;margin-top:8px;background:#fff;color:#0b4ea2;border:0;border-bottom:3px solid #c8102e;border-radius:8px;
+  font:inherit;font-size:17px;font-weight:700;padding:10px 12px 9px;min-height:46px;box-shadow:0 2px 6px rgba(8,18,43,.25);outline:none}
+.po-search::placeholder{color:#56627a;font-weight:600}
+.po-search:focus{box-shadow:0 0 0 3px rgba(255,209,0,.55)}
+.po-search-wrap{position:relative}
 .po-time{display:flex;align-items:center;gap:8px;padding:7px 12px;font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;color:#fff;background:#0b4ea2}
 .po-time .po-kind{font-size:10px;letter-spacing:.08em;padding:2px 6px;border-radius:3px;background:rgba(255,255,255,.2)}
 .po-time .po-clock{font-size:16px}
-.po-time .po-where{font-weight:600;font-size:12px;opacity:.95;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.po-time .po-where{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.po-time .pa-blk{box-shadow:0 0 0 1px rgba(255,255,255,.55)}
 .po-time .po-due{margin-left:auto;white-space:nowrap;font-size:12px;padding:2px 7px;border-radius:10px;background:#fff;color:#0b4ea2}
 .po-ev.in .po-time{background:#6a3fc1}
 .po-ev.in .po-time .po-due{color:#6a3fc1}
@@ -70,7 +77,9 @@ body{background:#eef2f8;color:#08122b;font-family:'IBM Plex Sans Condensed',syst
 .po-ev .prc-stack{border:1px solid #c9d3e3 !important}
 </style>
 <link rel="stylesheet" href="assets/pa-menu.css">
+<link rel="stylesheet" href="assets/pa-tags.css">
 <script src="assets/pa-menu.js" defer></script>
+<script src="assets/pa-tags.js"></script>
 </head>
 <body>
 
@@ -80,6 +89,14 @@ body{background:#eef2f8;color:#08122b;font-family:'IBM Plex Sans Condensed',syst
     <select id="depotSelect" class="po-select" aria-label="Depot" autocomplete="off"><option value="">Loading depots…</option></select>
     <span class="po-arrow">▾</span>
   </div>
+  <!-- Search (run 1-3 digits, block 4), its Run / Block buttons, the day tags.
+       No bus: buses aren't assigned until they pull out. -->
+  <form id="poForm" class="po-search-wrap" role="search" action="#">
+    <input id="poSearch" class="po-search" type="search" inputmode="numeric" enterkeyhint="search" maxlength="4" data-pa-clear
+           autocomplete="off" placeholder="Run / Block #" aria-label="Find a run (1-3 digits) or block (4 digits)">
+  </form>
+  <div id="poTypes" class="pa-types" role="group" aria-label="Result type" hidden></div>
+  <div id="poDays" class="pa-days" role="group" aria-label="Day"></div>
 </div>
 
 <div id="poLabel" class="po-label">Pull Outs</div>
@@ -117,6 +134,13 @@ const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMin
 
 let districts = [], overrides = {}, view = lsGet('po_view') === 'in' ? 'in' : 'out';
 let events = { out: [], in: [] }, loadSeq = 0, dayKey = '';
+// Day tags: today's day (live: next / past, "in 5 min") or another day of the
+// depot's schedule (that day's list, plain). Search: run or block number.
+let selDay = '';                    // '' = today
+let q = '', qFinal = false, typeChoice = '';
+const todayName = () => dayLabel(dayTypeFor(todayIso(), overrides));
+const curDist = () => districts.find(d => (d.label || d.name) === $('depotSelect').value);
+const otherDay = () => !!selDay && selDay !== todayName();
 
 // A run's start (report) as clock minutes, for the night-liner rule.
 const startClock = row => { const m = String(row.start || '').match(/(\d{1,2}):(\d{2})\s*([AP]M)/i); if (!m) return null; let h = +m[1] % 12; if (/p/i.test(m[3])) h += 12; return h * 60 + +m[2]; };
@@ -134,7 +158,33 @@ async function build() {
   const dist = districts.find(d => (d.label || d.name) === label);
   if (!dist) { $('poList').innerHTML = '<div class="po-msg">No depot</div>'; return; }
   $('poList').innerHTML = '<div class="po-msg">Loading ' + esc(label) + '…</div>';
+  renderDays();
   const today = todayIso(), now = nowMin();
+  if (otherDay()) {
+    // Another day: its runs on its own clock, no "now".
+    const dt = PaTags.dayKey(selDay);
+    const links = await loadPaddleLinks(dist.name).catch(() => new Map());
+    const rows = await loadPaddle(dist.name, encodeURIComponent(selDay.toLowerCase())).catch(() => new Map());
+    if (my !== loadSeq) return;
+    const out = [], inn = [];
+    for (const row of rows.values()) {
+      const run = normalizeRun(row, dt);
+      if (!run) continue;
+      const link = links.get(selDay + '-' + run.runNo) || links.get(dayLabel(dt) + '-' + run.runNo);
+      const url = link ? ((window.innerWidth <= 768 ? link.moblink || link.pclink : link.pclink || link.moblink) || '') : '';
+      const x = { run, row, dayType: dt };
+      run.pieces.forEach((p, i) => {
+        const base = { x, url, piece: i, block: p.block, route: p.routeLabel, p };
+        if (String(p.startType).toUpperCase() === 'O' && p.startMin != null) out.push({ ...base, min: p.startMin, at: p.startMin });
+        if (String(p.endType).toUpperCase() === 'I' && p.endMin != null) inn.push({ ...base, min: p.endMin, at: p.endMin });
+      });
+    }
+    const byTime = (a, b) => a.min - b.min || Number(a.x.run.runNo) - Number(b.x.run.runNo);
+    events = { out: out.sort(byTime), in: inn.sort(byTime) };
+    dayKey = today + '|' + (now < OWL_END ? 'owl' : now >= NIGHT_FROM ? 'late' : 'day');
+    render(true);
+    return;
+  }
   const tType = dayTypeFor(today, overrides);
   const links = await loadPaddleLinks(dist.name).catch(() => new Map());
   const has = t => (dist.days || []).includes(dayLabel(t));
@@ -159,12 +209,12 @@ async function build() {
       const link = links.get(dayLabel(x.dayType) + '-' + x.run.runNo);
       const url = link ? ((window.innerWidth <= 768 ? link.moblink || link.pclink : link.pclink || link.moblink) || '') : '';
       x.run.pieces.forEach((p, i) => {
-        const base = { x, url, piece: i, block: p.block, route: p.routeLabel, lastNight: !!set.lastNight, tonight: !!set.tonight };
-        if (String(p.startType).toUpperCase() === 'O' && p.startMin != null) out.push({ ...base, min: p.startMin + set.shift });
+        const base = { x, url, piece: i, block: p.block, route: p.routeLabel, p, lastNight: !!set.lastNight, tonight: !!set.tonight };
+        if (String(p.startType).toUpperCase() === 'O' && p.startMin != null) out.push({ ...base, min: p.startMin + set.shift, at: p.startMin });
         if (String(p.endType).toUpperCase() === 'I' && p.endMin != null) {
           const m = p.endMin + set.shift;
           // Last night's runs: only the pull-ins after midnight.
-          if (!set.lastNight || m >= 0) inn.push({ ...base, min: m });
+          if (!set.lastNight || m >= 0) inn.push({ ...base, min: m, at: p.endMin });
         }
       });
     }
@@ -183,34 +233,79 @@ function dueText(min, now) {
   return d > 0 ? 'in ' + t.trim() : t.trim() + ' ago';
 }
 
+// ---- search: a run (1-3 digits) or a block (4) --------------------------
+// While typing, numbers that start the same match; once final (800 ms, the
+// search key, leaving the box, or a 4th digit) only that run / block.
+const matchAs = (e, type) => type === 'run'
+  ? q.length <= 3 && (qFinal ? e.x.run.runNo === q : e.x.run.runNo.startsWith(q))
+  : (qFinal ? q.length === 4 && e.block === q : e.block.startsWith(q));
+function searchState() {
+  if (!q) return null;
+  const n = { run: new Set(), block: new Set() };
+  for (const e of events[view]) for (const t of ['run', 'block']) if (matchAs(e, t)) n[t].add(e.x.run.runNo);
+  const types = ['run', 'block'].map(t => ({ type: t, match: n[t].size > 0, n: n[t].size }));
+  return { types, sel: PaTags.pickType(types, typeChoice) };
+}
+function renderTypes(st) {
+  const row = $('poTypes');
+  if (!st) { row.hidden = true; row.innerHTML = ''; return; }
+  const html = PaTags.typeBar(st.types, st.sel);
+  if (row.innerHTML !== html) row.innerHTML = html;
+  row.hidden = false;
+}
+function renderDays() {
+  const dist = curDist();
+  const days = dist && dist.days && dist.days.length ? dist.days : PaTags.STD_DAYS;
+  const html = PaTags.dayTags(days, selDay || todayName(), todayName(), 'data-po-day');
+  if ($('poDays').innerHTML !== html) $('poDays').innerHTML = html;
+  // The sticky header's height, so a scrolled-to card isn't hidden under it.
+  document.documentElement.style.setProperty('--po-hh', document.querySelector('.po-head').offsetHeight + 'px');
+}
+
 function render(scroll) {
-  const list = events[view], now = nowMin();
+  const all = events[view], now = nowMin(), other = otherDay();
+  const st = searchState();
+  renderTypes(st);
+  renderDays();
+  const list = st ? all.filter(e => st.sel && matchAs(e, st.sel)) : all;
   document.querySelectorAll('.po-tab').forEach(b => b.classList.toggle('on', b.dataset.po === view));
   const label = $('depotSelect').value;
   const word = view === 'out' ? 'Pull Outs' : 'Pull Ins';
-  $('poLabel').innerHTML = esc(word) + ' · ' + list.length + '<span class="po-sub">' + esc(label) + ' · ' + esc(dayLabel(dayTypeFor(todayIso(), overrides))) + ' · earliest to latest</span>';
+  const dayName = other ? selDay : todayName();
+  $('poLabel').innerHTML = esc(word) + ' · ' + list.length + '<span class="po-sub">' + esc(label) + ' · ' + esc(dayName) + ' · earliest to latest</span>';
   const box = $('poList');
-  if (!list.length) { box.innerHTML = '<div class="po-msg">No ' + esc(word.toLowerCase()) + ' today</div>'; return; }
+  if (!list.length) {
+    const what = st && qFinal ? (q.length === 4 ? 'Block ' : 'Run ') + q : '';
+    box.innerHTML = '<div class="po-msg">No ' + esc(word.toLowerCase()) + (what ? ' for ' + esc(what) : '') + (other ? ' on ' + esc(selDay) : ' today') + '</div>';
+    return;
+  }
   box.innerHTML = '';
-  // Current / next: the first one not more than 2 minutes past.
-  const nextIdx = list.findIndex(e => e.min >= now - 2);
+  // Current / next: the first one not more than 2 minutes past (today only).
+  const nextIdx = other ? -1 : list.findIndex(e => e.min >= now - 2);
   list.forEach((e, i) => {
     const r = e.x.run;
     const top = document.createElement('div');
     top.className = 'po-time';
     top.innerHTML = '<span class="po-kind">' + (view === 'out' ? 'OUT' : 'IN') + '</span>' +
       '<span class="po-clock">' + esc(fmtClock(e.min)) + '</span>' +
-      '<span class="po-where">Blk ' + esc(e.block) + ' · ' + esc(e.route) + (e.lastNight ? ' · last night' : e.tonight || e.min >= 1440 ? ' · tonight' : '') + '</span>' +
-      '<span class="po-due" data-min="' + e.min + '">' + esc(dueText(e.min, now)) + '</span>';
+      // Block tag: the route the block runs at that moment ("21/9140").
+      '<span class="po-where">' + PaTags.blockTag(null, e.block, { label: e.route, day: e.x.dayType, at: e.at, s: e.p.startMin, e: e.p.endMin }) +
+      (other ? '' : e.lastNight ? ' last night' : e.tonight || e.min >= 1440 ? ' tonight' : '') + '</span>' +
+      (other ? '' : '<span class="po-due" data-min="' + e.min + '">' + esc(dueText(e.min, now)) + '</span>');
     const c = card(modelFromRun(r), { paddleUrl: e.url });
     const seg = c.querySelectorAll('.prc-seg')[e.piece];
     if (seg) seg.classList.add('po-hit');
+    // All the run's routes stay listed; this piece's is marked (yellow: by the schedule).
+    const rts = c.querySelector('.prc-routes');
+    if (rts) rts.innerHTML = PaTags.routeList([...new Set(r.pieces.map(p => p.routeLabel))], e.route, false, (a, b) => a === b);
     const wrap = document.createElement('div');
     wrap.className = 'po-ev' + (view === 'in' ? ' in' : '') + (nextIdx >= 0 && i < nextIdx ? ' past' : '') + (i === nextIdx ? ' next' : '');
     wrap.appendChild(stack(top, c, r.dayType));
     box.appendChild(wrap);
   });
-  if (scroll) {
+  PaTags.resolveBlockTags(box);
+  if (scroll && (other || st)) window.scrollTo(0, 0);
+  else if (scroll) {
     const target = box.querySelector('.po-ev.next') || box.lastElementChild;
     if (target && nextIdx !== 0) requestAnimationFrame(() => target.scrollIntoView({ block: 'start' }));
     else window.scrollTo(0, 0);
@@ -222,6 +317,7 @@ function render(scroll) {
 setInterval(() => {
   const now = nowMin(), key = todayIso() + '|' + (now < OWL_END ? 'owl' : now >= NIGHT_FROM ? 'late' : 'day');
   if (key !== dayKey) { build(); return; }
+  if (otherDay() || q) return;
   const list = events[view];
   const nextIdx = list.findIndex(e => e.min >= now - 2);
   document.querySelectorAll('#poList .po-ev').forEach((el, i) => {
@@ -238,6 +334,48 @@ document.querySelector('.po-bar').addEventListener('click', e => {
   view = b.dataset.po; lsSet('po_view', view);
   render(true);
 });
+
+// Day tags: today = the live list; another day = that day's schedule.
+$('poDays').addEventListener('click', e => {
+  const b = e.target.closest('[data-po-day]');
+  if (!b) return;
+  const d = b.dataset.poDay;
+  if ((selDay || todayName()) === d) return;
+  selDay = d === todayName() ? '' : d;
+  build();
+});
+// Run / Block buttons.
+$('poTypes').addEventListener('click', e => {
+  const b = e.target.closest('[data-pa-type]');
+  if (!b || b.disabled) return;
+  typeChoice = b.dataset.paType;
+  render(true);
+});
+// The search box: same rule as Paddles / Trip Sheets.
+(function () {
+  const box = $('poSearch');
+  let timer = 0;
+  const settle = () => {
+    clearTimeout(timer); timer = 0;
+    const was = qFinal;
+    qFinal = !!q;
+    if (document.activeElement === box) box.blur();
+    if (qFinal !== was) render(true);
+  };
+  $('poForm').addEventListener('submit', e => { e.preventDefault(); settle(); });
+  box.addEventListener('blur', settle);
+  box.addEventListener('input', () => {
+    const d = box.value.replace(/\D/g, '').slice(0, 4);
+    if (d !== box.value) box.value = d;
+    clearTimeout(timer); timer = 0;
+    q = d; qFinal = false;
+    if (!q) typeChoice = '';
+    render(!q);
+    if (!q) return;
+    if (q.length === 4) { settle(); return; }
+    timer = setTimeout(settle, 800);
+  });
+})();
 
 // The depot is app-wide: bt_depot (label), like Paddles / Live / Trip Sheets.
 $('depotSelect').addEventListener('change', () => { lsSet('bt_depot', $('depotSelect').value); build(); });

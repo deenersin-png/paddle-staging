@@ -421,7 +421,8 @@ export function scorecardHtml({ model, block, allTrips, buses, nowMin, dirNamesB
   let h = '<div class="prc day-' + day + (inService ? ' at-now' : '') + '">';
   h += '<div class="prc-head"><div class="prc-head-top">' + (layover ? '<span class="at-nth lay">LAYOVER</span>' : numTag(cls)) + runBtn + '</div>';
   h += '<div class="prc-head-bottom"><span class="at-time">' + (inService ? '<span class="at-tag now">IN SERVICE</span>' : '') +
-       fmtClock(t.s) + ' – ' + fmtClock(t.e) + '</span><div class="prc-routes">' + esc(t.route) + '</div></div></div>';
+       fmtClock(t.s) + ' – ' + fmtClock(t.e) + '</span><div class="prc-routes">' +
+       (window.PaTags ? window.PaTags.routeList([t.route], t.route, live) : esc(t.route)) + '</div></div></div>';
   if (inService && model.next_stop_name) {
     const late = parseInt(model.late) || 0;
     const lt = late === 0 ? ['ontime', 'On Time'] : late < 0 ? ['early', Math.abs(late) + 'm early'] : [late < LATE_BAD ? 'mild' : 'bad', '+' + late + 'm late'];
@@ -441,7 +442,8 @@ export function scorecardHtml({ model, block, allTrips, buses, nowMin, dirNamesB
   const vid = vRaw && vRaw !== '0' ? vRaw : '';
   h += '<div class="at-trips"><span class="at-dir' + (inService ? ' cur' : '') + '">' + left + ' ' + ds + '</span>' +
        (vid ? '<span class="at-bus">' + ICONS.bus + ' ' + esc(vid) + '</span>' : '<span class="at-bus unknown">' + ICONS.bus + ' Bus# pending</span>') +
-       '<span class="at-blk">Blk #: ' + esc(blk) + '</span>' +
+       // Block tag: this trip's route / the block ("21/9605").
+       (window.PaTags ? window.PaTags.blockTag(t.route, blk) : '<span class="at-blk">Blk #: ' + esc(blk) + '</span>') +
        (live ? loadTagHtml(model.estimated_seat_availability) : '') + '</div>';
   if (note) h += '<div class="at-note">' + esc(note) + '</div>';
   return h + '</div>';

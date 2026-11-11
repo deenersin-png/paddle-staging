@@ -38,7 +38,7 @@ export function modelFromRun(run, fallback = {}) {
     pay,
     swing: r.swingDur || '',
     segments: pieces.map(p => ({
-      route: p.routeLabel, block: p.block, sched: p.durLabel,
+      route: p.routeLabel, block: p.block, sched: p.durLabel, s: p.startMin, e: p.endMin,
       startType: p.startType, startTime: p.startClock || fmtClock(p.startMin),
       endType: p.endType, endTime: p.endClock || fmtClock(p.endMin)
     }))
@@ -46,18 +46,30 @@ export function modelFromRun(run, fallback = {}) {
 }
 
 /** The card element. opts.paddleUrl: the run's official paddle page. */
+// The design system's tags (assets/pa-tags.js, a classic script the page
+// loads); the old look if a page doesn't have it.
+const T = () => window.PaTags || null;
+const blockHtml = (s, dayType) => T()
+  ? T().blockTag(null, s.block, { label: s.route, day: dayType, at: s.s, s: s.s, e: s.e })
+  : `<span class="prc-seg-block-label">BLK</span><span class="prc-seg-block">${esc(s.block)}</span>`;
+const runHtml = (runNo, day, url) => T()
+  ? T().runTag(runNo, day, url)
+  : (url ? `<a class="prc-num" href="${esc(url)}" target="_blank" rel="noopener">${esc(runNo)}</a>` : `<div class="prc-num">${esc(runNo)}</div>`) +
+    `<div class="prc-day">${esc(day)}</div>`;
+
 export function card(m, opts = {}) {
   const day = dayClass(m.dayType);
   const url = opts.paddleUrl || '';
   const n = document.createElement('div');
   n.className = 'prc day-' + day;
+  // Each piece: its route, then the block tag ("21/9901").
   const segs = (m.segments || []).map(s => `
       <div class="prc-seg">
         <div class="prc-seg-connector"><div class="prc-seg-dot"></div><div class="prc-seg-line"></div></div>
         <div class="prc-seg-body">
           <div class="prc-seg-top">
             <span class="prc-seg-route">${esc(s.route)}</span>
-            <span class="prc-seg-block-label">BLK</span><span class="prc-seg-block">${esc(s.block)}</span>
+            ${blockHtml(s, m.dayType)}
             <span class="prc-seg-sched">${esc(s.sched)}</span>
           </div>
           <div class="prc-seg-times">
@@ -72,8 +84,7 @@ export function card(m, opts = {}) {
   n.innerHTML = `
     <div class="prc-head">
       <div class="prc-head-top">
-        ${url ? `<a class="prc-num" href="${esc(url)}" target="_blank" rel="noopener">${esc(m.runNo)}</a>` : `<div class="prc-num">${esc(m.runNo)}</div>`}
-        <div class="prc-day">${esc(day)}</div>
+        ${runHtml(m.runNo, day, url)}
         <div class="prc-actions">${url ? `<a class="prc-paddle" href="${esc(url)}" target="_blank" rel="noopener">PADDLE</a>` : ''}</div>
       </div>
       <div class="prc-head-bottom">
@@ -87,12 +98,20 @@ export function card(m, opts = {}) {
     </div>
     ${m.swing ? `<div class="prc-swing"><div class="prc-swing-label">Swing:</div><div class="prc-swing-value">${esc(m.swing)}</div></div>` : ''}
     ${segs ? `<div class="prc-timeline">${segs}</div>` : ''}`;
+  if (T()) T().resolveBlockTags(n);
   return n;
 }
 
 /** Turn the run number and PADDLE button into links once the URL is known. */
 export function setPaddleUrl(n, url) {
   if (!n || !url) return;
+  // The run tag becomes the link to the paddle.
+  const tag = n.querySelector('.prc-head-top .pa-run.nolink');
+  if (tag) {
+    const a = document.createElement('a');
+    a.className = tag.className.replace(/\s*nolink/, ''); a.href = url; a.target = '_blank'; a.rel = 'noopener'; a.innerHTML = tag.innerHTML;
+    tag.replaceWith(a);
+  }
   const num = n.querySelector('.prc-num');
   if (num && num.tagName !== 'A') {
     const a = document.createElement('a');

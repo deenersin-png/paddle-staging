@@ -1,0 +1,89 @@
+/* ==========================================================================
+   Paddle App design system: the tags every page shares (assets/pa-tags.js).
+   Load AFTER the page's own <style> and pa-theme.css.
+
+   Day tags     .pa-days / .pa-day      (Trip Sheets look: Sunday, Weekday, Saturday)
+   Block tag    .pa-blk                 "21/1050", teal, fixed width, no icon
+   Bus tag      .pa-bus                 gray, bus icon, 4-digit number (unchanged look)
+   Run tag      .pa-run                 Trip Sheets run button: "RUN#: 308 WEEKDAY"
+   Type buttons .pa-types / .pa-type    search result type: Run, Block, Bus
+   Current route .pa-rt-cur.live / .sched  in a scorecard's route list
+   ========================================================================== */
+
+:root{
+  --pa-blk-bg:#00798c;       /* block tag + Block button */
+  --pa-run-bg:#0b4ea2;       /* Run button */
+  --pa-bus-bg:#4b5567;       /* Bus button (bus tag is the light gray below) */
+  --pa-off-bg:#e6eaf0;       /* a type with no match */
+  --pa-off-fg:#a3abb8;
+}
+
+/* ---- Day tags (copied from Trip Sheets' .ts-day; one component) ---------- */
+.pa-days{display:flex;gap:8px;margin-top:8px}
+.pa-days[hidden]{display:none}
+.pa-day{flex:1 1 0;min-width:0;display:flex;align-items:center;justify-content:center;gap:5px;min-height:36px;padding:4px 6px;
+  background:#fff;border:0;border-bottom:3px solid #c8102e;border-radius:8px;box-shadow:0 2px 6px rgba(8,18,43,.25);
+  font-family:'IBM Plex Sans Condensed',system-ui,sans-serif;font-size:14px;font-weight:800;letter-spacing:.02em;text-transform:uppercase;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.pa-day-sunday{color:#12753a}.pa-day-weekday{color:#0b4ea2}.pa-day-saturday{color:#c8102e}.pa-day.alt{color:#6a3fc1}
+.pa-day.on{color:#fff;box-shadow:inset 0 0 0 2px #fff,0 2px 6px rgba(8,18,43,.35)}
+.pa-day-sunday.on{background:#12753a}.pa-day-weekday.on{background:#0b4ea2}.pa-day-saturday.on{background:#c8102e}.pa-day.alt.on{background:#6a3fc1}
+.pa-today{font-size:9px;font-weight:700;letter-spacing:.05em;padding:1px 4px;border-radius:3px;background:rgba(11,78,162,.12)}
+.pa-day.on .pa-today{background:rgba(255,255,255,.25)}
+@media (max-width:360px){.pa-day{font-size:12px;gap:3px}.pa-today{display:none}}
+
+/* ---- Block tag: route / block, one width everywhere ---------------------
+   Monospace; the route part is 3 characters wide (right-aligned) so every
+   slash and every block number line up, whatever the route. */
+.pa-blk{display:inline-flex;align-items:center;flex-shrink:0;padding:2px 8px;border-radius:3px;background:var(--pa-blk-bg);color:#fff;
+  font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12px;font-weight:700;line-height:16px;white-space:nowrap;
+  font-variant-numeric:tabular-nums;text-decoration:none;vertical-align:middle}
+.pa-blk .pa-blk-r{display:inline-block;min-width:3ch;text-align:right}
+.pa-blk .pa-blk-s{opacity:.75;padding:0 1px}
+.pa-blk .pa-blk-n{display:inline-block;min-width:4ch}
+
+/* Piece rows (Paddles cards, run scorecards): route, then the block tag,
+   the tags lined up under each other. */
+.prc-seg-top .prc-seg-route{min-width:6ch}
+.at-trips .pa-blk{font-size:12px}
+@media (max-width:360px){.at-trips:has(.at-load) .pa-blk{padding:2px 5px;font-size:11px}}
+.find-msg .pa-blk,.find-msg .pa-bus{font-size:15px;line-height:20px;padding:3px 9px}
+.find-msg .pa-bus .bus-ico{width:16px;height:16px}
+
+/* ---- Bus tag: as the scorecards draw it (.at-bus), unchanged ------------ */
+.pa-bus{display:inline-flex;align-items:center;gap:4px;flex-shrink:0;padding:2px 8px;border-radius:3px;background:rgba(10,30,70,.26);color:#08122b;
+  font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:13px;font-weight:700;line-height:16.5px;white-space:nowrap;vertical-align:middle}
+.pa-bus .bus-ico{width:14px;height:14px;border-radius:3px;object-fit:contain;flex-shrink:0}
+
+/* ---- Run tag: Trip Sheets' run button ("RUN#: 308 WEEKDAY") -------------- */
+.pa-run{display:inline-flex;align-items:baseline;gap:6px;flex-shrink:0;padding:3px 8px;border:1px solid rgba(10,30,70,.42);border-radius:4px;
+  background:transparent;text-decoration:none;white-space:nowrap;cursor:pointer;color:#0b4ea2;vertical-align:middle;line-height:1}
+.pa-run.nolink{cursor:default}
+.pa-run:hover{border-color:#8a909f}
+.pa-run .pa-run-n{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:17px;font-weight:700;line-height:1;color:inherit}
+.pa-run .pa-run-n::before{content:"RUN#:";font-size:.6em;font-weight:700;letter-spacing:.03em;margin-right:.3em;position:relative;top:-.12em}
+.pa-run .pa-run-d{font-family:'IBM Plex Sans Condensed',Inter,sans-serif;font-size:10px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:inherit}
+.pa-run.day-Sunday{color:#12753a}.pa-run.day-Weekday{color:#0b4ea2}.pa-run.day-Saturday{color:#c8102e}.pa-run.day-alt{color:#6a3fc1}
+/* On a dark / coloured band (search messages keep it on white). */
+.pa-run.big{padding:6px 12px}.pa-run.big .pa-run-n{font-size:20px}.pa-run.big .pa-run-d{font-size:11px}
+.pa-tagrow{display:inline-flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:6px;vertical-align:middle}
+
+/* ---- Search type buttons: Run / Block / Bus ----------------------------- */
+.pa-types{display:flex;gap:8px;margin-top:8px}
+.pa-types[hidden]{display:none}
+.pa-type{flex:1 1 0;min-width:0;min-height:34px;padding:4px 6px;border-radius:8px;border:2px solid currentColor;background:#fff;
+  font-family:'IBM Plex Sans Condensed',system-ui,sans-serif;font-size:14px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;
+  box-shadow:0 2px 6px rgba(8,18,43,.18)}
+.pa-type-run{color:var(--pa-run-bg)}.pa-type-block{color:var(--pa-blk-bg)}.pa-type-bus{color:var(--pa-bus-bg)}
+.pa-type .pa-type-n{font-size:11px;font-weight:700;opacity:.8;margin-left:4px}
+.pa-type.on{color:#fff;box-shadow:inset 0 0 0 2px #fff,0 2px 6px rgba(8,18,43,.35)}
+.pa-type-run.on{background:var(--pa-run-bg);border-color:var(--pa-run-bg)}
+.pa-type-block.on{background:var(--pa-blk-bg);border-color:var(--pa-blk-bg)}
+.pa-type-bus.on{background:var(--pa-bus-bg);border-color:var(--pa-bus-bg)}
+.pa-type:disabled,.pa-type.off{background:var(--pa-off-bg);border-color:var(--pa-off-bg);color:var(--pa-off-fg);box-shadow:none;cursor:default;pointer-events:none}
+
+/* ---- The current route in a scorecard's route list ---------------------- */
+.pa-rt-cur{padding:0 4px;border-radius:3px;font-weight:800}
+.pa-rt-cur.live{background:#1f8a4c;color:#fff}
+.pa-rt-cur.sched{background:#f2b705;color:#1a1300}

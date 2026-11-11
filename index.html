@@ -1041,7 +1041,34 @@ body.older-pick .hd-dot { display: none; }
 }
 </style>
 <link rel="stylesheet" href="assets/pa-menu.css">
+<link rel="stylesheet" href="assets/pa-tags.css">
+<style>
+/* ===== Sticky header (design system): depot, search, result types and day
+   tags stay at the top; only the run cards scroll under them. The search
+   field is drawn like Trip Sheets' (white, red bottom line). ===== */
+header { flex-wrap: wrap !important; }
+.hd-tools { flex: 1 1 100%; min-width: 0; }
+.hd-tools .search-wrap { width: 100%; }
+.hd-tools .search-wrap > svg { display: none !important; }
+.seg-top .seg-route { min-width: 6ch; }
+.hd-tools .search-wrap input {
+  background: #ffffff !important; color: #0b4ea2 !important; border: 0 !important;
+  border-bottom: 3px solid #c8102e !important; border-radius: 8px !important;
+  font-family: 'IBM Plex Sans Condensed', system-ui, sans-serif !important; font-size: 17px !important; font-weight: 700 !important;
+  padding: 10px 12px 9px !important; min-height: 46px; box-shadow: 0 2px 6px rgba(8,18,43,0.25) !important;
+}
+.hd-tools .search-wrap input::placeholder { color: #56627a !important; font-weight: 600; }
+.hd-tools .search-wrap input:focus { box-shadow: 0 0 0 3px rgba(255,209,0,.55) !important; }
+#search-num { font-size: 17px !important; }
+/* Run tag in the card head (Trip Sheets' run button). */
+.card-head-top .pa-run { flex-shrink: 1; min-width: 0; overflow: hidden; }
+.card-head-top .pa-run .pa-run-d { overflow: hidden; text-overflow: ellipsis; }
+.seg-top .pa-blk { margin-left: 2px; }
+@container (max-width: 360px) { .card-head-top .pa-run { padding: 2px 5px; gap: 4px; } .card-head-top .pa-run .pa-run-n { font-size: 15px; } }
+@container (max-width: 300px) { .card-head-top .pa-run .pa-run-d { display: none; } }
+</style>
 <script src="assets/pa-menu.js" defer></script>
+<script src="assets/pa-tags.js"></script>
 </head>
 <body>
 
@@ -1065,24 +1092,26 @@ body.older-pick .hd-dot { display: none; }
   </div>
   <a href="https://deenersin-png.github.io/septa-scheduler/block-tracker" class="btn-live">LIVE</a>
   <div id="pa-slot"></div>
-</header>
-
-<div class="toolbar">
-  <div class="day-selector" id="day-selector"></div>
-
-  <div class="gone-runs-row" id="gone-runs-toolbar" style="display:none">
-    <button class="btn-only" id="btn-open-only" onclick="toggleOpenOnly()">Open Runs Only</button>
-    <span class="gone-runs-updated" id="gone-runs-updated">Updated: —</span>
-  </div>
-
-  <div class="search-row">
-    <!-- One box for both: runs are 1-3 digits, blocks 4 (onSearchInput). -->
+  <div class="hd-tools">
     <div class="search-wrap">
+      <!-- One box for both: runs are 1-3 digits, blocks 4 (onSearchInput). -->
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
       <input type="text" id="search-num" data-pa-clear placeholder="Run / Block #" maxlength="4"
              inputmode="numeric" pattern="[0-9]*" enterkeyhint="search" autocomplete="off" autocorrect="off" spellcheck="false"
              aria-label="Find a run (1-3 digits) or block (4 digits)" oninput="onSearchInput(this)">
     </div>
+    <!-- Result types while searching: Run / Block (PaTags.typeBar). -->
+    <div id="type-row" class="pa-types" role="group" aria-label="Result type" hidden></div>
+    <!-- Day tags (PaTags.dayTags), the same as Trip Sheets. -->
+    <div class="pa-days" id="day-selector" role="group" aria-label="Day"></div>
+  </div>
+</header>
+
+<div class="toolbar">
+
+  <div class="gone-runs-row" id="gone-runs-toolbar" style="display:none">
+    <button class="btn-only" id="btn-open-only" onclick="toggleOpenOnly()">Open Runs Only</button>
+    <span class="gone-runs-updated" id="gone-runs-updated">Updated: —</span>
   </div>
 
   <div class="filter-row" id="route-filters"></div>
@@ -1474,28 +1503,30 @@ async function changeDistrict() {
   }
 }
 
+// The day tags: the shared component (assets/pa-tags.js), the same as Trip
+// Sheets - Sunday, Weekday, Saturday (+ any alternate schedule), the chosen
+// day filled, "Today" on today's.
+let TODAY_LABEL = PaTags.todayLabel();
+PaTags.todayLabelAsync().then(t => { if (t !== TODAY_LABEL) { TODAY_LABEL = t; renderDayTags(); } });
+function renderDayTags() {
+  const el = document.getElementById('day-selector');
+  const html = PaTags.dayTags(STATE.availableDays, STATE.currentDay, TODAY_LABEL, 'data-day');
+  if (el.innerHTML !== html) el.innerHTML = html;
+}
+document.getElementById('day-selector').addEventListener('click', e => {
+  const b = e.target.closest('[data-day]');
+  if (b && b.dataset.day !== STATE.currentDay) changeDay(b.dataset.day);
+});
+
 function initializeDayButtons() {
-  const selectorContainer = document.getElementById('day-selector');
-  const dayCounts = {};
-  STATE.runs.forEach(r => { dayCounts[r.day] = (dayCounts[r.day] || 0) + 1; });
-  
-  let buttonsHtml = '';
-  STATE.availableDays.forEach(day => {
-    const count = dayCounts[day] || 0;
-    const dayLower = day.toLowerCase();
-    const isActive = STATE.currentDay === day ? 'active' : '';
-    buttonsHtml += `<button class="day-btn ${dayLower} ${isActive}" onclick="changeDay('${day}')" title="${day}: ${count} runs">${day} (${count})</button>`;
-  });
-  
-  selectorContainer.innerHTML = buttonsHtml;
+  renderDayTags();
   buildRouteChips();
 }
 
 async function changeDay(day) {
   STATE.currentDay = day;
   STATE.activeRoutes.clear();
-  document.querySelectorAll('.day-btn').forEach(btn => btn.classList.remove('active'));
-  event.target.classList.add('active');
+  renderDayTags();
   buildRouteChips();
   STATE.showOpenOnly = false;
   if (STATE.currentDistrict === GONE_RUNS_DISTRICT && STATE.goneRunsEnabled) {
@@ -1637,11 +1668,43 @@ let searchFinal = false;           // the number in the box is final (exact sear
 function searchDigits() { return document.getElementById('search-num').value.replace(/\D/g, ''); }
 function runNoOf(r) { return String(r.runno || '').trim(); }
 function blocksOf(r) { return BLOCK_COLS.map(i => String(r['b'+i] || '').trim()).filter(Boolean); }
-function runMatchesSearch(r, q, exact) {
+// As a run / as a block. While typing, a number that starts the same matches
+// ("3" → Run 3, 30, 312… and Block 3105…); final: exactly that one.
+function runMatchesAs(r, q, exact, type) {
+  if (type === 'run') return exact ? q.length <= 3 && runNoOf(r) === q : q.length <= 3 && runNoOf(r).startsWith(q);
+  return exact ? q.length === 4 && blocksOf(r).includes(q) : blocksOf(r).some(b => b.startsWith(q));
+}
+// The Run / Block buttons above the results: which matched (with how many
+// runs), and which one is shown. No match = gray, can't be tapped.
+let searchTypeChoice = '';          // the type the user tapped
+function searchTypes(mode) {
+  const q = searchDigits();
+  if (!q) return null;
+  const n = { run: new Set(), block: new Set() };
+  for (const r of STATE.runs) {
+    if (!passesOtherFilters(r, mode)) continue;
+    for (const t of ['run', 'block']) if (runMatchesAs(r, q, searchFinal, t)) n[t].add(runNoOf(r));
+  }
+  const types = ['run', 'block'].map(t => ({ type: t, match: n[t].size > 0, n: n[t].size }));
+  return { types, sel: PaTags.pickType(types, searchTypeChoice) };
+}
+function renderTypeRow(st) {
+  const row = document.getElementById('type-row');
+  if (!st) { row.hidden = true; row.innerHTML = ''; return; }
+  const html = PaTags.typeBar(st.types, st.sel);
+  if (row.innerHTML !== html) row.innerHTML = html;
+  row.hidden = false;
+}
+document.getElementById('type-row').addEventListener('click', e => {
+  const b = e.target.closest('[data-pa-type]');
+  if (!b || b.disabled) return;
+  searchTypeChoice = b.dataset.paType;
+  render();
+});
+function runMatchesSearch(r, q, exact, type) {
   if (!q) return true;
-  if (exact) return q.length === 4 ? blocksOf(r).includes(q) : runNoOf(r) === q;
-  if (q.length <= 3 && runNoOf(r).startsWith(q)) return true;
-  return blocksOf(r).some(b => b.startsWith(q));
+  if (type) return runMatchesAs(r, q, exact, type);
+  return runMatchesAs(r, q, exact, 'run') || runMatchesAs(r, q, exact, 'block');
 }
 // Every filter except the search box: the day, routes, open runs.
 function passesOtherFilters(r, mode) {
@@ -1679,6 +1742,7 @@ function onSearchInput(el) {
   if (el.value !== q) el.value = q;
   cancelSearchIdle();
   searchFinal = false;
+  if (!q) searchTypeChoice = '';
   render();                                       // prefix results while typing
   if (!q) return;                                 // cleared: no timer, keyboard stays
   if (q.length >= 4 || searchIsOnlyRun(q)) { settleSearch(); return; }
@@ -1697,7 +1761,9 @@ function onSearchInput(el) {
 // have shown?" using exactly the same rules.
 function filterRuns(mode) {
   const q = searchDigits();
-  const matched = STATE.runs.filter(r => passesOtherFilters(r, mode) && runMatchesSearch(r, q, searchFinal));
+  const st = q ? searchTypes(mode) : null;
+  const type = st ? st.sel : '';
+  const matched = STATE.runs.filter(r => passesOtherFilters(r, mode) && runMatchesSearch(r, q, searchFinal, type));
 
   const seenRuns = new Set();
   return matched.filter(r => {
@@ -1738,6 +1804,7 @@ function buildEmptyState() {
 
 function render() {
   const sort = document.getElementById('sort-sel').value;
+  renderTypeRow(searchDigits() ? searchTypes(STATE.routeMode) : null);
   let filtered = filterRuns(STATE.routeMode);
 
   const [sk, sd] = sort.split('-');
@@ -1775,13 +1842,18 @@ function render() {
       const r = run['r' + i];
       const b = run['b' + i];
       if (!r || !b) break;
+      // Block tag "21/9901" after the piece's route. A two-route piece
+      // ("21-42") shows the route of the trip the block starts it on.
+      const ps = clockMin(run['pot' + i]), pe0 = clockMin(run['pit' + i]);
+      const pe = ps != null && pe0 != null && pe0 < ps ? pe0 + 1440 : pe0;
+      const blkTag = PaTags.blockTag(null, b, { label: r, day: run.day, at: ps, s: ps, e: pe });
       segsHtml += `
         <div class="seg">
           <div class="seg-connector"><div class="seg-dot"></div><div class="seg-line"></div></div>
           <div class="seg-body">
             <div class="seg-top">
               <span class="seg-route">${r}</span>
-              <span class="seg-block-label">BLK</span><span class="seg-block">${b}</span>
+              ${blkTag}
               <span class="seg-sched">${run['stime' + i] || ''}</span>
             </div>
             <div class="seg-times">
@@ -1812,8 +1884,7 @@ function render() {
       <div class="card day-${run.day}">
         <div class="card-head">
           <div class="card-head-top">
-            ${pdfLink.pclink ? `<a class="run-num" href="${pdfLink.pclink}" target="_blank" style="text-decoration:none;">${run.runno}</a>` : `<div class="run-num">${run.runno}</div>`}
-            <div class="run-day">${run.day}</div>
+            ${PaTags.runTag(run.runno, run.day, paddleLink)}
             <div class="run-actions">${pickedBadge}${paddleBtn}</div>
           </div>
           <div class="card-head-bottom">
@@ -1829,6 +1900,14 @@ function render() {
         ${segsHtml ? `<div class="timeline">${segsHtml}</div>` : ''}
       </div>`;
   }).join('');
+  PaTags.resolveBlockTags(grid);
+}
+
+// "1:17 PM" → minutes after midnight (null if not a time).
+function clockMin(t) {
+  const m = String(t || '').match(/(\d{1,2}):(\d{2})\s*([AP])M/i);
+  if (!m) return null;
+  return (Number(m[1]) % 12 + (/p/i.test(m[3]) ? 12 : 0)) * 60 + Number(m[2]);
 }
 
 initSeasons();

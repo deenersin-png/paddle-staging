@@ -337,7 +337,9 @@ a.run-chip:active{opacity:.7}
 <link rel="stylesheet" href="assets/pa-live-map.css">
 <link rel="stylesheet" href="assets/pa-theme.css">
 <link rel="stylesheet" href="assets/pa-menu.css">
+<link rel="stylesheet" href="assets/pa-tags.css">
 <script src="assets/pa-menu.js" defer></script>
+<script src="assets/pa-tags.js"></script>
 </head>
 <body>
 
@@ -366,8 +368,11 @@ a.run-chip:active{opacity:.7}
              autocomplete="off" placeholder="Bus/Blk #" aria-label="Find a bus or block by number">
     </form>
   </div>
-  <!-- Trip Sheets: the day buttons (tsDayButtonsHtml), always in view. -->
-  <div id="tsDayRow" class="ts-day-row" role="group" aria-label="Day" hidden></div>
+  <!-- A search's result types (PaTags.typeBar): Live Run / Block / Bus,
+       Trip Sheets Run / Block. Shown while a number is searched. -->
+  <div id="typeRow" class="pa-types" role="group" aria-label="Result type" hidden></div>
+  <!-- Trip Sheets: the day tags (PaTags.dayTags), always in view. -->
+  <div id="tsDayRow" class="pa-days" role="group" aria-label="Day" hidden></div>
 </div>
 
 <div id="alertArea"></div>
@@ -1469,6 +1474,8 @@ function isSameRoute(a, b) {
   a = String(a || ''); b = String(b || '');
   return a === b || getAliases(a).includes(b) || getAliases(b).includes(a);
 }
+// A pick route name ("L1 OWL", "21") is route `b` (an id: "MFO", "21").
+function sameRouteName(a, b) { return isSameRoute(a, b) || pickRoutes([String(a || '')]).some(p => isSameRoute(p, b)); }
 
 // `first` is when this bus was first seen on the block (its log-in); a
 // source that only knows one time passes none, so it is `ts`.
@@ -2467,26 +2474,9 @@ function findCardsFor(merged) {
 // seen when that one isn't out, and a button over to the other match when the number is a
 // bus on one route and a block on another.
 function findBannersHtml() {
-  const f = state.find;
-  if (!f) return '';
-  let h = '';
-  const seen = (what, parts) => {
-    const text = parts.filter(p => typeof p === 'string'), runs = parts.filter(p => typeof p !== 'string');
-    const icon = what.startsWith('Block')
-      ? '<img class="alert-icon find-banner-icon blocks" src="assets/icon-blocks.png" alt="" width="50" height="16">'
-      : '<img class="alert-icon find-banner-icon" src="assets/icon-192.png" alt="" width="20" height="20">';
-    return '<div class="alert-banner info">' + icon + '<span>' +
-      esc(what + ' ' + text.join(', ').replace(/^Last seen, /, 'Last seen ') + '.') + (runs.length ? ' ' + findPartsHtml(runs) : '') + '</span></div>';
-  };
-  if (!state.bus && f.busSeen) h += seen('Bus ' + f.num + ' is currently offline.', f.busSeen);
-  if (!state.block && f.blockSeen) h += seen('Block ' + f.num + ' isn\'t in service now.', f.blockSeen);
-  else if (!state.block && !f.block && f.blockPick) h += seen('Block ' + f.num + ' isn\'t in service now.', f.blockPick);
-  if (f.bus && f.block && !isSameRoute(f.bus.route, f.block.route)) {
-    const other = state.bus ? 'Block ' + f.num + ' · Route ' + f.block.route : 'Bus ' + f.num + ' · Route ' + f.bus.route;
-    h += '<button type="button" class="alert-banner info find-alt" onclick="switchFindView()"><span class="alert-icon">↔</span>' +
-      '<span>' + esc('Also ' + other) + '</span><span class="find-alt-go">Show ›</span></button>';
-  }
-  return h;
+  // The Run / Block / Bus buttons (typeRow) switch between a number's
+  // matches now; each shows only its own result, so no banners for the other.
+  return '';
 }
 
 // Swap between the two matches of a number that is a bus on one route and a
@@ -2521,7 +2511,7 @@ function doneParts(route) {
   if (done) parts.push('Finished ' + dayWhen(done.min));
   else if (due) parts.push('Due to pull in at ' + fmtClock(due.min));
   if (lastEnd) parts.push('Last trip ended at ' + lastEnd);
-  parts.push('Last served on Route ' + route + (blk ? ' Block ' + blk : ''));
+  parts.push({ html: 'Last served ' + onTagsHtml(route, blk, '') });
   const next = blk && nextOut(blk);
   if (rec && rec.runs.length && !next) parts.push({ runs: rec.runs });
   if (next) parts.push('Block ' + blk + (next.min >= 1440 ? ' goes out again ' : '’s next run goes out ') + dayWhen(next.min), { runs: [next.run] });
@@ -2550,7 +2540,7 @@ function blockDoneParts(route) {
   const next = nextOutParts(blk);
   const parts = fin.concat(next.length ? next : ['Nothing left today on Route ' + route]);
   const bus = knownVehicleFor(blk);
-  if (bus) parts.push('Served by Bus ' + bus);
+  if (bus) parts.push({ html: 'Served by ' + PaTags.busTag(bus) });
   if (rec && rec.runs.length && !next.length) parts.push({ runs: rec.runs });
   return parts;
 }
@@ -2561,7 +2551,7 @@ function withNextOut(blk, parts) {
   const next = nextOutParts(blk);
   if (!next.length) return parts;
   const no = next[1].runs[0].runno;
-  return parts.filter(p => typeof p === 'string' || !(p.runs.length === 1 && p.runs[0].runno === no)).concat(next);
+  return parts.filter(p => typeof p === 'string' || !p.runs || !(p.runs.length === 1 && p.runs[0].runno === no)).concat(next);
 }
 
 // A time on today's clock in words, for search results: last night before
@@ -2636,6 +2626,8 @@ async function onRunSearch(no) {
   if (state.find !== f) return;
   const depot = document.getElementById('depotSelect').value;
   const inst = runInstances(no, depot);
+  f.runOnly = true; f.runMatch = inst.length > 0; f.sel = inst.length ? 'run' : '';
+  renderTypeRow();
   if (!inst.length) {
     showFindMessage(findSecHtml('bus', 'Run ' + no + ' not found', 'No Run ' + esc(no) + (depot ? ' at ' + esc(depot) : '') + ' today'));
     return;
@@ -2647,7 +2639,8 @@ async function onRunSearch(no) {
   if (piece) return onBusSearch({ run: no, block: piece.blk });
 
   const lines = [];
-  const where = x => 'on Block ' + x.blk + (x.rt ? ' (' + x.rt + ')' : '');
+  // "on [21/9605]": the block tag, its route the one the block runs then.
+  const where = x => '<span class="pa-tagrow">' + PaTags.blockTag(null, x.blk, { label: x.rt, day: getDayType(), at: x.s, s: x.s, e: x.e }) + '</span>';
   const finished = inst.filter(i => i.e <= now).pop();
   const next = inst.find(i => i.s > now);
   let head;
@@ -2655,16 +2648,16 @@ async function onRunSearch(no) {
     // Between pieces: on a break.
     const back = cur.pieces.find(x => x.s > now);
     head = 'Run ' + no + ' is on a break';
-    if (back) lines.push('Back out ' + dayWhen(back.s) + ' ' + where(back));
+    if (back) lines.push({ html: esc('Back out ' + dayWhen(back.s)) + ' on ' + where(back) });
   } else if (next) {
     head = 'Run ' + no + ' isn’t out yet';
     if (finished) lines.push(finishedLine(finished));
     const rep = next.run.reportMin;
     const when = m => m >= 1440 ? dayWhen(m) : 'at ' + fmtClock(m);
     const lead = finished ? 'Today’s run ' : '';
-    lines.push((rep != null && rep < next.s
+    lines.push({ html: esc(rep != null && rep < next.s
       ? (lead ? lead + 'reports ' : 'Reports ') + when(rep) + ', goes out ' + when(next.s)
-      : (lead ? lead + 'goes out ' : 'Goes out ') + when(next.s)) + ' ' + where(next.pieces[0]));
+      : (lead ? lead + 'goes out ' : 'Goes out ') + when(next.s)) + ' on ' + where(next.pieces[0]) });
   } else {
     head = 'Run ' + no + ' is done for today';
     if (finished) lines.push(finishedLine(finished));
@@ -2672,6 +2665,7 @@ async function onRunSearch(no) {
   const show = (cur || next || finished).run;
   lines.push({ runs: [{ runno: show.runno, link: show.link }] });
   showFindMessage(findSecHtml('bus', head, lines));
+  PaTags.resolveBlockTags(document.getElementById('content'));
 }
 
 // One search-result section: icon ('bus' / 'block'), headline, lines.
@@ -3079,7 +3073,10 @@ function allTripsCardHtml(it, anim, idx) {
   const two = runs.length > 1;
   // Each run's routes in paddle order, a two-route piece ("21-42") named by
   // the route it actually drives.
-  const routes = runs.length ? [...new Set(runs.flatMap(r => r.pieces.flatMap(pieceRoutes)))].join(' | ') || state.route : state.route;
+  const rtList = runs.length ? [...new Set(runs.flatMap(r => r.pieces.flatMap(pieceRoutes)))] : [];
+  // All the run's routes stay listed; the one this trip runs (the route on
+  // show) is marked - green when a live bus is on it, yellow by the schedule.
+  const routes = PaTags.routeList(rtList.length ? rtList : [state.route], state.route, !!it.live && !it.done, sameRouteName);
   // Run number + day as ONE button opening that run's paddle ("452 WEEKDAY");
   // a relief shows "203" → "424 WEEKDAY", each opening its own paddle.
   const runBtn = (r, withDay) => {
@@ -3104,7 +3101,7 @@ function allTripsCardHtml(it, anim, idx) {
   let h = '<div class="prc day-' + day + (it.inService ? ' at-now' : '') + (it.done ? ' at-done' : '') + (anim ? ' fade-in' : '') + '" style="animation-delay:' + (idx * 0.015) + 's">';
   h += '<div class="prc-head"><div class="prc-head-top">' + nth + nums + '<div class="prc-actions">' + runf + '</div></div>';
   h += '<div class="prc-head-bottom"><span class="at-time">' + tag + fmtClock(it.s) + ' – ' + fmtClock(it.e) + '</span>' +
-       '<div class="prc-routes">' + esc(routes) + '</div></div></div>';
+       '<div class="prc-routes">' + routes + '</div></div></div>';
   // Third line: where the bus is now — only while it is live.
   const lv = it.live;
   if (lv && lv.next_stop_name) {
@@ -3130,7 +3127,8 @@ function allTripsCardHtml(it, anim, idx) {
   const tip = it.ghost && vid ? ghostBusTip(it.blk, vid) : '';
   h += vid ? '<span class="at-bus' + (tip ? ' has-tip" tabindex="0" data-tip="' + esc(tip) : '') + '">' + ICONS.bus + ' ' + esc(vid) + '</span>'
            : '<span class="at-bus unknown">' + ICONS.bus + ' Bus# pending</span>';
-  h += '<span class="at-blk">Blk #: ' + esc(it.blk) + '</span>';
+  // Block tag: this trip's route / the block ("21/9605").
+  h += PaTags.blockTag(state.route, it.blk);
   // Passenger load, far right — only while the bus is live.
   if (lv && !it.done) h += loadTagHtml(lv.estimated_seat_availability);
   return h + '</div></div>';
@@ -3398,9 +3396,7 @@ function tsDays() {
 }
 function tsDayButtonsHtml() {
   const today = todayDayLabel(), cur = view.tsDay || today;
-  return tsDays().map(d =>
-    '<button type="button" class="ts-day ts-day-' + gtfsDayOf(d) + (TS_DAY_ORDER.includes(d) ? '' : ' alt') + (d === cur ? ' on' : '') +
-    '" data-ts-day="' + esc(d) + '">' + esc(d) + (d === today ? '<span class="ts-today">Today</span>' : '') + '</button>').join('');
+  return PaTags.dayTags(tsDays(), cur, today, 'data-ts-day');
 }
 // The header's day row (Trip Sheets only), redrawn with the page.
 function renderTsDayRow() {
@@ -4086,6 +4082,7 @@ function tsOpenRoute(route) {
   if (!sel.value) { sel.insertAdjacentHTML('beforeend', '<option value="' + esc(route) + '">Route ' + esc(route) + '</option>'); sel.value = route; }
   loadRoute(sel.value);          // clears view.run; put the search back
   view.run = keep.run; view.blk = keep.blk; view.scrollNow = true;
+  renderTypeRow();
 }
 
 async function tripSheetSearch(digits) {
@@ -4093,7 +4090,7 @@ async function tripSheetSearch(digits) {
   if (paddleReady) { try { await paddleReady; } catch (_) {} }
   if (my !== tsSeq) return;      // another digit came in meanwhile
   const depot = document.getElementById('depotSelect').value;
-  view.tsMiss = ''; view.run = ''; view.blk = ''; view.scrollNow = true;
+  view.tsMiss = ''; view.run = ''; view.blk = ''; view.scrollNow = true; view.tsSearch = digits;
   if (digits.length === 4) {
     const rec = paddle.byBlock.get(digits);
     const onRoute = sched.loaded && sched.blockTrips && sched.blockTrips.has(digits);
@@ -4130,6 +4127,7 @@ async function tripSheetSearch(digits) {
   }
   lastHTML = '';
   drawView(true);
+  renderTypeRow();
   if (view.tsMiss) window.scrollTo(0, 0);
 }
 
@@ -4137,7 +4135,8 @@ async function tripSheetSearch(digits) {
 function tripSheetClear() {
   ++tsSeq; clearTimeout(tsTimer);
   const prev = view.tsPrevRoute;
-  view.run = ''; view.blk = ''; view.tsMiss = ''; view.tsPrevRoute = null; view.scrollNow = true;
+  view.run = ''; view.blk = ''; view.tsMiss = ''; view.tsPrevRoute = null; view.scrollNow = true; view.tsSearch = '';
+  renderTypeRow();
   if (prev && !isSameRoute(prev, state.route)) {
     fillRoutes(document.getElementById('depotSelect').value, prev);
     loadRoute(document.getElementById('routeSelect').value || prev);
@@ -4149,8 +4148,9 @@ function tripSheetClear() {
 
 function endSearch() {
   state.bus = ''; state.busBlock = ''; state.block = ''; state.find = null;
-  view.follow = false; view.run = ''; view.blk = ''; view.tsMiss = ''; view.tsPrevRoute = null;
+  view.follow = false; view.run = ''; view.blk = ''; view.tsMiss = ''; view.tsPrevRoute = null; view.tsSearch = '';
   document.getElementById('busSearch').value = '';
+  renderTypeRow();
   document.querySelector('.input-row').classList.remove('searching');
 }
 
@@ -4282,7 +4282,7 @@ async function onBusSearch(arg) {
   document.getElementById('routeSelect').value = '';
   document.querySelector('.input-row').classList.add('searching');
   view.mode = 'dir'; saveMode('dir'); view.follow = true; view.run = ''; // show the found bus, in its own direction
-  const f = { num, bus: null, block: null, busSeen: null, blockSeen: null, run: runFind ? runFind.run : '' };
+  const f = { num, bus: null, block: null, busSeen: null, blockSeen: null, run: runFind ? runFind.run : '', runOnly: !!runFind, runMatch: !!runFind };
   state.find = f; state.bus = ''; state.busBlock = ''; state.block = '';
   const superseded = () => state.find !== f; // a route was picked (or another number searched) meanwhile
   document.getElementById('alertArea').innerHTML = '';
@@ -4339,31 +4339,56 @@ async function onBusSearch(arg) {
   }
   if (superseded()) return;
 
-  if (!f.bus && !f.block) {
-    state.route = '';
-    clearInterval(refreshTimer); clearInterval(countdownTimer);
-    setStatus('idle');
-    document.getElementById('routeBar').classList.add('hidden');
-    renderBottomBar();
-    // Each section under its own icon: the app's bus for a bus, the wooden
-    // blocks for a block.
-    const sec = findSecHtml;
-    let h = '';
-    if (f.busSeen) h += sec('bus', 'Bus ' + num + ' is currently offline', f.busSeen);
-    const blkName = (f.run ? 'Run ' + f.run + ' · ' : '') + 'Block ' + num;
-    if (f.blockSeen) h += sec('block', blkName + ' isn\'t in service now', f.blockSeen);
-    else if (f.blockPick) h += sec('block', blkName + ' isn\'t in service now', withNextOut(num, finishedParts(num).concat(f.blockPick)));
-    if (!h) h = sec('bus', num + ' not found', 'No bus or block with this number<br>seen in the last ' + SEEN_DAYS + ' days');
-    setContent('<div class="msg find-msg">' + h + '</div>');
-    return;
+  showFindType(f);
+}
+
+// ── SEARCH RESULT TYPES: Run / Block / Bus ──────────────────
+// One number can be a run (1-3 digits), or a block and/or a bus (4 digits).
+// The buttons above the results (typeRow) show which of them matched; one
+// with no match is gray and can't be tapped. The selected one's result shows
+// below - Bus first when the number is both a bus and a block.
+function findTypes(f) {
+  if (f.runOnly) return [{ type: 'run', match: !!f.runMatch }, { type: 'block', match: false }, { type: 'bus', match: false }];
+  return [{ type: 'run', match: false },
+          { type: 'block', match: !!(f.block || f.blockSeen || f.blockPick) },
+          { type: 'bus', match: !!(f.bus || f.busSeen) }];
+}
+// The selected type's result: its live card on its route, else where it
+// was last seen / when it runs next.
+function showFindType(f) {
+  f.sel = PaTags.pickType(findTypes(f), f.sel);
+  renderTypeRow();
+  const num = f.num;
+  // A run that is out shows its block's card.
+  const as = f.runOnly ? 'block' : f.sel;
+  state.bus = ''; state.busBlock = ''; state.block = '';
+  if (as === 'bus' && f.bus) { state.bus = num; state.busBlock = f.bus.block; return loadRoute(f.bus.route); }
+  if (as === 'block' && f.block) { state.block = num; return loadRoute(f.block.route); }
+  const blkName = (f.run ? 'Run ' + f.run + ' · ' : '') + 'Block ' + num;
+  let h;
+  if (as === 'bus' && f.busSeen) h = findSecHtml('bus', 'Bus ' + num + ' is currently offline', f.busSeen);
+  else if (as === 'block' && f.blockSeen) h = findSecHtml('block', blkName + ' isn’t in service now', f.blockSeen);
+  else if (as === 'block' && f.blockPick) h = findSecHtml('block', blkName + ' isn’t in service now', withNextOut(num, finishedParts(num).concat(f.blockPick)));
+  else h = findSecHtml('bus', num + ' not found', 'No bus or block with this number<br>seen in the last ' + SEEN_DAYS + ' days');
+  showFindMessage(h);
+}
+// The type buttons under the search box, for the search on show (none: hidden).
+function renderTypeRow() {
+  const row = document.getElementById('typeRow');
+  if (!row) return;
+  let types = null, sel = '';
+  if (ALL_TRIPS_PAGE) {
+    if (view.tsSearch) {
+      types = [{ type: 'run', match: !!view.run }, { type: 'block', match: !!view.blk }];
+      sel = view.run ? 'run' : view.blk ? 'block' : '';
+    }
+  } else if (state.find && state.find.sel !== undefined) {
+    types = findTypes(state.find); sel = state.find.sel;
   }
-  if (f.bus) {
-    state.bus = num; state.busBlock = f.bus.block;
-    if (f.block && isSameRoute(f.block.route, f.bus.route)) state.block = num;
-    return loadRoute(f.bus.route);
-  }
-  state.block = num;
-  return loadRoute(f.block.route);
+  if (!types) { row.hidden = true; row.innerHTML = ''; return; }
+  const html = PaTags.typeBar(types, sel);
+  if (row.innerHTML !== html) row.innerHTML = html;
+  row.hidden = false;
 }
 
 // A searched number's newest sighting within SEEN_DAYS, as a state.json row —
@@ -4396,10 +4421,10 @@ function blockRanTodayUnseen(num, seen) {
 // last bus that was (with when), and today's runs.
 function blockUnrecordedParts(num, seen) {
   const rec = paddle.byBlock.get(num);
-  const last = lastSeenParts(seen, 'block').filter(p => typeof p === 'string');
+  const last = lastSeenParts(seen, 'block');
   const parts = ['Ran today' + (rec.poTime ? ': out ' + rec.poTime + (rec.piTime ? ' – in ' + rec.piTime : '') : ''),
     'Today\'s bus wasn\'t recorded',
-    last[0].replace('Last seen', 'Last recorded') + ': ' + last[1].replace(/^on /, '')];
+    { html: esc(last[0].replace('Last seen', 'Last recorded')) + ': ' + last[1].html.replace(/^on /, '') }];
   if (rec.runs.length) parts.push({ runs: rec.runs });
   return parts;
 }
@@ -4483,7 +4508,7 @@ function lastSeenParts(row, as) {
   // No time of day: the poller's last stamp can be hours before the bus
   // actually finished (9663 stamped 8:29 PM, ran until ~11 PM).
   const parts = ['Last seen' + (when ? ' ' + when : ''),
-    'on Route ' + row.routeId + (as === 'block' ? ' Bus ' + row.vehicleId : ' Block ' + row.blockId)];
+    { html: onTagsHtml(row.routeId, row.blockId, as === 'block' ? row.vehicleId : '') }];
   const rec = paddle.byBlock.get(String(row.blockId));
   if (rec && rec.runs.length && dayTypeOfDate(day) === getDayType()) {
     // The run out at that moment: the last to have pulled out by then. A
@@ -4503,12 +4528,17 @@ const FIND_ICON = {
 
 // The not-found message's lines: text, or { runs } — each run a button that
 // opens its paddle (plain text when the pick has no paddle link for it).
+// Every run is the app's run tag ("RUN#: 308 WEEKDAY"); { html } lines carry
+// block / bus tags already.
 function findPartsHtml(parts) {
-  return parts.map(p => typeof p === 'string' ? esc(p)
-    : '<span class="find-runs">' + p.runs.map(r => r.link
-        ? '<a class="find-run" href="' + esc(r.link) + '" target="_blank" rel="noopener">Run ' + esc(r.runno) + '</a>'
-        : '<span class="find-run nolink">Run ' + esc(r.runno) + '</span>').join('') + '</span>'
+  const day = dayLabelOf(getDayType());
+  return parts.map(p => typeof p === 'string' ? esc(p) : p.html != null ? p.html
+    : '<span class="find-runs">' + p.runs.map(r => PaTags.runTag(r.runno, day, r.link, { big: true })).join('') + '</span>'
   ).join('<br>');
+}
+// "on [21/9605] [bus 3655]" - where a sighting was, in tags.
+function onTagsHtml(route, blk, bus) {
+  return 'on <span class="pa-tagrow">' + (blk ? PaTags.blockTag(route, blk) : 'Route ' + esc(route)) + (bus ? PaTags.busTag(bus) : '') + '</span>';
 }
 
 async function loadRoute(route) {
@@ -4660,9 +4690,19 @@ const IDLE_HTML = document.getElementById('content').innerHTML;
     box.setAttribute('aria-label', 'Find a run (up to 3 digits) or a block (4 digits)');
   } else {
     const box = document.getElementById('busSearch');
-    box.placeholder = 'Bus / Block / Run #';
+    box.placeholder = 'Run / Block / Bus #';
     box.setAttribute('aria-label', 'Find a bus or block (4 digits) or a run (up to 3 digits)');
   }
+
+  // Result type buttons: show that type's result (Live; on Trip Sheets a
+  // number is only ever a run or a block, so there is nothing to switch).
+  document.getElementById('typeRow').addEventListener('click', e => {
+    const b = e.target.closest('[data-pa-type]');
+    const f = state.find;
+    if (!b || b.disabled || ALL_TRIPS_PAGE || !f || f.runOnly || f.sel === b.dataset.paType) return;
+    f.sel = b.dataset.paType;
+    showFindType(f);
+  });
 
   state.route = routeSel.value;
   loadPairs(); // today's block↔bus pairs seen earlier in this browser
