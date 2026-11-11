@@ -3326,14 +3326,12 @@ function buildLiveDirPage(dir, anim) {
 // Under the cards on the EB / WB pages: every bus on the page as a small bus
 // icon "#11-9652" (trip number - block) in its tag's colour. One map element
 // for the whole visit (assets/pa-live-map.js), moved into each redraw's slot
-// so zoom and position survive the refreshes. Hide / Show is remembered.
+// so zoom and position survive the refreshes. Always shown (no Hide button,
+// user 2026-11-11; an old saved "hidden" is ignored).
 let lastLiveItems = [];
 let liveMapP = null;
-const liveMapOn = () => { try { return localStorage.getItem('bt_map') !== 'off'; } catch (e) { return true; } };
 function liveMapBoxHtml() {
-  const on = liveMapOn();
-  return '<div class="lm-box"><div class="lm-bar"><button type="button" class="lm-toggle" data-map-toggle>' + (on ? 'Hide map' : 'Show map') + '</button></div>' +
-    (on ? '<div class="lm-slot"></div>' : '') + '</div>';
+  return '<div class="lm-box"><div class="lm-slot"></div></div>';
 }
 function drawLiveMap(dir) {
   const slot = document.querySelector('#content .lm-slot');
@@ -3350,12 +3348,6 @@ function drawLiveMap(dir) {
     })) });
   }).catch(e => { liveMapP = null; console.error('[live map]', e); });
 }
-document.addEventListener('click', e => {
-  if (!e.target.closest('[data-map-toggle]')) return;
-  try { localStorage.setItem('bt_map', liveMapOn() ? 'off' : 'on'); } catch (_) {}
-  lastHTML = '';
-  drawView(false);
-});
 
 // ── TRIP SHEETS: DAY BUTTONS ─────────────────────────────────
 // SUNDAY / WEEKDAY / SATURDAY - plus any other day a depot's pick has (an
