@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Pull Outs / Pull Ins</title>
+
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-QXEKGF4DXT"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-QXEKGF4DXT');
+</script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans+Condensed:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/pa-account.css">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b4ea2">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="stylesheet" href="assets/pa-run-card.css">
+<link rel="stylesheet" href="assets/pa-scorecard.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{background:#eef2f8;color:#08122b;font-family:'IBM Plex Sans Condensed',system-ui,sans-serif;min-height:100vh;padding-bottom:calc(76px + env(safe-area-inset-bottom))}
+
+/* Depot picker band, like Live / Trip Sheets. */
+.po-head{position:sticky;top:60px;z-index:200;background:#0b4ea2;padding:12px 16px;border-bottom:3px solid #c8102e}
+.po-select-wrap{position:relative}
+.po-select{width:100%;appearance:none;-webkit-appearance:none;background:#fff;color:#0b4ea2;border:0;border-bottom:3px solid #c8102e;border-radius:8px;
+  font:inherit;font-size:17px;font-weight:700;padding:10px 36px 9px 12px;box-shadow:0 2px 6px rgba(8,18,43,.25)}
+.po-arrow{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#c8102e;pointer-events:none;font-size:14px}
+
+.po-label{padding:10px 16px 8px;font-size:15px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;text-align:center;
+  border-bottom:1px solid #d5dce8;background:#fff}
+.po-sub{display:block;font-size:11px;font-weight:600;letter-spacing:.06em;color:#56627a;margin-top:2px}
+.po-msg{text-align:center;padding:48px 16px;color:#56627a;font-size:15px}
+
+/* One event: the time line on top of the Paddle App run card. */
+.po-ev{margin-bottom:12px;scroll-margin-top:150px}
+.po-time{display:flex;align-items:center;gap:8px;padding:7px 12px;font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;color:#fff;background:#0b4ea2}
+.po-time .po-kind{font-size:10px;letter-spacing:.08em;padding:2px 6px;border-radius:3px;background:rgba(255,255,255,.2)}
+.po-time .po-clock{font-size:16px}
+.po-time .po-where{font-weight:600;font-size:12px;opacity:.95;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.po-time .po-due{margin-left:auto;white-space:nowrap;font-size:12px;padding:2px 7px;border-radius:10px;background:#fff;color:#0b4ea2}
+.po-ev.in .po-time{background:#6a3fc1}
+.po-ev.in .po-time .po-due{color:#6a3fc1}
+.po-ev.next .po-time .po-due{background:#ffd400;color:#2b2200}
+.po-ev.past{opacity:.5;filter:grayscale(1)}
+.po-ev .prc-seg.po-hit{background:rgba(255,212,0,.22)}
+.po-ev .prc-stack{border-radius:8px;overflow:hidden}
+
+/* Pull Outs (left) | Pull Ins (right), always at the bottom. */
+.po-bar{position:fixed;left:0;right:0;bottom:0;z-index:300;display:flex;gap:8px;padding:8px 10px calc(8px + env(safe-area-inset-bottom));
+  background:#fff;border-top:1px solid #d5dce8;box-shadow:0 -2px 8px rgba(8,18,43,.08)}
+.po-tab{flex:1;padding:12px 8px;border-radius:24px;border:1.5px solid #0b4ea2;background:#fff;color:#0b4ea2;font:inherit;font-size:16px;font-weight:800;cursor:pointer}
+.po-tab.on{background:#0b4ea2;color:#fff}
+.po-tab[data-po="in"]{border-color:#6a3fc1;color:#6a3fc1}
+.po-tab[data-po="in"].on{background:#6a3fc1;color:#fff}
+</style>
+<link rel="stylesheet" href="assets/pa-theme.css">
+<style>
+/* After the theme: it paints a stacked card's top light; this strip stays
+   solid blue (out) / purple (in) with white text. */
+.po-ev .prc-stack .po-time.prc-top{background:#0b4ea2 !important;color:#fff !important;border:0 !important}
+.po-ev.in .prc-stack .po-time.prc-top{background:#6a3fc1 !important}
+.po-ev .prc-stack{border:1px solid #c9d3e3 !important}
+</style>
+<link rel="stylesheet" href="assets/pa-menu.css">
+<script src="assets/pa-menu.js" defer></script>
+</head>
+<body>
+
+<div class="po-head">
+  <div class="po-select-wrap">
+    <select id="depotSelect" class="po-select" aria-label="Depot" autocomplete="off"><option value="">Loading depots…</option></select>
+    <span class="po-arrow">▾</span>
+  </div>
+</div>
+
+<div id="poLabel" class="po-label">Pull Outs</div>
+<div id="poList" class="at-list pa-sc"><div class="po-msg">Loading…</div></div>
+
+<nav class="po-bar" aria-label="Pull outs or pull ins">
+  <button type="button" class="po-tab" data-po="out">Pull Outs</button>
+  <button type="button" class="po-tab" data-po="in">Pull Ins</button>
+</nav>
+
+<script type="module">
+// ==========================================================================
+// Pull Outs / Pull Ins: every run of the depot pulling out (or in) today,
+// earliest to latest, as the Paddles page's scorecards; the list opens at
+// the current / next one (the ones already past are above, grayed).
+//
+// Today = the calendar day (same rule as Live / Trip Sheets): today's pick -
+// night liners (a run starting 11 PM-4 AM) included - plus, midnight to 4 AM,
+// last night's runs that pull in after midnight; and from 11 PM tomorrow's
+// night liners that pull out after midnight. Scheduled times only.
+// The depot is the app-wide one (bt_depot, shared with Paddles / Live).
+// ==========================================================================
+import {
+  loadSeasons, seasonFor, loadManifest, loadCalendarOverrides, dayTypeFor, dayLabel,
+  loadPaddle, normalizeRun, loadPaddleLinks, todayIso, addDays, fmtClock
+} from './assets/pa-schedule.js';
+import { modelFromRun, card, stack } from './assets/pa-run-card.js';
+
+const NIGHT_FROM = 23 * 60, OWL_END = 4 * 60;
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const lsGet = k => { try { return localStorage.getItem(k) || ''; } catch (_) { return ''; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} };
+const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
+
+let districts = [], overrides = {}, view = lsGet('po_view') === 'in' ? 'in' : 'out';
+let events = { out: [], in: [] }, loadSeq = 0, dayKey = '';
+
+// A run's start (report) as clock minutes, for the night-liner rule.
+const startClock = row => { const m = String(row.start || '').match(/(\d{1,2}):(\d{2})\s*([AP]M)/i); if (!m) return null; let h = +m[1] % 12; if (/p/i.test(m[3])) h += 12; return h * 60 + +m[2]; };
+const isNight = row => { const s = startClock(row); return s != null && (s >= NIGHT_FROM || s < OWL_END); };
+
+// One day's runs of a depot: [{ run, row, day }] with times on that day's clock.
+async function runsOf(slug, dayType) {
+  const rows = await loadPaddle(slug, dayType);
+  return [...rows.values()].map(row => ({ row, run: normalizeRun(row, dayType), dayType }));
+}
+
+async function build() {
+  const my = ++loadSeq;
+  const label = $('depotSelect').value;
+  const dist = districts.find(d => (d.label || d.name) === label);
+  if (!dist) { $('poList').innerHTML = '<div class="po-msg">No depot</div>'; return; }
+  $('poList').innerHTML = '<div class="po-msg">Loading ' + esc(label) + '…</div>';
+  const today = todayIso(), now = nowMin();
+  const tType = dayTypeFor(today, overrides);
+  const links = await loadPaddleLinks(dist.name).catch(() => new Map());
+  const has = t => (dist.days || []).includes(dayLabel(t));
+  const sets = [];
+  // Today's runs, on today's clock.
+  if (has(tType)) sets.push({ list: await runsOf(dist.name, tType).catch(() => []), shift: 0, keep: () => true });
+  // Midnight-4 AM: last night's runs that pull in after midnight.
+  if (now < OWL_END) {
+    const yType = dayTypeFor(addDays(today, -1), overrides);
+    if (has(yType)) sets.push({ list: await runsOf(dist.name, yType).catch(() => []), shift: -1440, keep: x => !isNight(x.row), lastNight: true });
+  }
+  // From 11 PM: tomorrow's night liners pull out after midnight.
+  if (now >= NIGHT_FROM) {
+    const nType = dayTypeFor(addDays(today, 1), overrides);
+    if (has(nType)) sets.push({ list: await runsOf(dist.name, nType).catch(() => []), shift: 1440, keep: x => isNight(x.row), tonight: true });
+  }
+  if (my !== loadSeq) return;
+  const out = [], inn = [];
+  for (const set of sets) {
+    for (const x of set.list) {
+      if (!x.run || !set.keep(x)) continue;
+      const link = links.get(dayLabel(x.dayType) + '-' + x.run.runNo);
+      const url = link ? ((window.innerWidth <= 768 ? link.moblink || link.pclink : link.pclink || link.moblink) || '') : '';
+      x.run.pieces.forEach((p, i) => {
+        const base = { x, url, piece: i, block: p.block, route: p.routeLabel, lastNight: !!set.lastNight, tonight: !!set.tonight };
+        if (String(p.startType).toUpperCase() === 'O' && p.startMin != null) out.push({ ...base, min: p.startMin + set.shift });
+        if (String(p.endType).toUpperCase() === 'I' && p.endMin != null) {
+          const m = p.endMin + set.shift;
+          // Last night's runs: only the pull-ins after midnight.
+          if (!set.lastNight || m >= 0) inn.push({ ...base, min: m });
+        }
+      });
+    }
+  }
+  const byTime = (a, b) => a.min - b.min || Number(a.x.run.runNo) - Number(b.x.run.runNo);
+  events = { out: out.filter(e => !e.lastNight).sort(byTime), in: inn.filter(e => !e.tonight).sort(byTime) };
+  dayKey = today + '|' + (now < OWL_END ? 'owl' : now >= NIGHT_FROM ? 'late' : 'day');
+  render(true);
+}
+
+function dueText(min, now) {
+  const d = min - now;
+  if (d === 0) return 'now';
+  const a = Math.abs(d), h = Math.floor(a / 60), m = a % 60;
+  const t = h ? h + 'h ' + (m ? m + 'm' : '') : m + ' min';
+  return d > 0 ? 'in ' + t.trim() : t.trim() + ' ago';
+}
+
+function render(scroll) {
+  const list = events[view], now = nowMin();
+  document.querySelectorAll('.po-tab').forEach(b => b.classList.toggle('on', b.dataset.po === view));
+  const label = $('depotSelect').value;
+  const word = view === 'out' ? 'Pull Outs' : 'Pull Ins';
+  $('poLabel').innerHTML = esc(word) + ' · ' + list.length + '<span class="po-sub">' + esc(label) + ' · ' + esc(dayLabel(dayTypeFor(todayIso(), overrides))) + ' · earliest to latest</span>';
+  const box = $('poList');
+  if (!list.length) { box.innerHTML = '<div class="po-msg">No ' + esc(word.toLowerCase()) + ' today</div>'; return; }
+  box.innerHTML = '';
+  // Current / next: the first one not more than 2 minutes past.
+  const nextIdx = list.findIndex(e => e.min >= now - 2);
+  list.forEach((e, i) => {
+    const r = e.x.run;
+    const top = document.createElement('div');
+    top.className = 'po-time';
+    top.innerHTML = '<span class="po-kind">' + (view === 'out' ? 'OUT' : 'IN') + '</span>' +
+      '<span class="po-clock">' + esc(fmtClock(e.min)) + '</span>' +
+      '<span class="po-where">Blk ' + esc(e.block) + ' · ' + esc(e.route) + (e.lastNight ? ' · last night' : e.tonight || e.min >= 1440 ? ' · tonight' : '') + '</span>' +
+      '<span class="po-due" data-min="' + e.min + '">' + esc(dueText(e.min, now)) + '</span>';
+    const c = card(modelFromRun(r), { paddleUrl: e.url });
+    const seg = c.querySelectorAll('.prc-seg')[e.piece];
+    if (seg) seg.classList.add('po-hit');
+    const wrap = document.createElement('div');
+    wrap.className = 'po-ev' + (view === 'in' ? ' in' : '') + (nextIdx >= 0 && i < nextIdx ? ' past' : '') + (i === nextIdx ? ' next' : '');
+    wrap.appendChild(stack(top, c, r.dayType));
+    box.appendChild(wrap);
+  });
+  if (scroll) {
+    const target = box.querySelector('.po-ev.next') || box.lastElementChild;
+    if (target && nextIdx !== 0) requestAnimationFrame(() => target.scrollIntoView({ block: 'start' }));
+    else window.scrollTo(0, 0);
+  }
+}
+
+// Every 30 s: "in 5 min" / "2 min ago" and which are past; at midnight, 4 AM
+// and 11 PM the day's set changes, so build again.
+setInterval(() => {
+  const now = nowMin(), key = todayIso() + '|' + (now < OWL_END ? 'owl' : now >= NIGHT_FROM ? 'late' : 'day');
+  if (key !== dayKey) { build(); return; }
+  const list = events[view];
+  const nextIdx = list.findIndex(e => e.min >= now - 2);
+  document.querySelectorAll('#poList .po-ev').forEach((el, i) => {
+    el.classList.toggle('past', nextIdx >= 0 && i < nextIdx);
+    el.classList.toggle('next', i === nextIdx);
+    const due = el.querySelector('.po-due');
+    if (due) due.textContent = dueText(+due.dataset.min, now);
+  });
+}, 30000);
+
+document.querySelector('.po-bar').addEventListener('click', e => {
+  const b = e.target.closest('[data-po]');
+  if (!b || b.dataset.po === view) return;
+  view = b.dataset.po; lsSet('po_view', view);
+  render(true);
+});
+
+// The depot is app-wide: bt_depot (label), like Paddles / Live / Trip Sheets.
+$('depotSelect').addEventListener('change', () => { lsSet('bt_depot', $('depotSelect').value); build(); });
+window.addEventListener('storage', e => {
+  if (e.key !== 'bt_depot' || !e.newValue || e.newValue === $('depotSelect').value) return;
+  if ([...$('depotSelect').options].some(o => o.value === e.newValue)) { $('depotSelect').value = e.newValue; build(); }
+});
+
+(async function init() {
+  try {
+    const [seasons, ov] = await Promise.all([loadSeasons(), loadCalendarOverrides().catch(() => ({}))]);
+    overrides = ov || {};
+    const season = seasonFor(seasons, todayIso());
+    districts = season ? await loadManifest(season) : [];
+    const sel = $('depotSelect');
+    sel.innerHTML = districts.map(d => '<option value="' + esc(d.label || d.name) + '">' + esc(d.label || d.name) + '</option>').join('');
+    const saved = lsGet('bt_depot');
+    if (districts.some(d => (d.label || d.name) === saved)) sel.value = saved;
+    await build();
+  } catch (e) {
+    $('poList').innerHTML = '<div class="po-msg">Could not load the schedule. Check your connection and try again.</div>';
+  }
+})();
+</script>
+<script type="module" src="assets/pa-account-ui.js"></script>
+</body>
+</html>
