@@ -24,7 +24,7 @@
 // run BEFORE the inline script below, and module scripts are always deferred.
 // Nothing here changes what the page stores or how it reads it.
 (function(){
-  var WATCH = /^(paddleSeason|paddleDepot|bt_route|bt_block|vacSickViewMode)/;
+  var WATCH = /^(paddleSeason|paddleDepot|bt_route|bt_block|bt_depot|vacSickViewMode)/;
   var set = Storage.prototype.setItem;
   Storage.prototype.setItem = function(k, v){
     set.call(this, k, v);
@@ -1318,12 +1318,31 @@ function initializeDistricts() {
     .map(d => `<option value="${d.name}">${d.label || d.name}</option>`)
     .join('');
   if (STATE.manifest.districts.length > 0) {
+    // Current pick: the app-wide depot (bt_depot, shared with Live and Trip
+    // Sheets) wins; older picks keep their own per-pick choice.
+    const shared = OLDER_PICKS ? null : districtByLabel(sharedDepot());
     const saved = localStorage.getItem('paddleDepot_' + STATE.currentSeason);
     const validSaved = STATE.manifest.districts.find(d => d.name === saved);
-    select.value = validSaved ? saved : STATE.manifest.districts[0].name;
+    select.value = shared ? shared.name : validSaved ? saved : STATE.manifest.districts[0].name;
     changeDistrict();
   }
 }
+
+// ONE DEPOT FOR THE WHOLE APP. Live / Trip Sheets (block-tracker.html) keep
+// the depot by its label ("Callowhill Bus") in bt_depot; the Paddles page
+// reads and writes that same key, so changing the depot on any of them
+// changes it everywhere - also in another open tab (storage event).
+function sharedDepot() { try { return localStorage.getItem('bt_depot') || ''; } catch (_) { return ''; } }
+function districtByLabel(label) {
+  if (!label || !STATE.manifest || !STATE.manifest.districts) return null;
+  return STATE.manifest.districts.find(d => (d.label || d.name) === label) || null;
+}
+window.addEventListener('storage', e => {
+  if (OLDER_PICKS || e.key !== 'bt_depot') return;
+  const d = districtByLabel(e.newValue);
+  const select = document.getElementById('district-select');
+  if (d && select.value !== d.name) { select.value = d.name; changeDistrict(); }
+});
 
 // Bumped on every district load. Each load captures its own token and drops
 // its results if a newer load has started meanwhile - otherwise two overlapping
@@ -1336,6 +1355,11 @@ async function changeDistrict() {
   STATE.currentDistrict = select.value;
   if (!STATE.currentDistrict) return;
   localStorage.setItem('paddleDepot_' + STATE.currentSeason, STATE.currentDistrict);
+  if (!OLDER_PICKS) {
+    const d = STATE.manifest.districts.find(x => x.name === STATE.currentDistrict);
+    const label = d && (d.label || d.name);
+    if (label && sharedDepot() !== label) { try { localStorage.setItem('bt_depot', label); } catch (_) {} }
+  }
 
   const myToken = ++loadToken;
 

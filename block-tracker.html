@@ -3525,7 +3525,20 @@ function fillDepots() {
   const route = fillRoutes(depot, lsGet('bt_route'));
   if (state.find) { document.getElementById('routeSelect').value = ''; return; } // a search is showing; leave it
   if (route && route !== state.route) { lsSet('bt_route', route); loadRoute(route); }
+  // The depot was changed elsewhere (Paddles page) and the route shown from
+  // the last visit belongs to another depot: ask for one of this depot's routes.
+  else if (!route && state.route && paddle.depots.some(d => d !== depot && depotRoutes(d).some(r => isSameRoute(r, state.route)))) showIdle();
 }
+
+// The depot is app-wide (bt_depot, also written by the Paddles page): when
+// another open tab changes it, follow along here.
+window.addEventListener('storage', e => {
+  if (e.key !== 'bt_depot' || !paddle.loaded || state.find) return;
+  const dsel = document.getElementById('depotSelect');
+  if (!paddle.depots.includes(e.newValue) || dsel.value === e.newValue) return;
+  dsel.value = e.newValue;
+  onDepotChange();
+});
 
 function onDepotChange() {
   const depot = document.getElementById('depotSelect').value;
