@@ -499,36 +499,45 @@ let paddleReady = null; // loadPaddleData()'s promise, so a search can wait for 
 // date→daytype map, which we consult before falling back to day-of-week.
 let calendarOverrides = {};
 
-// SEPTA's service day rolls over in the pre-dawn lull, NOT at midnight. Late
-// "owl" trips belong to the PREVIOUS calendar day and are written in GTFS
-// 24:00+ notation (e.g. 25:30 = 1:30 AM the next morning). So before
-// SERVICE_DAY_START_HR we're still in yesterday's service day: use yesterday's
-// date/day-type, and count "now" as wall-clock + 24h so it lines up with those
-// 24:00+ owl trips. (Verified live: at ~1:30 AM Sunday the buses on the street
-// are Saturday blocks running Saturday's owl service — the app must load
-// Saturday, not Sunday. Without this it loaded Sunday and showed the real
-// Saturday buses PLUS phantom Sunday scheduled blocks = "too many buses".)
+// THE DAY IS THE CALENDAR DAY, FROM MIDNIGHT (user's rule, 2026-11-11: at
+// 2 AM Wednesday it is Wednesday, not "Tuesday until 4 AM"). Today's runs are
+// all of today's pick: the night liners (a run STARTING 11 PM-4 AM belongs to
+// the next day - Wednesday's Run 51 reports Tuesday 11:54 PM), the day runs,
+// and the evening runs that finish after midnight (24:00+). Between midnight
+// and 4 AM last night's evening runs that are still out - or finished after
+// midnight - count as today too: their pick pieces and GTFS 24:xx trips join
+// today's clock 24 h back (25:30 → 1:30 AM), see serviceDayTrips and
+// loadPaddleData. From 11 PM the night liners reporting tonight are
+// tomorrow's (isLateEvening).
 const SERVICE_DAY_START_HR = 4;
 
+// Midnight to 4 AM: last night's evening runs can still be out.
 function inOwlWindow(d) { return d.getHours() < SERVICE_DAY_START_HR; }
+// 11 PM to midnight: tomorrow's night liners report tonight.
+const NIGHT_FROM_HR = 23;
+function isLateEvening(d) { return d.getHours() >= NIGHT_FROM_HR; }
 
-// Calendar Date of the current SERVICE day (yesterday during owl hours).
-function serviceDate() {
-  const d = new Date();
-  if (inOwlWindow(d)) d.setDate(d.getDate() - 1);
-  return d;
-}
+// Today's calendar date.
+function serviceDate() { return new Date(); }
 
-// Minutes since midnight of the current service day. In owl hours this is
-// wall-clock + 1440 so it matches GTFS 24:00+ owl trip times.
+// Minutes since today's midnight (last night's leftovers run below 0... up to
+// 4 AM; tonight's after-midnight trips at 24:00+).
 function serviceNowMin() {
   const d = new Date();
-  const m = d.getHours() * 60 + d.getMinutes();
-  return inOwlWindow(d) ? m + 1440 : m;
+  return d.getHours() * 60 + d.getMinutes();
 }
 
-// Epoch ms of the current service day's midnight (yesterday's during owl hours)
-// — the base for turning a service-day minute (incl. 24:00+) into a real time.
+// The OLD 4 AM service day, kept only for wording a sighting: a bus seen at
+// 1:14 AM ran last night's run ("last night" / "tonight").
+function owlServiceMidnightMs() {
+  const d = new Date();
+  if (inOwlWindow(d)) d.setDate(d.getDate() - 1);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+// Epoch ms of today's midnight — the base for turning a day minute (incl.
+// 24:00+ and last night's below 0) into a real time.
 function serviceMidnightMs() {
   const d = serviceDate();
   d.setHours(0, 0, 0, 0);
@@ -571,10 +580,22 @@ async function loadCalendarOverrides() {
   } catch(e) {}
 }
 
-// "HH:MM:SS" (GTFS allows hour >= 24 for past-midnight trips) → minutes since midnight
+// "HH:MM:SS" (GTFS allows hour >= 24 for past-midnight trips) → minutes since
+// midnight. A leading "-" is last night's trip before midnight on today's clock
+// ("-0:20:00" = 11:40 PM last night).
 function timeStrToMin(t) {
-  const m = String(t || '').match(/(\d+):(\d+)/);
-  return m ? parseInt(m[1]) * 60 + parseInt(m[2]) : null;
+  const m = String(t || '').match(/(-?)(\d+):(\d+)/);
+  if (!m) return null;
+  const v = parseInt(m[2]) * 60 + parseInt(m[3]);
+  return m[1] ? -v : v;
+}
+// A GTFS time moved by `delta` minutes, same notation ("25:30:00", -1440 → "1:30:00").
+function shiftTime(t, delta) {
+  const v = timeStrToMin(t);
+  if (v == null) return t;
+  const sec = (String(t).match(/:\d+:(\d+)/) || [])[1] || '00';
+  const n = v + delta, a = Math.abs(n);
+  return (n < 0 ? '-' : '') + Math.floor(a / 60) + ':' + String(a % 60).padStart(2, '0') + ':' + sec;
 }
 
 // "12:43 AM" → minutes since midnight (used to order a block's two runs so
@@ -642,31 +663,48 @@ function withoutOldSchedule(list) {
   return list.filter(t => String(t.trip_id).length > 4);
 }
 
-// The trips of the current service day. GTFS writes after-midnight trips two
-// ways: a late regular trip as 24:xx on the day before (route 52 block 9517),
-// but a night liner's block under its OWN day at 00:xx (route 52 block 9501
-// at 00:23, L1 OWL 9901 at 00:15) - the paddle files those runs under the
-// next day too. In owl hours we run on yesterday's clock (24:00+), so today's
-// early trips join it 24 h on: 00:23 becomes 24:23. Without this a night
-// liner had no timetable here between midnight and 4 AM. Yesterday's own
-// copy of the same early trip (same trip_id, long done) is dropped, so a live
-// bus's trip id finds tonight's.
+/// Today's trips (the calendar day, see SERVICE_DAY_START_HR). GTFS writes
+// after-midnight trips two ways: a late regular trip as 24:xx on the day
+// before (route 52 block 9517), but a night liner's block under its OWN day at
+// 00:xx (route 52 block 9501 at 00:23, L1 OWL 9901 at 00:15) - the paddle
+// files those runs under that day too. So today's list as it is: today's
+// night liners from 00:xx, the day, tonight's late trips at 24:xx.
 //
-// From 11 PM on (not just after midnight) tonight's night liners count, and a
-// night liner's block is known by its PADDLE too (a run starting 11 PM-4 AM,
-// see isNightRunStart): route 21 block 9902 is Run 52, out 12:23 AM on L1 OWL,
-// and its first Route 21 trip is 5:44 AM - this route's timetable alone can't
-// tell it is tonight's, so at 1:37 AM those trips showed as long DONE.
-function serviceDayTrips(data) {
-  const trips = dayTrips(data, getDayType());
-  if (!inNightWindow(new Date())) return trips;
+// Midnight to 4 AM: last night's trips that ran past midnight (24:xx, or
+// 11:40 PM-12:20 AM) are still today's business - they join 24 h back
+// (25:30 → 1:30 AM, 23:40 → -0:20), marked lastNight. Today's own copy of
+// such a trip (same weekday ids, ~a day away) gets its id suffixed so a live
+// bus's trip id finds last night's. `extra.lastNightAll` gets ALL of last
+// night's trips on today's clock, for their trip numbers (#120 stays #120).
+//
+// 11 PM to midnight: tomorrow's night liners report tonight; their blocks'
+// early trips join 24 h on (00:23 → 24:23), replacing today's copies (this
+// morning's, long done). A night liner's block is known by its PADDLE too
+// (paddle.nightBlocks): route 21 block 9902 is Run 52, out 12:23 AM on L1 OWL,
+// first Route 21 trip 5:44 AM - this route's timetable alone can't tell.
+function serviceDayTrips(data, extra) {
+  const now = new Date();
+  let trips = dayTrips(data, getDayType());
+
+  if (inOwlWindow(now)) {
+    const all = dayTrips(data, dayTypeOfDate(yesterdayDate()))
+      .map(t => ({ ...t, start: shiftTime(t.start, -1440), end: shiftTime(t.end, -1440), lastNight: true }));
+    if (extra) extra.lastNightAll = all;
+    const left = all.filter(t => (timeStrToMin(t.end) ?? -1) >= 0);
+    // The same trip listed both ways (yesterday 24:30 and today 00:30): once.
+    const same = new Set(left.map(t => t.block_id + '|' + timeStrToMin(t.start) + '|' + timeStrToMin(t.end)));
+    trips = trips.filter(t => !same.has(t.block_id + '|' + timeStrToMin(t.start) + '|' + timeStrToMin(t.end)));
+    const ids = new Set(left.map(t => String(t.trip_id)));
+    trips = trips.map(t => ids.has(String(t.trip_id)) ? { ...t, trip_id: String(t.trip_id) + '~next' } : t).concat(left);
+    return trips;
+  }
+
+  if (!isLateEvening(now)) return trips;
   // A block that goes out before 4 AM comes with its whole run, not just its
-  // trips before 4: route 42 block 9102 (out 1:27 AM, trips 1:34-10:38 AM)
-  // otherwise "ended" at 4:25 until the day turned over at 4:00.
+  // trips before 4: route 42 block 9102 (out 1:27 AM, trips 1:34-10:38 AM).
   const owlEnd = SERVICE_DAY_START_HR * 60;
-  const plus24 = t => String(t).replace(/^(\d+)/, h => String(parseInt(h, 10) + 24));
-  const today = dayTrips(data, dayTypeOfDate(nightRunsDate()));
-  const byTT = new Set(today.filter(t => (timeStrToMin(t.start) ?? Infinity) < owlEnd).map(t => String(t.block_id)));
+  const tomorrow = dayTrips(data, dayTypeOfDate(nightRunsDate()));
+  const byTT = new Set(tomorrow.filter(t => (timeStrToMin(t.start) ?? Infinity) < owlEnd).map(t => String(t.block_id)));
   // By the paddle: the night liner's trips up to its own pull-in (night liners
   // run as late as 3:17 PM; a later trip on that block is another run's).
   const byPick = paddle.nightBlocks || new Map();
@@ -676,10 +714,16 @@ function serviceDayTrips(data) {
     const pi = byPick.get(b);
     return pi != null && (timeStrToMin(t.start) ?? Infinity) < pi;
   };
-  const early = today
+  const early = tomorrow
     .filter(tonight)
-    .map(t => ({ ...t, start: plus24(t.start), end: plus24(t.end) }));
-  // Yesterday's own copies of those trips (same ids, long done) go.
+    .map(t => ({ ...t, start: shiftTime(t.start, 1440), end: shiftTime(t.end, 1440), tonight: true }));
+  // Trip numbers stay put: today's over today's whole list (this morning's
+  // copies included), tonight's over tomorrow's.
+  if (extra) {
+    extra.todayAll = trips;
+    extra.tomorrowAll = tomorrow.map(t => ({ ...t, start: shiftTime(t.start, 1440), end: shiftTime(t.end, 1440) }));
+  }
+  // Today's own copies of those trips (same ids, this morning's) go.
   const ids = new Set(early.map(t => String(t.trip_id)));
   return trips.filter(t => !ids.has(String(t.trip_id))).concat(early);
 }
@@ -793,7 +837,8 @@ async function loadScheduleData(route) {
     // skips both.
     if (paddleReady) { try { await paddleReady; } catch(e) {} }
     if (reqId !== schedRequestId) return;
-    const trips = serviceDayTrips(data);
+    const dayExtra = {};
+    const trips = serviceDayTrips(data, dayExtra);
     const blockTrips = new Map();
     const order = [];
     for (const t of trips) {
@@ -849,6 +894,9 @@ async function loadScheduleData(route) {
     if (reqId !== schedRequestId) return;
 
     sched.blockTrips = blockTrips;
+    sched.lastNightAll = dayExtra.lastNightAll || null; // owl hours: last night's whole list, for trip numbers
+    sched.todayAll = dayExtra.todayAll || null;         // 11 PM-midnight: today's whole list, ditto
+    sched.tomorrowAll = dayExtra.tomorrowAll || null;   // 11 PM-midnight: tomorrow's (on tonight's clock), ditto
     sched.route = route;
     sched.partnerTT = partnerTT;
     sched.schedOrderByRoute = new Map([[route, order]]); // trips arrive pre-sorted by start time
@@ -1015,28 +1063,40 @@ async function loadDetours(route) {
   if (state.route && !ticking) { lastHTML = ''; tick(); }
 }
 
-// ── WHICH DAY A RUN BELONGS TO ──
+/// ── WHICH DAY A RUN BELONGS TO ──
 // A run that STARTS between 11 PM and 4 AM is a night liner of the NEXT day
 // (it reports the evening before: Wednesday's Run 51 reports Tuesday 11:54 PM).
 // A run that starts earlier and finishes after midnight belongs to the day it
 // started. The fall pick has no run starting 10-11 PM and no morning run
 // running past midnight, so the rule never has to guess.
 //
-// So from 11 PM to 4 AM the night liners on the street are the NEXT day's
-// (their paddles come from the next day's pick: Friday 11:54 PM = Saturday's
-// Run 51), counted on from tonight's 24:00 ("tonight frame"); the rest of the
-// day they are this day's own, which ran this morning ("morning frame").
-const NIGHT_FROM_HR = 23;
+// On today's clock (minutes from today's midnight, see SERVICE_DAY_START_HR):
+//   today's night liners   11:54 PM report = -6, 12:23 AM = 23, 9:27 AM = 567
+//   today's day runs        as they are; after midnight 24:00+ (2:21 AM = 1581)
+//   11 PM-midnight: tomorrow's night liners replace today's (this morning's,
+//                   done): 11:54 PM = 1434, 12:23 AM = 1463 - from TOMORROW's
+//                   pick (Friday 11:30 PM = Saturday's Run 51)
+//   midnight-4 AM:  last night's evening runs that ran past midnight join, from
+//                   YESTERDAY's pick, 24 h back (4:55 PM = -485, 2:21 AM = 141)
 function isNightRunStart(min) { return min != null && isFinite(min) && (min >= NIGHT_FROM_HR * 60 || min < SERVICE_DAY_START_HR * 60); }
-function inNightWindow(d) { const h = d.getHours(); return h >= NIGHT_FROM_HR || h < SERVICE_DAY_START_HR; }
-// The calendar date whose night liners run tonight (the day after the service day).
-function nightRunsDate() { const d = serviceDate(); d.setDate(d.getDate() + 1); return d; }
-// What the pick below was built for; it is rebuilt when this changes (11 PM, 4 AM).
-function paddleLoadKey() { return localISODate() + '|' + (inNightWindow(new Date()) ? 'night' : 'day'); }
+// Tomorrow's / yesterday's calendar date.
+function nightRunsDate() { const d = new Date(); d.setDate(d.getDate() + 1); return d; }
+function yesterdayDate() { const d = new Date(); d.setDate(d.getDate() - 1); return d; }
+// What the pick below was built for; it is rebuilt when this changes
+// (midnight, 4 AM, 11 PM).
+function paddleLoadKey() {
+  const d = new Date();
+  return localISODate() + '|' + (inOwlWindow(d) ? 'owl' : isLateEvening(d) ? 'late' : 'day');
+}
 // A run's start ("2023-10-11 11:54 PM") as clock minutes; else its first pull-out.
 function runStartMin(row) {
   const m = clockToMin(String(row.start || ''));
   return isFinite(m) ? m : clockToMin(String(row.pot1 || ''));
+}
+// Does a run finish after midnight (its finish clock before its start)?
+function runCrossesMidnight(row) {
+  const s = runStartMin(row), e = clockToMin(String(row.finish || ''));
+  return isFinite(s) && isFinite(e) && e < s;
 }
 
 async function loadPaddleData() {
@@ -1044,50 +1104,51 @@ async function loadPaddleData() {
   paddle.loading = true;
   try {
     const manifest = await fetch(PADDLE_BASE + '/manifest.json').then(r => r.json());
-    const day = getDayType();
-    const night = inNightWindow(new Date());
-    const owl = inOwlWindow(new Date());
-    // Night liners: tonight's (the next day's pick) from 11 PM to 4 AM, else this day's own.
-    const nDay = night ? dayTypeOfDate(nightRunsDate()) : day;
+    const now = new Date();
+    const day = getDayType();                                        // today
+    const late = isLateEvening(now);                                 // 11 PM-midnight
+    const owl = inOwlWindow(now);                                    // midnight-4 AM
+    const tDay = late ? dayTypeOfDate(nightRunsDate()) : '';         // tomorrow's night liners
+    const yDay = owl ? dayTypeOfDate(yesterdayDate()) : '';          // last night's evening runs
     const cap = d => d.charAt(0).toUpperCase() + d.slice(1);
     const loadKey = paddleLoadKey();
     const byBlock = new Map();
     const nightBlocks = new Map();   // tonight's night-liner blocks → their latest pull-in (clock min)
-    const todayByBlock = new Map();  // after midnight: the new day's other runs, for "today's run" in a search
     const routesByDepot = new Map(); // depot label → Set(route id)
     const depots = (manifest.districts || []).map(d => d.label || d.name);
     paddle.depotIds = new Map((manifest.districts || []).map(d => [d.label || d.name, d.name]));
 
-    // Service-day minutes of a pick time on a run. A day run: an early-AM time
-    // is after midnight (24:00+). A night liner: tonight's run from 24:00 on
-    // (its 11:54 PM report stays 23:54), or this morning's run as it was.
+    const clock = t => { const m = clockToMin(String(t || '').trim()); return isFinite(m) ? m : null; };
+    // Each kind of run's pick times on today's clock (see the table above).
     const dayMin = t => pickPieceMin(t);
-    const nightMin = t => {
-      const m = clockToMin(String(t || '').trim());
-      if (!isFinite(m)) return null;
-      if (night) return m >= NIGHT_FROM_HR * 60 ? m : m + 1440;
-      return m >= NIGHT_FROM_HR * 60 ? m - 1440 : m;
-    };
+    const morningMin = t => { const m = clock(t); return m == null ? null : m >= NIGHT_FROM_HR * 60 ? m - 1440 : m; };
+    const tonightMin = t => { const m = clock(t); return m == null ? null : m >= NIGHT_FROM_HR * 60 ? m : m + 1440; };
+    const lastNightMin = t => { const m = clock(t); return m == null ? null : m >= 12 * 60 ? m - 1440 : m; };
 
     await Promise.allSettled((manifest.districts || []).map(async district => {
-      const runsOn = d => !!(district.days && district.days.includes(cap(d)));
-      if (!runsOn(day) && !runsOn(nDay)) return;
+      const runsOn = d => !!(d && district.days && district.days.includes(cap(d)));
+      if (!runsOn(day) && !runsOn(tDay) && !runsOn(yDay)) return;
       const slug = district.name;
       const depot = district.label || slug;
       const depotRoutes = new Set();
       routesByDepot.set(depot, depotRoutes);
-      let dayText = '', nText = '', pdfsText = '';
+      // Each day type's CSV once (today, tomorrow and yesterday are often the same).
+      const types = [...new Set([day, tDay, yDay].filter(runsOn))];
+      const text = {};
+      let pdfsText = '';
       try {
-        [dayText, nText, pdfsText] = await Promise.all([
-          runsOn(day) ? fetch(PADDLE_BASE + '/' + slug + '/' + day + '.csv').then(r => r.ok ? r.text() : '') : '',
-          nDay !== day && runsOn(nDay) ? fetch(PADDLE_BASE + '/' + slug + '/' + nDay + '.csv').then(r => r.ok ? r.text() : '') : '',
-          fetch(PADDLE_BASE + '/' + slug + '/pdfs.csv').then(r => r.ok ? r.text() : ''),
-        ]);
+        const got = await Promise.all(types.map(d => fetch(PADDLE_BASE + '/' + slug + '/' + d + '.csv').then(r => r.ok ? r.text() : '')));
+        types.forEach((d, i) => { text[d] = got[i]; });
+        pdfsText = await fetch(PADDLE_BASE + '/' + slug + '/pdfs.csv').then(r => r.ok ? r.text() : '');
       } catch(e) { return; }
+      const rowsOf = {};
+      const rows = d => (rowsOf[d] = rowsOf[d] || (text[d] ? parseCSV(text[d]) : []));
 
       // runno → paddle-PDF link, for one day type
       const pdfRows = parseCSV(pdfsText);
-      const linksFor = d => {
+      const linksOf = {};
+      const links = d => {
+        if (linksOf[d]) return linksOf[d];
         const runLink = new Map();
         for (const row of pdfRows) {
           if (!row.runno || (row.day || '') !== cap(d)) continue;
@@ -1098,53 +1159,40 @@ async function loadPaddleData() {
           const link = ((phone ? row.moblink || row.pclink : row.pclink || row.moblink) || '').trim();
           if (link) runLink.set(String(row.runno), link);
         }
-        return runLink;
+        return (linksOf[d] = runLink);
       };
-      const dayLinks = linksFor(day), nLinks = nDay === day ? dayLinks : linksFor(nDay);
-      const dayRows = parseCSV(dayText);
-      const nRows = nDay === day ? dayRows : parseCSV(nText);
 
-      // This day's day / evening runs, plus the night liners (see above).
       const use = [];
-      dayRows.forEach(row => { if (!isNightRunStart(runStartMin(row))) use.push({ row, isNight: false, links: dayLinks }); });
-      nRows.forEach(row => { if (isNightRunStart(runStartMin(row))) use.push({ row, isNight: true, links: nLinks }); });
-
-      // From 11 PM the next day's day runs by block, so a search after
-      // midnight can say when a block's run TODAY goes out.
-      if (night) nRows.forEach(row => {
-        if (isNightRunStart(runStartMin(row))) return;
-        const runno = String(row.runno || '').trim();
-        if (!runno) return;
-        for (let i = 1; i <= 10; i++) {
-          const b = (row['b' + i] || '').trim();
-          if (!b || b === '0') continue;
-          if (!todayByBlock.has(b)) todayByBlock.set(b, { poTime: '', poMin: null, runs: [] });
-          const t = todayByBlock.get(b);
-          const pot = (row['pot' + i] || '').trim();
-          const m = clockToMin(pot);
-          if ((row['potype' + i] || '').trim().toUpperCase() === 'O' && isFinite(m) && (t.poMin == null || m < t.poMin)) { t.poMin = m; t.poTime = pot; }
-          if (!t.runs.some(r => r.runno === runno)) t.runs.push({ runno, link: nLinks.get(runno) || '', sortMin: isFinite(m) ? m : Infinity });
-        }
+      if (runsOn(day)) rows(day).forEach(row => {
+        const night = isNightRunStart(runStartMin(row));
+        if (night && late) return;                      // tomorrow's report tonight instead
+        use.push({ row, pm: night ? morningMin : dayMin, links: links(day), night });
+      });
+      if (late && runsOn(tDay)) rows(tDay).forEach(row => {
+        if (isNightRunStart(runStartMin(row))) use.push({ row, pm: tonightMin, links: links(tDay), night: true, tonight: true });
+      });
+      if (owl && runsOn(yDay)) rows(yDay).forEach(row => {
+        if (!isNightRunStart(runStartMin(row)) && runCrossesMidnight(row)) use.push({ row, pm: lastNightMin, links: links(yDay), lastNight: true });
       });
 
-      for (const { row, isNight, links } of use) {
+      for (const u of use) {
+        const { row, pm } = u;
         const runno = String(row.runno || '').trim();
         if (!runno) continue;
-        const pm = isNight ? nightMin : dayMin;
         // The run as the Paddle App's scorecard shows it: number, its routes
         // in paddle order, its paddle link. Shared by its pieces below.
-        const run = { runno, depot, link: links.get(runno) || '', routes: [], pieces: [], night: isNight };
+        const run = { runno, depot, link: u.links.get(runno) || '', routes: [], pieces: [], night: !!u.night, lastNight: !!u.lastNight };
         for (let i = 1; i <= 10; i++) {
           const b = (row['b' + i] || '').trim();
           if (!b || b === '0') continue;
-          if (!byBlock.has(b)) byBlock.set(b, { poTime: '', piTime: '', poMin: null, piMin: null, runs: [], routes: [], segs: [] });
+          if (!byBlock.has(b)) byBlock.set(b, { poTime: '', piTime: '', poMin: null, piMin: null, runs: [], routes: [], segs: [], outs: [], ins: [] });
           const rec = byBlock.get(b);
           const rt = (row['r' + i] || '').trim();
           if (rt && !rec.routes.includes(rt)) rec.routes.push(rt);
           if (rt && !run.routes.includes(rt)) run.routes.push(rt);
           pickRoutes(rt ? [rt] : []).forEach(r => depotRoutes.add(r));
-          // This run's piece of the block, service-day minutes, for "which
-          // run is on the block at this time".
+          // This run's piece of the block on today's clock, for "which run
+          // is on the block at this time".
           const s = pm(row['pot' + i]), e0 = pm(row['pit' + i]);
           const e = e0 != null && s != null && e0 < s ? e0 + 1440 : e0;
           const seg = { run, blk: b, rt, s, e };
@@ -1156,26 +1204,30 @@ async function loadPaddleData() {
           const pit = (row['pit' + i] || '').trim();
           // Some blocks list more than one pull-out / pull-in (29 on a fall-2026
           // weekday, e.g. 5554: in at 3:23 PM and 4:14 PM). Keep the EARLIEST
-          // pull-out and the LATEST pull-in (service-day minutes), so a block
-          // is only ever treated as finished after its last possible pull-in.
-          if (potype === 'O' && pot && s != null && (rec.poMin == null || s < rec.poMin)) { rec.poTime = pot; rec.poMin = s; }
-          if (pitype === 'I' && pit && e != null && (rec.piMin == null || e > rec.piMin)) { rec.piTime = pit; rec.piMin = e; }
-          if (isNight && night) {
-            const ci = clockToMin(pit);
-            if (isFinite(ci) && ci < NIGHT_FROM_HR * 60) nightBlocks.set(b, Math.max(nightBlocks.get(b) || 0, ci));
+          // pull-out and the LATEST pull-in (today's clock), so a block is
+          // only ever treated as finished after its last possible pull-in.
+          if (potype === 'O' && pot && s != null) {
+            if (rec.poMin == null || s < rec.poMin) { rec.poTime = pot; rec.poMin = s; }
+            rec.outs.push({ min: s, time: pot, run });
+          }
+          if (pitype === 'I' && pit && e != null) {
+            if (rec.piMin == null || e > rec.piMin) { rec.piTime = pit; rec.piMin = e; }
+            rec.ins.push({ min: e, time: pit });
+          }
+          if (u.tonight) {
+            const ci = clock(pit);
+            if (ci != null && ci < NIGHT_FROM_HR * 60) nightBlocks.set(b, Math.max(nightBlocks.get(b) || 0, ci));
           }
           if (!rec.runs.some(r => r.runno === runno)) {
-            rec.runs.push({ runno, link: links.get(runno) || '', sortMin: s ?? Infinity });
+            rec.runs.push({ runno, link: run.link, sortMin: s ?? Infinity });
           }
         }
       }
     }));
 
-    for (const rec of byBlock.values()) rec.runs.sort((a, b) => a.sortMin - b.sortMin);
-    for (const t of todayByBlock.values()) t.runs.sort((a, b) => a.sortMin - b.sortMin);
+    for (const rec of byBlock.values()) { rec.runs.sort((a, b) => a.sortMin - b.sortMin); rec.outs.sort((a, b) => a.min - b.min); rec.ins.sort((a, b) => a.min - b.min); }
     paddle.byBlock = byBlock;
     paddle.nightBlocks = nightBlocks;
-    paddle.todayByBlock = todayByBlock;
     paddle.loadKey = loadKey;
     paddle.depots = depots.filter(d => routesByDepot.has(d) && routesByDepot.get(d).size);
     paddle.routesByDepot = routesByDepot;
@@ -1185,6 +1237,12 @@ async function loadPaddleData() {
     if (state.route && !ticking) { lastHTML = ''; tick(); }
   } catch(e) { console.warn('Paddle load failed:', e); }
   paddle.loading = false;
+}
+
+// The block's next pull-out still to come today ({ min, time, run }), or null.
+function nextOut(blk, nowMin = serviceNowMin()) {
+  const rec = paddle.byBlock.get(String(blk));
+  return (rec && rec.outs || []).find(o => o.min > nowMin) || null;
 }
 
 // HTML for the run / pull-out-in line under a card. Empty if this block has
@@ -2389,54 +2447,60 @@ function switchFindView() {
   else { state.bus = f.num; state.busBlock = f.bus.block; state.block = ''; loadRoute(f.bus.route); }
 }
 
-// Why a searched bus has no card, from the scheduled times only, as the
-// search result's lines: ["Due to pull in at 12:18 AM", "Last trip ended at
-// 11:55 PM", "Last served on Route 44 Block 9664", { runs }]. Parts with no
-// data are left out.
+/// Why a searched bus has no card, from the scheduled times only, as the
+// search result's lines: ["Pulled in at 1:44 AM", "Last trip ended at
+// 11:58 PM", "Last served on Route 44 Block 9664", { runs }, "Goes out again
+// at 3:20 PM", { run }]. Parts with no data are left out. Times are today's
+// (midnight to midnight); between midnight and 4 AM a run from last night
+// that just finished is part of today, and the block's next run is too.
 function doneParts(route) {
   const blk = state.busBlock;
   const rec = blk ? paddle.byBlock.get(blk) : null;
-  const pi  = rec && rec.piTime ? fmtClock(clockToMin(rec.piTime)) : '';
+  const nowMin = serviceNowMin();
+  // The pull-in that has happened (last night's run after midnight), else the one due.
+  const ins = (rec && rec.ins) || [];
+  const done = ins.filter(i => i.min <= nowMin).pop();
+  const due = ins.find(i => i.min > nowMin);
   // The last trip that really ran: trips at or after the pull-in are phantom.
   const ends = (sched.blockTrips.get(blk) || [])
     .filter(t => !isPhantomTrip(blk, timeStrToMin(t.start)))
-    .map(t => timeStrToMin(t.end)).filter(e => e != null);
+    .map(t => timeStrToMin(t.end)).filter(e => e != null && e <= nowMin);
   const lastEnd = ends.length ? fmtClock(Math.max(...ends)) : '';
   const parts = [];
-  if (pi) parts.push((blockPulledIn(blk) ? 'Pulled in at ' : 'Due to pull in at ') + pi);
+  if (done) parts.push('Pulled in at ' + fmtClock(done.min));
+  else if (due) parts.push('Due to pull in at ' + fmtClock(due.min));
   if (lastEnd) parts.push('Last trip ended at ' + lastEnd);
   parts.push('Last served on Route ' + route + (blk ? ' Block ' + blk : ''));
-  if (rec && rec.runs.length) parts.push({ runs: rec.runs });
-  return parts.concat(todayRunParts(blk));
+  const next = blk && nextOut(blk);
+  if (rec && rec.runs.length && !next) parts.push({ runs: rec.runs });
+  if (next) parts.push('Block ' + blk + ' goes out again at ' + fmtClock(next.min), { runs: [next.run] });
+  return parts;
 }
 
-// Between midnight and 4 AM a block that is done ran LAST NIGHT (a run that
-// started before 11 PM belongs to the day it started); its run today hasn't
-// started yet. Its lines for that: when today's run goes out, and which run.
-// Empty the rest of the day.
-function todayRunParts(blk) {
-  if (!blk || !inOwlWindow(new Date())) return [];
-  const t = paddle.todayByBlock && paddle.todayByBlock.get(String(blk));
-  if (!t) return ['No run on this block today'];
-  return ['Today’s run hasn’t started' + (t.poTime ? ' · out at ' + fmtClock(clockToMin(t.poTime)) : ''),
-    { runs: t.runs }];
+// A block that isn't out but has a run still to come today: when it goes out,
+// and which run. Empty when nothing is left today.
+function nextOutParts(blk) {
+  const next = blk && nextOut(blk);
+  return next ? ['Goes out at ' + fmtClock(next.min), { runs: [next.run] }] : [];
 }
-// The headline for a searched bus / block with nothing left: after midnight
-// it is last night's run that is done, not today's.
-function doneHeadline(what) {
-  return inOwlWindow(new Date()) ? what + ': last night’s run is done' : what + ' is done for now';
+// The headline for a searched bus / block with no card: a block with a run
+// still to come today isn't out YET (at 2 AM: last night's run ended at 1:44,
+// today's goes out at 3:20 PM), else it is done for now.
+function doneHeadline(what, blk) {
+  return blk && nextOut(blk) ? what + ' isn’t out yet' : what + ' is done for now';
 }
 
-// A searched block with nothing left today: its route, today's bus if known,
-// and its runs.
+// A searched block with nothing left now: its route, today's bus if known,
+// and its runs - or when it goes out next today.
 function blockDoneParts(route) {
   const blk = state.block;
   const rec = paddle.byBlock.get(blk);
-  const parts = [(inOwlWindow(new Date()) ? 'Nothing left tonight on Route ' : 'Nothing left today on Route ') + route];
+  const next = nextOutParts(blk);
+  const parts = next.length ? next.slice() : ['Nothing left today on Route ' + route];
   const bus = knownVehicleFor(blk);
   if (bus) parts.push('Served by Bus ' + bus);
-  if (rec && rec.runs.length) parts.push({ runs: rec.runs });
-  return parts.concat(todayRunParts(blk));
+  if (rec && rec.runs.length && !next.length) parts.push({ runs: rec.runs });
+  return parts;
 }
 
 // One search-result section: icon ('bus' / 'block'), headline, lines.
@@ -2462,8 +2526,8 @@ function renderBusMain(merged, route) {
     document.getElementById('busCount').textContent = what.join(' & ');
     lastCards = [];
     lastEmptyHtml = '<div class="msg find-msg">' + (state.bus
-      ? findSecHtml('bus', doneHeadline('Bus ' + state.bus), doneParts(route))
-      : findSecHtml('block', doneHeadline('Block ' + state.block), blockDoneParts(route))) + '</div>';
+      ? findSecHtml('bus', 'Bus ' + state.bus + ' is done for now', doneParts(route))
+      : findSecHtml('block', doneHeadline('Block ' + state.block, state.block), blockDoneParts(route))) + '</div>';
     drawView(false);
     return;
   }
@@ -2706,21 +2770,35 @@ const tripDirOf = t => canonDir((sched.dirNames && sched.dirNames[t.direction]) 
 let tripNumCache = { src: null, map: null };
 function tripNumbers() {
   if (tripNumCache.src === sched.blockTrips && tripNumCache.map) return tripNumCache.map;
-  const all = new Map();
-  for (const [blk, raw] of sched.blockTrips) {
-    for (const t of raw) {
+  // Today's trips count from #1; last night's leftovers (midnight-4 AM) keep
+  // the numbers they had last night, counted over last night's whole list.
+  const number = (list, skipPhantom) => {
+    const all = new Map();
+    for (const t of list) {
+      const blk = String(t.block_id);
       const s = timeStrToMin(t.start), e = timeStrToMin(t.end);
-      if (s == null || e == null || isPhantomTrip(blk, s)) continue;
+      if (s == null || e == null || (skipPhantom && isPhantomTrip(blk, s))) continue;
       const k = blk + '|' + s;
       if (!all.has(k)) all.set(k, { k, blk, s, e, dir: tripDirOf(t) });
     }
-  }
-  const map = new Map(), count = new Map();
-  [...all.values()].sort((a, b) => a.s - b.s || a.e - b.e || a.blk.localeCompare(b.blk)).forEach(x => {
-    const n = (count.get(x.dir) || 0) + 1;
-    count.set(x.dir, n);
-    map.set(x.k, n);
-  });
+    const out = new Map(), count = new Map();
+    [...all.values()].sort((a, b) => a.s - b.s || a.e - b.e || a.blk.localeCompare(b.blk)).forEach(x => {
+      const n = (count.get(x.dir) || 0) + 1;
+      count.set(x.dir, n);
+      out.set(x.k, n);
+    });
+    return out;
+  };
+  const today = [], left = [], tonight = [];
+  for (const [blk, raw] of sched.blockTrips) for (const t of raw) (t.lastNight ? left : t.tonight ? tonight : today).push({ ...t, block_id: blk });
+  const map = number(sched.todayAll || today, true);
+  const borrow = (list, all) => {
+    if (!list.length || !all) return;
+    const m = number(all, false);
+    list.forEach(t => { const k = String(t.block_id) + '|' + timeStrToMin(t.start); if (m.has(k)) map.set(k, m.get(k)); });
+  };
+  borrow(left, sched.lastNightAll);   // last night's leftovers keep last night's numbers
+  borrow(tonight, sched.tomorrowAll); // tonight's night liners: tomorrow's numbers
   tripNumCache = { src: sched.blockTrips, map };
   return map;
 }
@@ -3894,6 +3972,8 @@ async function onBusSearch() {
       if (seen && blockRanTodayUnseen(num, seen)) f.blockSeen = blockUnrecordedParts(num, seen);
       else if (seen) f.blockSeen = lastSeenParts(seen, 'block');
       else if (!f.block) f.blockPick = blockPickParts(num);
+      // Still to go out today: say when (at 2 AM: today's 3:20 PM run).
+      if (f.blockSeen) f.blockSeen = f.blockSeen.concat(nextOutParts(num));
     }
   } catch(e) {
     if (superseded()) return;
@@ -4025,7 +4105,7 @@ function lastSeenParts(row, as) {
   const day = new Date(ms);
   if (owl) day.setDate(day.getDate() - 1);
   day.setHours(0, 0, 0, 0);
-  const ago = Math.round((serviceMidnightMs() - day.getTime()) / 86400000);
+  const ago = Math.round((owlServiceMidnightMs() - day.getTime()) / 86400000);
   const night = owl ? ' night' : '';
   const when = ago <= 0 ? (owl ? 'tonight' : 'today')
     : ago === 1 ? (owl ? 'last night' : 'yesterday')
