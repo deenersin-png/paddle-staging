@@ -180,6 +180,16 @@
     }));
   }
 
+  /** The route a piece's block runs at minute `at` (see routeAt), as a
+   *  promise: one route label is just that route; "21-42" is looked up. */
+  function resolveRoute(label, block, day, at, s, e) {
+    const routes = labelRoutes(label);
+    if (routes.length < 2) return Promise.resolve(shortRoute(routes[0] || ''));
+    const key = [label, block, dayKey(day), at, s, e].join('|');
+    if (!memo.has(key)) memo.set(key, routeAt(label, block, dayKey(day), at, s, e).catch(() => null));
+    return memo.get(key).then(r => r || shortRoute(routes[0]));
+  }
+
   window.PaTags = { esc, STD_DAYS, dayKey, dayName, todayLabel, todayLabelAsync, sortDays, dayTags,
-    shortRoute, labelRoutes, blockTag, busTag, runTag, pickType, typeBar, routeList, resolveBlockTags, resolveStats };
+    shortRoute, labelRoutes, blockTag, busTag, runTag, pickType, typeBar, routeList, resolveBlockTags, resolveRoute, resolveStats };
 })();

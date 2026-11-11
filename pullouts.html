@@ -29,7 +29,9 @@ body{background:#eef2f8;color:#08122b;font-family:'IBM Plex Sans Condensed',syst
 /* Depot picker band, like Live / Trip Sheets. */
 .po-head{position:sticky;top:60px;z-index:200;background:#0b4ea2;padding:8px 16px 12px;border-bottom:3px solid #c8102e}
 .po-title{color:#fff;font-size:19px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;text-align:center;margin:0 0 8px}
-.po-select-wrap{position:relative}
+.po-select-wrap{position:relative;flex:1 1 0;min-width:0}
+.po-selects{display:flex;gap:8px}
+.po-selects .po-select{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .po-select{width:100%;appearance:none;-webkit-appearance:none;background:#fff;color:#0b4ea2;border:0;border-bottom:3px solid #c8102e;border-radius:8px;
   font:inherit;font-size:17px;font-weight:700;padding:10px 36px 9px 12px;box-shadow:0 2px 6px rgba(8,18,43,.25)}
 .po-arrow{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#c8102e;pointer-events:none;font-size:14px}
@@ -85,9 +87,16 @@ body{background:#eef2f8;color:#08122b;font-family:'IBM Plex Sans Condensed',syst
 
 <div class="po-head">
   <h1 class="po-title">Pull Outs &amp; Pull Ins</h1>
-  <div class="po-select-wrap">
-    <select id="depotSelect" class="po-select" aria-label="Depot" autocomplete="off"><option value="">Loading depots…</option></select>
-    <span class="po-arrow">▾</span>
+  <!-- Depot, then Route (narrows the list to that route; "All routes" = all). -->
+  <div class="po-selects">
+    <div class="po-select-wrap">
+      <select id="depotSelect" class="po-select" aria-label="Depot" autocomplete="off"><option value="">Loading depots…</option></select>
+      <span class="po-arrow">▾</span>
+    </div>
+    <div class="po-select-wrap">
+      <select id="routeSelect" class="po-select" aria-label="Route" autocomplete="off"><option value="">All routes</option></select>
+      <span class="po-arrow">▾</span>
+    </div>
   </div>
   <!-- Search (run 1-3 digits, block 4), its Run / Block buttons, the day tags.
        No bus: buses aren't assigned until they pull out. -->
@@ -138,6 +147,10 @@ let events = { out: [], in: [] }, loadSeq = 0, dayKey = '';
 // depot's schedule (that day's list, plain). Search: run or block number.
 let selDay = '';                    // '' = today
 let q = '', qFinal = false, typeChoice = '';
+// Route dropdown: '' = all routes. An event's route (e.rt) is the one its
+// block runs at that pull-out / pull-in (a "21-42" piece: the trip then, else the next).
+let routeSel = lsGet('po_route');
+const inView = () => events[view].filter(e => !routeSel || e.rt === routeSel);
 const todayName = () => dayLabel(dayTypeFor(todayIso(), overrides));
 const curDist = () => districts.find(d => (d.label || d.name) === $('depotSelect').value);
 const otherDay = () => !!selDay && selDay !== todayName();
@@ -180,7 +193,11 @@ async function build() {
       });
     }
     const byTime = (a, b) => a.min - b.min || Number(a.x.run.runNo) - Number(b.x.run.runNo);
-    events = { out: out.sort(byTime), in: inn.sort(byTime) };
+    const ev = { out: out.sort(byTime), in: inn.sort(byTime) };
+    await addRoutes(ev);
+    if (my !== loadSeq) return;
+    events = ev;
+    fillRoutes();
     dayKey = today + '|' + (now < OWL_END ? 'owl' : now >= NIGHT_FROM ? 'late' : 'day');
     render(true);
     return;
@@ -220,9 +237,30 @@ async function build() {
     }
   }
   const byTime = (a, b) => a.min - b.min || Number(a.x.run.runNo) - Number(b.x.run.runNo);
-  events = { out: out.filter(e => !e.lastNight).sort(byTime), in: inn.filter(e => !e.tonight).sort(byTime) };
+  const ev = { out: out.filter(e => !e.lastNight).sort(byTime), in: inn.filter(e => !e.tonight).sort(byTime) };
+  await addRoutes(ev);
+  if (my !== loadSeq) return;
+  events = ev;
+  fillRoutes();
   dayKey = today + '|' + (now < OWL_END ? 'owl' : now >= NIGHT_FROM ? 'late' : 'day');
   render(true);
+}
+
+// Each event's route at that moment (two-route pieces looked up in the timetable).
+async function addRoutes(ev) {
+  await Promise.all([...ev.out, ...ev.in].map(async e => {
+    e.rt = await PaTags.resolveRoute(e.route, e.block, e.x.dayType, e.at, e.p.startMin, e.p.endMin);
+  }));
+}
+// The Route dropdown: every route with a pull-out or pull-in on the day shown.
+function fillRoutes() {
+  const rank = r => { const n = parseInt(r, 10); return isNaN(n) ? [1, 0, r] : [0, n, r]; };
+  const routes = [...new Set([...events.out, ...events.in].map(e => e.rt).filter(Boolean))]
+    .sort((a, b) => { const x = rank(a), y = rank(b); return x[0] - y[0] || x[1] - y[1] || String(x[2]).localeCompare(String(y[2])); });
+  if (routeSel && !routes.includes(routeSel)) routeSel = '';
+  const sel = $('routeSelect');
+  sel.innerHTML = '<option value="">All routes</option>' + routes.map(r => '<option value="' + esc(r) + '">Route ' + esc(r) + '</option>').join('');
+  sel.value = routeSel;
 }
 
 function dueText(min, now) {
@@ -242,7 +280,7 @@ const matchAs = (e, type) => type === 'run'
 function searchState() {
   if (!q) return null;
   const n = { run: new Set(), block: new Set() };
-  for (const e of events[view]) for (const t of ['run', 'block']) if (matchAs(e, t)) n[t].add(e.x.run.runNo);
+  for (const e of inView()) for (const t of ['run', 'block']) if (matchAs(e, t)) n[t].add(e.x.run.runNo);
   const types = ['run', 'block'].map(t => ({ type: t, match: n[t].size > 0, n: n[t].size }));
   return { types, sel: PaTags.pickType(types, typeChoice) };
 }
@@ -263,7 +301,7 @@ function renderDays() {
 }
 
 function render(scroll) {
-  const all = events[view], now = nowMin(), other = otherDay();
+  const all = inView(), now = nowMin(), other = otherDay();
   const st = searchState();
   renderTypes(st);
   renderDays();
@@ -272,11 +310,11 @@ function render(scroll) {
   const label = $('depotSelect').value;
   const word = view === 'out' ? 'Pull Outs' : 'Pull Ins';
   const dayName = other ? selDay : todayName();
-  $('poLabel').innerHTML = esc(word) + ' · ' + list.length + '<span class="po-sub">' + esc(label) + ' · ' + esc(dayName) + ' · earliest to latest</span>';
+  $('poLabel').innerHTML = esc(word) + ' · ' + list.length + '<span class="po-sub">' + esc(label) + (routeSel ? ' · Route ' + esc(routeSel) : '') + ' · ' + esc(dayName) + ' · earliest to latest</span>';
   const box = $('poList');
   if (!list.length) {
     const what = st && qFinal ? (q.length === 4 ? 'Block ' : 'Run ') + q : '';
-    box.innerHTML = '<div class="po-msg">No ' + esc(word.toLowerCase()) + (what ? ' for ' + esc(what) : '') + (other ? ' on ' + esc(selDay) : ' today') + '</div>';
+    box.innerHTML = '<div class="po-msg">No ' + esc(word.toLowerCase()) + (what ? ' for ' + esc(what) : '') + (routeSel ? ' on Route ' + esc(routeSel) : '') + (other ? ' on ' + esc(selDay) : ' today') + '</div>';
     return;
   }
   box.innerHTML = '';
@@ -289,7 +327,7 @@ function render(scroll) {
     top.innerHTML = '<span class="po-kind">' + (view === 'out' ? 'OUT' : 'IN') + '</span>' +
       '<span class="po-clock">' + esc(fmtClock(e.min)) + '</span>' +
       // Block tag: the route the block runs at that moment ("21/9140").
-      '<span class="po-where">' + PaTags.blockTag(null, e.block, { label: e.route, day: e.x.dayType, at: e.at, s: e.p.startMin, e: e.p.endMin }) +
+      '<span class="po-where">' + PaTags.blockTag(e.rt, e.block) +
       (other ? '' : e.lastNight ? ' last night' : e.tonight || e.min >= 1440 ? ' tonight' : '') + '</span>' +
       (other ? '' : '<span class="po-due" data-min="' + e.min + '">' + esc(dueText(e.min, now)) + '</span>');
     const c = card(modelFromRun(r), { paddleUrl: e.url });
@@ -318,7 +356,7 @@ setInterval(() => {
   const now = nowMin(), key = todayIso() + '|' + (now < OWL_END ? 'owl' : now >= NIGHT_FROM ? 'late' : 'day');
   if (key !== dayKey) { build(); return; }
   if (otherDay() || q) return;
-  const list = events[view];
+  const list = inView();
   const nextIdx = list.findIndex(e => e.min >= now - 2);
   document.querySelectorAll('#poList .po-ev').forEach((el, i) => {
     el.classList.toggle('past', nextIdx >= 0 && i < nextIdx);
@@ -335,6 +373,11 @@ document.querySelector('.po-bar').addEventListener('click', e => {
   render(true);
 });
 
+// Route dropdown: narrows the list to that route (remembered).
+$('routeSelect').addEventListener('change', () => {
+  routeSel = $('routeSelect').value; lsSet('po_route', routeSel);
+  render(true);
+});
 // Day tags: today = the live list; another day = that day's schedule.
 $('poDays').addEventListener('click', e => {
   const b = e.target.closest('[data-po-day]');
