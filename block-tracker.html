@@ -290,6 +290,11 @@ a.run-chip:active{opacity:.7}
 .node-bottom{display:flex;align-items:center;gap:7px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border)}
 
 /* SECTION LABELS */
+.ts-days{display:flex;gap:6px;padding:10px 16px 2px;flex-wrap:nowrap;overflow-x:auto}
+.ts-day{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:8px 4px;border-radius:8px;border:1.5px solid currentColor;background:#fff;font:inherit;font-size:12px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;white-space:nowrap;cursor:pointer}
+.ts-day-sunday{color:#12753a}.ts-day-weekday{color:#0b4ea2}.ts-day-saturday{color:#c8102e}.ts-day.alt{color:#6a3fc1}
+.ts-day.on{color:#fff}.ts-day-sunday.on{background:#12753a;border-color:#12753a}.ts-day-weekday.on{background:#0b4ea2;border-color:#0b4ea2}.ts-day-saturday.on{background:#c8102e;border-color:#c8102e}.ts-day.alt.on{background:#6a3fc1;border-color:#6a3fc1}
+.ts-today{font-size:9px;font-weight:700;letter-spacing:.06em;opacity:.85}
 .ts-also{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:6px;padding:8px 16px 4px;font-size:13px;font-weight:700;color:var(--text-dim)}
 .ts-route{padding:5px 10px;border-radius:6px;border:1.5px solid #0b4ea2;background:#fff;color:#0b4ea2;font:inherit;font-weight:800;cursor:pointer}
 .section-label{padding:10px 16px 8px;font-size:15px;font-weight:800;color:var(--text);letter-spacing:.04em;text-transform:uppercase;text-align:center;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--card);margin:4px 0}
@@ -905,6 +910,8 @@ async function loadScheduleData(route) {
     savePairs();
     sched.dirNames = data.directions || {}; // GTFS direction_id → "Eastbound" etc.
     sched.loaded = true;
+    // Trip Sheets showing another day: that day's timetable for this route.
+    if (ALL_TRIPS_PAGE && view.tsDay) { applyTsDay(); return; }
     // Redraw with the timetable (scheduled cards, All Trips, the direction
     // buttons) without waiting a full refresh.
     const redraw = () => {
@@ -1099,6 +1106,61 @@ function runCrossesMidnight(row) {
   return isFinite(s) && isFinite(e) && e < s;
 }
 
+// One pick run (a CSV row) into byBlock: its pieces on today's clock (u.pm),
+// pull-outs / pull-ins, run chips. Shared by loadPaddleData and the Trip
+// Sheets day buttons (loadPickDay).
+function pickAddRun(byBlock, u, depot, depotRoutes, nightBlocks) {
+  const clock = t => { const m = clockToMin(String(t || '').trim()); return isFinite(m) ? m : null; };
+  const { row, pm } = u;
+  const runno = String(row.runno || '').trim();
+  if (!runno) return;
+  // The run as the Paddle App's scorecard shows it: number, its routes
+  // in paddle order, its paddle link. Shared by its pieces below.
+  const run = { runno, depot, link: u.links.get(runno) || '', routes: [], pieces: [], night: !!u.night, lastNight: !!u.lastNight };
+  // Report time ("start" in the pick) on today's clock, for a run search.
+  run.reportMin = pm(row.start);
+  for (let i = 1; i <= 10; i++) {
+    const b = (row['b' + i] || '').trim();
+    if (!b || b === '0') continue;
+    if (!byBlock.has(b)) byBlock.set(b, { poTime: '', piTime: '', poMin: null, piMin: null, runs: [], routes: [], segs: [], outs: [], ins: [] });
+    const rec = byBlock.get(b);
+    const rt = (row['r' + i] || '').trim();
+    if (rt && !rec.routes.includes(rt)) rec.routes.push(rt);
+    if (rt && !run.routes.includes(rt)) run.routes.push(rt);
+    pickRoutes(rt ? [rt] : []).forEach(r => depotRoutes.add(r));
+    // This run's piece of the block on today's clock, for "which run
+    // is on the block at this time".
+    const s = pm(row['pot' + i]), e0 = pm(row['pit' + i]);
+    const e = e0 != null && s != null && e0 < s ? e0 + 1440 : e0;
+    const seg = { run, blk: b, rt, s, e };
+    rec.segs.push(seg);
+    run.pieces.push(seg);
+    const potype = (row['potype' + i] || '').trim().toUpperCase();
+    const pitype = (row['pitype' + i] || '').trim().toUpperCase();
+    const pot = (row['pot' + i] || '').trim();
+    const pit = (row['pit' + i] || '').trim();
+    // Some blocks list more than one pull-out / pull-in (29 on a fall-2026
+    // weekday, e.g. 5554: in at 3:23 PM and 4:14 PM). Keep the EARLIEST
+    // pull-out and the LATEST pull-in (today's clock), so a block is
+    // only ever treated as finished after its last possible pull-in.
+    if (potype === 'O' && pot && s != null) {
+      if (rec.poMin == null || s < rec.poMin) { rec.poTime = pot; rec.poMin = s; }
+      rec.outs.push({ min: s, time: pot, run });
+    }
+    if (pitype === 'I' && pit && e != null) {
+      if (rec.piMin == null || e > rec.piMin) { rec.piTime = pit; rec.piMin = e; }
+      rec.ins.push({ min: e, time: pit });
+    }
+    if (u.tonight) {
+      const ci = clock(pit);
+      if (ci != null && ci < NIGHT_FROM_HR * 60) nightBlocks.set(b, Math.max(nightBlocks.get(b) || 0, ci));
+    }
+    if (!rec.runs.some(r => r.runno === runno)) {
+      rec.runs.push({ runno, link: run.link, sortMin: s ?? Infinity });
+    }
+  }
+}
+
 async function loadPaddleData() {
   if (paddle.loaded || paddle.loading) return;
   paddle.loading = true;
@@ -1117,6 +1179,7 @@ async function loadPaddleData() {
     const routesByDepot = new Map(); // depot label → Set(route id)
     const depots = (manifest.districts || []).map(d => d.label || d.name);
     paddle.depotIds = new Map((manifest.districts || []).map(d => [d.label || d.name, d.name]));
+    paddle.manifest = manifest;
 
     const clock = t => { const m = clockToMin(String(t || '').trim()); return isFinite(m) ? m : null; };
     // Each kind of run's pick times on today's clock (see the table above).
@@ -1175,56 +1238,7 @@ async function loadPaddleData() {
         if (!isNightRunStart(runStartMin(row)) && runCrossesMidnight(row)) use.push({ row, pm: lastNightMin, links: links(yDay), lastNight: true });
       });
 
-      for (const u of use) {
-        const { row, pm } = u;
-        const runno = String(row.runno || '').trim();
-        if (!runno) continue;
-        // The run as the Paddle App's scorecard shows it: number, its routes
-        // in paddle order, its paddle link. Shared by its pieces below.
-        const run = { runno, depot, link: u.links.get(runno) || '', routes: [], pieces: [], night: !!u.night, lastNight: !!u.lastNight };
-        // Report time ("start" in the pick) on today's clock, for a run search.
-        run.reportMin = pm(row.start);
-        for (let i = 1; i <= 10; i++) {
-          const b = (row['b' + i] || '').trim();
-          if (!b || b === '0') continue;
-          if (!byBlock.has(b)) byBlock.set(b, { poTime: '', piTime: '', poMin: null, piMin: null, runs: [], routes: [], segs: [], outs: [], ins: [] });
-          const rec = byBlock.get(b);
-          const rt = (row['r' + i] || '').trim();
-          if (rt && !rec.routes.includes(rt)) rec.routes.push(rt);
-          if (rt && !run.routes.includes(rt)) run.routes.push(rt);
-          pickRoutes(rt ? [rt] : []).forEach(r => depotRoutes.add(r));
-          // This run's piece of the block on today's clock, for "which run
-          // is on the block at this time".
-          const s = pm(row['pot' + i]), e0 = pm(row['pit' + i]);
-          const e = e0 != null && s != null && e0 < s ? e0 + 1440 : e0;
-          const seg = { run, blk: b, rt, s, e };
-          rec.segs.push(seg);
-          run.pieces.push(seg);
-          const potype = (row['potype' + i] || '').trim().toUpperCase();
-          const pitype = (row['pitype' + i] || '').trim().toUpperCase();
-          const pot = (row['pot' + i] || '').trim();
-          const pit = (row['pit' + i] || '').trim();
-          // Some blocks list more than one pull-out / pull-in (29 on a fall-2026
-          // weekday, e.g. 5554: in at 3:23 PM and 4:14 PM). Keep the EARLIEST
-          // pull-out and the LATEST pull-in (today's clock), so a block is
-          // only ever treated as finished after its last possible pull-in.
-          if (potype === 'O' && pot && s != null) {
-            if (rec.poMin == null || s < rec.poMin) { rec.poTime = pot; rec.poMin = s; }
-            rec.outs.push({ min: s, time: pot, run });
-          }
-          if (pitype === 'I' && pit && e != null) {
-            if (rec.piMin == null || e > rec.piMin) { rec.piTime = pit; rec.piMin = e; }
-            rec.ins.push({ min: e, time: pit });
-          }
-          if (u.tonight) {
-            const ci = clock(pit);
-            if (ci != null && ci < NIGHT_FROM_HR * 60) nightBlocks.set(b, Math.max(nightBlocks.get(b) || 0, ci));
-          }
-          if (!rec.runs.some(r => r.runno === runno)) {
-            rec.runs.push({ runno, link: run.link, sortMin: s ?? Infinity });
-          }
-        }
-      }
+      for (const u of use) pickAddRun(byBlock, u, depot, depotRoutes, nightBlocks);
     }));
 
     for (const rec of byBlock.values()) { rec.runs.sort((a, b) => a.sortMin - b.sortMin); rec.outs.sort((a, b) => a.min - b.min); rec.ins.sort((a, b) => a.min - b.min); }
@@ -2702,7 +2716,7 @@ if (ALL_TRIPS_PAGE && 'scrollRestoration' in history) history.scrollRestoration 
 const VIEW_MODES = ['dir', 'detours'];
 function savedMode() { if (ALL_TRIPS_PAGE) return 'all'; try { const m = localStorage.getItem('bt_view'); return VIEW_MODES.includes(m) ? m : 'dir'; } catch(e) { return 'dir'; } }
 function saveMode(m) { if (ALL_TRIPS_PAGE) return; try { localStorage.setItem('bt_view', m); } catch(e) {} }
-const view = { mode: savedMode(), dir: '', follow: false, run: '', blk: '', tsMiss: '', tsPrevRoute: null, atDir: '', scrollNow: ALL_TRIPS_PAGE };  // blk / tsMiss / tsPrevRoute: Trip Sheets search (see tripSheetSearch)  // run: All Trips shows only this run (depot|runno); atDir: All Trips shows only this direction ('' = Both)
+const view = { mode: savedMode(), dir: '', follow: false, run: '', blk: '', tsMiss: '', tsPrevRoute: null, tsDay: '', tsDayLoading: false, atDir: '', scrollNow: ALL_TRIPS_PAGE };  // blk / tsMiss / tsPrevRoute: Trip Sheets search (see tripSheetSearch)  // run: All Trips shows only this run (depot|runno); atDir: All Trips shows only this direction ('' = Both)
 let lastCards = [];     // annotated cards of the last render (the route's, or a search's)
 let lastEmptyHtml = ''; // message for a direction view when there are no cards
 let refreshing = false; // refresh spinner state, kept across bar redraws
@@ -2934,10 +2948,12 @@ const tripNum = (blk, s) => (s == null ? 0 : tripNumbers().get(String(blk) + '|'
 
 function allTripsItems() {
   const nowMin = serviceNowMin();
+  // Trip Sheets on another day (day buttons): the plain timetable.
+  const dayMode = ALL_TRIPS_PAGE && !!view.tsDay;
   const byBlock = new Map();
-  lastCards.forEach(b => byBlock.set(String(b.BlockID || ''), b));
+  if (!dayMode) lastCards.forEach(b => byBlock.set(String(b.BlockID || ''), b));
   // A search shows its own block(s) only.
-  const only = (state.bus || state.block) ? new Set(lastCards.map(b => String(b.BlockID || ''))) : null;
+  const only = !dayMode && (state.bus || state.block) ? new Set(lastCards.map(b => String(b.BlockID || ''))) : null;
   const dirOf = tripDirOf;
   const items = [];
   for (const [blk, raw] of sched.blockTrips) {
@@ -2961,12 +2977,12 @@ function allTripsItems() {
     if (!trips.length) continue;
     const card = byBlock.get(blk);
     const live = card && !card._scheduledOnly && !card._isLayover ? card : null;
-    const pulledIn = !live && blockPulledIn(blk);
+    const pulledIn = !dayMode && !live && blockPulledIn(blk);
     // A live bus's own trip (by its live trip id) and everything after it are
     // still to do, even if the timetable says that trip has ended (running
     // late). Otherwise: a trip that hasn't ended yet. A pulled-in block is done.
     const liveIdx = live && live.trip != null ? trips.findIndex(x => x.ids.has(String(live.trip))) : -1;
-    const pending = (x, i) => pulledIn ? false : liveIdx >= 0 ? i >= liveIdx : x.e > nowMin;
+    const pending = (x, i) => dayMode ? true : pulledIn ? false : liveIdx >= 0 ? i >= liveIdx : x.e > nowMin;
 
     let first = true;
     trips.forEach((x, i) => {
@@ -2981,7 +2997,7 @@ function allTripsItems() {
       const part = t => t.lastNight ? 'last' : t.tonight ? 'tonight' : 'today';
       let left = 0;
       for (let j = i; j < trips.length; j++) if (pending(trips[j], j) && dirOf(trips[j].t) === dir && part(trips[j].t) === part(x.t)) left++;
-      const inService = liveIdx >= 0 ? liveIdx === i : nowMin >= x.s && nowMin <= x.e;
+      const inService = !dayMode && (liveIdx >= 0 ? liveIdx === i : nowMin >= x.s && nowMin <= x.e);
       // The way a live bus is heading right now (green on its card).
       const cur = first && live && (inService || (liveIdx < 0 && canonDir(live.Direction) === dir));
       items.push({ blk, s: x.s, e: x.e, dir, left, inService, live: first ? live : null, cur, nth });
@@ -3025,7 +3041,9 @@ function dayLabelOf(day) { return day === 'saturday' ? 'Saturday' : day === 'sun
 const runKey = r => r.depot + '|' + r.runno;
 
 function allTripsCardHtml(it, anim, idx) {
-  const day = dayLabelOf(getDayType());
+  const shown = ALL_TRIPS_PAGE && view.tsDay;
+  const day = shown ? dayLabelOf(gtfsDayOf(view.tsDay)) : dayLabelOf(getDayType());
+  const dayTxt = shown ? view.tsDay : day;
   // A relief during this trip shows both runs, in order: "203 → 424",
   // each number and its own PADDLE button opening that run's paddle.
   const runs = runsOnBlockDuring(it.blk, it.s, it.e);
@@ -3036,7 +3054,7 @@ function allTripsCardHtml(it, anim, idx) {
   // Run number + day as ONE button opening that run's paddle ("452 WEEKDAY");
   // a relief shows "203" → "424 WEEKDAY", each opening its own paddle.
   const runBtn = (r, withDay) => {
-    const inner = '<span class="prc-num">' + esc(r ? r.runno : '—') + '</span>' + (withDay ? '<span class="prc-day">' + esc(day) + '</span>' : '');
+    const inner = '<span class="prc-num">' + esc(r ? r.runno : '—') + '</span>' + (withDay ? '<span class="prc-day">' + esc(dayTxt) + '</span>' : '');
     return r && r.link ? '<a class="at-runbtn" href="' + esc(r.link) + '" target="_blank" rel="noopener">' + inner + '</a>'
                        : '<span class="at-runbtn nolink">' + inner + '</span>';
   };
@@ -3310,7 +3328,147 @@ document.addEventListener('click', e => {
   drawView(false);
 });
 
+// ── TRIP SHEETS: DAY BUTTONS ─────────────────────────────────
+// SUNDAY / WEEKDAY / SATURDAY - plus any other day a depot's pick has (an
+// alternate schedule uploaded the way the Paddles page reads them: a "days"
+// entry in the manifest and its CSV) - each shows that day's whole trip sheet.
+// Today's day is the live sheet as before. Another day is the plain
+// timetable with that day's runs: no live buses, nothing done. The Run /
+// Block search goes by the day shown. The timetable (GTFS) only has Weekday /
+// Saturday / Sunday: an alternate day uses the one its name says ("Saturday
+// Alt" → Saturday), else Weekday.
+const TS_DAY_ORDER = ['Sunday', 'Weekday', 'Saturday'];
+const tsPickCache = new Map();   // day label → { byBlock, routesByDepot }
+const tsTTCache = new Map();     // route → GTFS route json
+let tsBackup = null;             // today's data while another day is shown
+let tsDaySeq = 0;
+
+function gtfsDayOf(label) {
+  const l = String(label).toLowerCase();
+  return l.includes('sat') ? 'saturday' : l.includes('sun') ? 'sunday' : 'weekday';
+}
+function todayDayLabel() { const d = getDayType(); return d.charAt(0).toUpperCase() + d.slice(1); }
+// The selected depot's days, in the Paddles page's order; alternates after.
+function tsDays() {
+  const m = paddle.manifest;
+  const depot = document.getElementById('depotSelect').value;
+  const dist = m && (m.districts || []).find(d => (d.label || d.name) === depot);
+  const days = dist && dist.days && dist.days.length ? dist.days.slice() : TS_DAY_ORDER.slice();
+  const rank = d => { const i = TS_DAY_ORDER.indexOf(d); return i < 0 ? 10 : i; };
+  return days.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+}
+function tsDayButtonsHtml() {
+  const today = todayDayLabel(), cur = view.tsDay || today;
+  return '<div class="ts-days">' + tsDays().map(d =>
+    '<button type="button" class="ts-day ts-day-' + gtfsDayOf(d) + (TS_DAY_ORDER.includes(d) ? '' : ' alt') + (d === cur ? ' on' : '') +
+    '" data-ts-day="' + esc(d) + '">' + esc(d) + (d === today ? '<span class="ts-today">Today</span>' : '') + '</button>').join('') + '</div>';
+}
+
+// One day's pick, every depot, on a plain day clock (night liners: 11:54 PM
+// report = -6; day runs' after-midnight times 24:00+).
+async function loadPickDay(label) {
+  if (tsPickCache.has(label)) return tsPickCache.get(label);
+  const m = paddle.manifest || await fetch(PADDLE_BASE + '/manifest.json').then(r => r.json());
+  const byBlock = new Map(), routesByDepot = new Map(), nightBlocks = new Map();
+  const clock = t => { const v = clockToMin(String(t || '').trim()); return isFinite(v) ? v : null; };
+  const morningMin = t => { const v = clock(t); return v == null ? null : v >= NIGHT_FROM_HR * 60 ? v - 1440 : v; };
+  await Promise.allSettled((m.districts || []).map(async district => {
+    if (!district.days || !district.days.includes(label)) return;
+    const depot = district.label || district.name;
+    const depotRoutes = new Set();
+    routesByDepot.set(depot, depotRoutes);
+    const [csv, pdfs] = await Promise.all([
+      fetch(PADDLE_BASE + '/' + district.name + '/' + encodeURIComponent(label.toLowerCase()) + '.csv').then(r => r.ok ? r.text() : ''),
+      fetch(PADDLE_BASE + '/' + district.name + '/pdfs.csv').then(r => r.ok ? r.text() : '')
+    ]);
+    const links = new Map();
+    for (const row of parseCSV(pdfs)) {
+      if (!row.runno || (row.day || '') !== label) continue;
+      const phone = window.innerWidth <= 768;
+      const link = ((phone ? row.moblink || row.pclink : row.pclink || row.moblink) || '').trim();
+      if (link) links.set(String(row.runno), link);
+    }
+    for (const row of parseCSV(csv)) {
+      const night = isNightRunStart(runStartMin(row));
+      pickAddRun(byBlock, { row, pm: night ? morningMin : pickPieceMin, links, night }, depot, depotRoutes, nightBlocks);
+    }
+  }));
+  for (const rec of byBlock.values()) { rec.runs.sort((a, b) => a.sortMin - b.sortMin); rec.outs.sort((a, b) => a.min - b.min); rec.ins.sort((a, b) => a.min - b.min); }
+  const out = { byBlock, routesByDepot };
+  tsPickCache.set(label, out);
+  return out;
+}
+
+// Show the selected day: swap that day's pick and timetable in for today's
+// (kept in tsBackup), or put today's back.
+async function applyTsDay() {
+  const my = ++tsDaySeq;
+  if (!view.tsDay) {
+    if (tsBackup) {
+      paddle.byBlock = tsBackup.byBlock;
+      Object.assign(sched, tsBackup.sched);
+      const sameRoute = tsBackup.route === state.route;
+      tsBackup = null;
+      tripNumCache = { src: null, map: null };
+      // The route changed while another day showed: today's timetable for it,
+      // built fresh against today's pick.
+      if (!sameRoute && state.route) { loadScheduleData(state.route); return; }
+    }
+    lastHTML = ''; view.scrollNow = true;
+    if (state.route) drawView(true);
+    return;
+  }
+  if (!state.route) { lastHTML = ''; return; }
+  view.tsDayLoading = true; lastHTML = ''; drawView(false);
+  const route = state.route;
+  try {
+    let data = tsTTCache.get(route);
+    if (!data) for (const name of getAliases(route)) {
+      try { const res = await fetch(GTFS_BASE + '/' + encodeURIComponent(name) + '.json'); if (res.ok) { data = await res.json(); break; } } catch (e) {}
+    }
+    if (data) tsTTCache.set(route, data);
+    const pick = await loadPickDay(view.tsDay);
+    if (my !== tsDaySeq || route !== state.route) return;
+    if (!tsBackup) tsBackup = { route, byBlock: paddle.byBlock, sched: { blockTrips: sched.blockTrips, lastNightAll: sched.lastNightAll, todayAll: sched.todayAll, tomorrowAll: sched.tomorrowAll } };
+    paddle.byBlock = pick.byBlock;
+    const blockTrips = new Map(), order = [];
+    for (const t of dayTrips(data || {}, gtfsDayOf(view.tsDay))) {
+      const b = String(t.block_id);
+      if (!blockTrips.has(b)) { blockTrips.set(b, []); order.push(b); }
+      blockTrips.get(b).push({ ...t, route });
+    }
+    dropStaleCopies(blockTrips, order);
+    sched.blockTrips = blockTrips;
+    sched.lastNightAll = sched.todayAll = sched.tomorrowAll = null;
+    tripNumCache = { src: null, map: null };
+  } finally {
+    if (my === tsDaySeq) view.tsDayLoading = false;
+  }
+  lastHTML = ''; view.scrollNow = true;
+  drawView(true);
+}
+
+// A day button tapped: that day (today's = the live sheet); a search showing
+// is run again for the new day.
+function selectTsDay(label) {
+  view.tsDay = label === todayDayLabel() ? '' : label;
+  const box = document.getElementById('busSearch');
+  const again = box && box.value;
+  applyTsDay().then(() => { if (again) tripSheetSearch(again); });
+}
+// The day word for Trip Sheets messages: "today" or "on Saturday".
+function tsDayWords() { return view.tsDay ? 'on ' + view.tsDay : 'today'; }
+
 function buildAllTripsPage(anim) {
+  if (!ALL_TRIPS_PAGE) return buildAllTripsList(anim);
+  // A depot without the chosen day (switched depot): back to today.
+  if (view.tsDay && paddle.manifest && !tsDays().includes(view.tsDay)) { view.tsDay = ''; setTimeout(applyTsDay, 0); }
+  const days = tsDayButtonsHtml();
+  if (view.tsDayLoading) return days + '<div class="at-empty">Loading ' + esc(view.tsDay) + '…</div>';
+  return days + buildAllTripsList(anim);
+}
+
+function buildAllTripsList(anim) {
   let items = sched.loaded ? allTripsItems() : [];
   // "Run 558 only": every card that run drives (a relief card counts for both runs).
   const runNo = view.run ? view.run.split('|')[1] : '';
@@ -3325,6 +3483,7 @@ function buildAllTripsPage(anim) {
   if (view.tsMiss) return '<div class="section-label' + (anim ? ' fade-in' : '') + '">Trip Sheets · Search</div>' +
     '<div class="at-empty">' + view.tsMiss + '</div>';
   let h = '<div class="section-label' + (anim ? ' fade-in' : '') + '">Trip Sheets · ' +
+    (ALL_TRIPS_PAGE && view.tsDay ? esc(view.tsDay) + ' · ' : '') +
     (view.atDir ? esc(dirShort(view.atDir)) + ' · ' : '') +
     (view.run ? 'Run ' + esc(runNo) + ' · ' + nTrips
      : view.blk ? 'Block ' + esc(view.blk) + ' · ' + nTrips
@@ -3334,7 +3493,7 @@ function buildAllTripsPage(anim) {
   if (other.length) h += '<div class="ts-also">Also on ' + other.map(r =>
     '<button type="button" class="ts-route" data-ts-route="' + esc(r) + '">Route ' + esc(r) + '</button>').join(' ') + '</div>';
   if (!sched.loaded) return h + '<div class="at-empty">Loading the timetable…</div>';
-  if (!items.length) return h + '<div class="at-empty">No trips today' + (view.run ? ' for Run ' + esc(runNo) + ' on Route ' : view.blk ? ' for Block ' + esc(view.blk) + ' on Route ' : ' on Route ') + esc(state.route) +
+  if (!items.length) return h + '<div class="at-empty">No trips ' + (ALL_TRIPS_PAGE ? tsDayWords() : 'today') + (view.run ? ' for Run ' + esc(runNo) + ' on Route ' : view.blk ? ' for Block ' + esc(view.blk) + ' on Route ' : ' on Route ') + esc(state.route) +
     (view.run ? ' <button type="button" class="at-runf on" data-run-filter="">Show all runs</button>' : '') + '</div>';
   return h + '<div class="at-list">' + items.map((it, i) => allTripsCardHtml(it, anim, i)).join('') + '</div>';
 }
@@ -3758,6 +3917,9 @@ function manageLayoverTimers() {
       view.run = ''; lastHTML = ''; drawView(true); window.scrollTo(0, view.liveScroll || 0); view.liveScroll = 0;
       return;
     }
+    // Trip Sheets day buttons.
+    const dd = e.target.closest('[data-ts-day]');
+    if (dd) { selectTsDay(dd.dataset.tsDay); window.scrollTo(0, 0); return; }
     // Trip Sheets search: "Also on Route 42" opens that route's trips.
     const tr = e.target.closest('[data-ts-route]');
     if (tr) { tsOpenRoute(tr.dataset.tsRoute); window.scrollTo(0, 0); return; }
@@ -3889,7 +4051,7 @@ async function tripSheetSearch(digits) {
   if (digits.length === 4) {
     const rec = paddle.byBlock.get(digits);
     const onRoute = sched.loaded && sched.blockTrips && sched.blockTrips.has(digits);
-    if (!rec && !onRoute) view.tsMiss = 'No Block ' + esc(digits) + ' today';
+    if (!rec && !onRoute) view.tsMiss = 'No Block ' + esc(digits) + ' ' + tsDayWords();
     else {
       view.blk = digits;
       const routes = rec ? routesOfPieces(rec.segs || []) : [];
@@ -3905,7 +4067,7 @@ async function tripSheetSearch(digits) {
     const n = Number(digits);
     const runs = allPickRuns().filter(r => Number(r.runno) === n);
     const run = runs.find(r => r.depot === depot) || (!depot ? runs[0] : null);
-    if (!run) view.tsMiss = 'No Run ' + esc(digits) + (depot ? ' at ' + esc(depot) : '') + ' today';
+    if (!run) view.tsMiss = 'No Run ' + esc(digits) + (depot ? ' at ' + esc(depot) : '') + ' ' + tsDayWords();
     else {
       view.run = runKey(run);
       const routes = routesOfPieces(run.pieces);
@@ -4494,7 +4656,7 @@ const IDLE_HTML = document.getElementById('content').innerHTML;
   // rule, see isNightRunStart): a page left open rebuilds the pick and the
   // timetable then.
   setInterval(() => {
-    if (!paddle.loaded || paddle.loading || paddle.loadKey === paddleLoadKey()) return;
+    if (view.tsDay || !paddle.loaded || paddle.loading || paddle.loadKey === paddleLoadKey()) return;
     paddle.loaded = false;
     paddleReady = loadPaddleData().then(() => { if (state.route) loadScheduleData(state.route); });
   }, 60000);
