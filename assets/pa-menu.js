@@ -11,8 +11,13 @@
     ['Trip Sheets', 'block-tracker.html?view=all'],
     ['Relief Runs', 'holdowner-fall-2026.html'],
     ['Detours',    'detours.html'],
+    ['Older Picks', 'index.html?pick=older'],
     ['About',      'about.html']
   ];
+  // The pick the app is on, shown under "Paddle App". A page can name another
+  // one with <html data-pa-pick="..."> (+ data-pa-pick-old for an older pick)
+  // and a 'pa:pick' event when it changes. Keep in step with index.html SEASONS.
+  var CURRENT_PICK = 'Fall 2026';
   var SITE = [];
   // Other season / viewer pages count as their parent menu item.
   var ALIAS = {
@@ -25,6 +30,7 @@
   var here = ALIAS[page] || page;
   if (page === 'home.html' && /view=swap/.test(location.search)) here = 'home.html?view=swap';
   if (page === 'block-tracker.html' && /view=all/.test(location.search)) here = 'block-tracker.html?view=all';
+  if (page === 'index.html' && /pick=older/.test(location.search)) here = 'index.html?pick=older';
 
   // pa-account-ui.js sets <html data-pa-acct="in|out"> once it knows; before
   // that, go by the "was signed in last visit" flag.
@@ -76,9 +82,29 @@
     // Top bar: menu button + title on the left, Paddles / Live / sign-in on the right.
     var bar = document.createElement('div');
     bar.className = 'pam-bar';
+    var name = document.createElement('span');
+    name.className = 'pam-bar-name';
     var title = document.createElement('span');
     title.className = 'pam-bar-title';
     title.textContent = 'Paddle App';
+    var pick = document.createElement('span');
+    pick.className = 'pam-bar-pick';
+    function showPick() {
+      var d = document.documentElement.dataset;
+      var old = d.paPickOld === '1';
+      pick.textContent = d.paPick || CURRENT_PICK;
+      if (old) {
+        var tag = document.createElement('span');
+        tag.className = 'pam-bar-old';
+        tag.textContent = ' · OLDER PICK';
+        pick.appendChild(tag);
+      }
+      pick.classList.toggle('old', old);
+    }
+    showPick();
+    window.addEventListener('pa:pick', showPick);
+    name.appendChild(title);
+    name.appendChild(pick);
     var acts = document.createElement('div');
     acts.className = 'pam-bar-acts';
     [['Paddles', 'index.html'], ['Live', 'block-tracker.html']].forEach(function (it) {
@@ -98,7 +124,7 @@
     icon.width = 30; icon.height = 30;
     bar.appendChild(btn);
     bar.appendChild(icon);
-    bar.appendChild(title);
+    bar.appendChild(name);
     bar.appendChild(acts);
     document.body.insertBefore(bar, document.body.firstChild);
 

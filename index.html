@@ -984,10 +984,37 @@ header {
 }
 </style>
 <link rel="stylesheet" href="assets/pa-theme.css">
+<style>
+/* Older Picks (index.html?pick=older): make it impossible to miss. */
+.older-banner {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px;
+  padding: 10px 16px; background: #ffd400; color: #2b2200;
+  border-bottom: 3px solid #c8102e; font-size: 15px; line-height: 1.3;
+}
+.older-banner[hidden] { display: none; }
+.older-banner-ico { font-size: 22px; line-height: 1; }
+.older-banner-txt { flex: 1 1 220px; }
+.older-banner-back {
+  flex: 0 0 auto; padding: 7px 12px; border-radius: 6px; background: #06295a; color: #fff;
+  font-weight: 700; font-size: 13px; text-decoration: none;
+}
+body.older-pick header { background: #fff6c2 !important; border-bottom: 3px solid #ffd400 !important; }
+body.older-pick .hd-season-select {
+  background: #ffd400 !important; color: #2b2200 !important; border: 2px solid #c8102e !important;
+  border-radius: 6px; padding: 4px 6px !important; font-weight: 700;
+}
+body.older-pick .hd-dot { display: none; }
+</style>
 <link rel="stylesheet" href="assets/pa-menu.css">
 <script src="assets/pa-menu.js" defer></script>
 </head>
 <body>
+
+<div class="older-banner" id="older-banner" role="alert" hidden>
+  <span class="older-banner-ico" aria-hidden="true">&#9888;</span>
+  <span class="older-banner-txt"><b>OLDER PICK</b> &mdash; you are looking at <b id="older-banner-pick">an older pick</b>, not the current <b>Fall 2026</b> pick.</span>
+  <a class="older-banner-back" href="index.html">Back to current pick</a>
+</div>
 
 <header>
   <div class="hd-depot">
@@ -1054,19 +1081,31 @@ const isMobile = window.innerWidth <= 768;
 const DAY_ORDER = ['Sunday', 'Weekday', 'Saturday'];
 
 // ==========================================================================
-// SEASONS - step 1 of the picker. Each entry becomes one option in the
-// "Season" dropdown and points at its own manifest file.
+// SEASONS (picks). Each entry points at its own manifest file.
 //
-// To RETIRE SUMMER later: just delete the summer line below. Fall then
-// becomes the default, and the Season dropdown auto-hides while only one
-// season remains (so it looks like the single-dropdown app does today).
-// The order here is the display order; the first entry is the default.
+// The Paddles page (index.html) always shows the CURRENT pick - no pick
+// dropdown, so nobody lands on an old pick by accident. Its name shows under
+// "Paddle App" in the top bar (assets/pa-menu.js CURRENT_PICK - keep the two
+// in step when a new pick starts).
+//
+// The older picks live on index.html?pick=older (menu: "Older Picks"): a pick
+// dropdown with every entry except the current one, newest first, plus a
+// yellow OLDER PICK banner so it is obvious this is not the current pick.
+//
+// NEW PICK: add it at the top with current: true and drop current from the
+// old one; update CURRENT_PICK in assets/pa-menu.js.
 // ==========================================================================
 const SEASONS = [
+  { id: 'fall2026',   label: 'Fall 2026',   manifest: 'data/manifest-fall-2026.json', current: true },
   { id: 'summer2026', label: 'Summer 2026', manifest: 'data/manifest_summer.json' },
-  { id: 'fall2026',   label: 'Fall 2026',   manifest: 'data/manifest-fall-2026.json' },
-  { id: 'spring2026',   label: 'Spring 2026',   manifest: 'data/manifest_fall2026.json' }
+  { id: 'spring2026', label: 'Spring 2026', manifest: 'data/manifest_fall2026.json' }
 ];
+const OLDER_PICKS = new URLSearchParams(location.search).get('pick') === 'older';
+const CURRENT_SEASON = SEASONS.find(s => s.current) || SEASONS[0];
+const PAGE_SEASONS = OLDER_PICKS ? SEASONS.filter(s => s !== CURRENT_SEASON) : [CURRENT_SEASON];
+// Tell the top bar (pa-menu.js, loads after this script) which pick to name.
+document.documentElement.dataset.paPick = PAGE_SEASONS[0].label;
+if (OLDER_PICKS) document.documentElement.dataset.paPickOld = '1';
 
 // ==========================================================================
 // ROUTE MATCH MODES
@@ -1229,25 +1268,35 @@ function initSeasons() {
     return;
   }
 
-  select.innerHTML = SEASONS
+  select.innerHTML = PAGE_SEASONS
     .map(s => `<option value="${s.id}">${s.label}</option>`)
     .join('');
 
-  // Only one season left (e.g. summer retired) -> hide the season dropdown
-  // so it looks like the original single-dropdown app.
-  select.style.display = SEASONS.length > 1 ? '' : 'none';
+  // Paddles page: current pick only, no dropdown. Older Picks: dropdown.
+  select.style.display = OLDER_PICKS ? '' : 'none';
+  if (OLDER_PICKS) {
+    document.body.classList.add('older-pick');
+    document.getElementById('older-banner').hidden = false;
+  }
 
-  const saved = localStorage.getItem('paddleSeason');
-  const validSaved = SEASONS.find(s => s.id === saved);
-  select.value = validSaved ? saved : SEASONS[0].id;
+  // The older page keeps its own choice, so the rest of the app (My Run,
+  // Trip Sheets, account sync - all read paddleSeason) stays on the current pick.
+  let saved = null;
+  try { saved = localStorage.getItem(OLDER_PICKS ? 'paddleOldSeason' : 'paddleSeason'); } catch (_) {}
+  const validSaved = PAGE_SEASONS.find(s => s.id === saved);
+  select.value = validSaved ? saved : PAGE_SEASONS[0].id;
   changeSeason();
 }
 
 async function changeSeason() {
   const select = document.getElementById('season-select');
-  const season = SEASONS.find(s => s.id === select.value) || SEASONS[0];
+  const season = PAGE_SEASONS.find(s => s.id === select.value) || PAGE_SEASONS[0];
   STATE.currentSeason = season.id;
-  localStorage.setItem('paddleSeason', season.id);
+  try { localStorage.setItem(OLDER_PICKS ? 'paddleOldSeason' : 'paddleSeason', season.id); } catch (_) {}
+  document.documentElement.dataset.paPick = season.label;
+  const bn = document.getElementById('older-banner-pick');
+  if (bn) bn.textContent = season.label;
+  window.dispatchEvent(new CustomEvent('pa:pick'));
 
   try {
     const response = await fetch(season.manifest);

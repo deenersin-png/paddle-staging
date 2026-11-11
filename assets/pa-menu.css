@@ -112,3 +112,18 @@ body.pam-lock { overflow: hidden; }
   .pam-link, .pam-bar .pa-btn { padding: 0 7px !important; font-size: 12px !important; }
 }
 @media (max-width: 350px) { .pam-bar-title { font-size: 16px; } }
+
+/* Pick name under "Paddle App" (Fall 2026); yellow when it is an older pick. */
+.pam-bar-name { display: flex; flex-direction: column; justify-content: center; min-width: 0; line-height: 1.05; }
+.pam-bar-pick {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  font-size: 12px; font-weight: 600; letter-spacing: .03em; color: #cfe0ff;
+  white-space: nowrap; margin-top: 2px;
+}
+.pam-bar-pick.old {
+  align-self: flex-start; color: #2b2200; background: #ffd400; border-radius: 4px;
+  padding: 1px 5px; font-weight: 800;
+}
+@media (max-width: 400px) { .pam-bar-pick { font-size: 11px; } }
+/* Phones: the yellow tag + the page banner say "older"; keep the bar from overflowing. */
+@media (max-width: 480px) { .pam-bar-old { display: none; } }
