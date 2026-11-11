@@ -1624,14 +1624,22 @@ function toggleRoute(r) {
 }
 
 // ---- Run / Block search (one numeric box) ----
-// Runs are 1-3 digits, blocks exactly 4. Every digit searches both by prefix:
-// "12" finds run 12, run 120..129, block 1200..1299.
+// Runs are 1-3 digits, blocks exactly 4.
+// While typing: every digit searches runs and blocks by prefix ("12" shows
+// run 12, run 120..129, block 1200..1299).
+// Once the number is final - 800 ms with no new digit, the keyboard's check
+// mark / Enter, leaving the box, or a 4th digit - it is an exact search:
+// 1-3 digits = that run only ("3" at Midvale = Run 3, not every 3xxx block),
+// 4 digits = that block. The keyboard closes then.
 const BLOCK_COLS = [1,2,3,4,5,6,7,8,9,10];
+const SEARCH_SETTLE_MS = 800;
+let searchFinal = false;           // the number in the box is final (exact search)
 function searchDigits() { return document.getElementById('search-num').value.replace(/\D/g, ''); }
 function runNoOf(r) { return String(r.runno || '').trim(); }
 function blocksOf(r) { return BLOCK_COLS.map(i => String(r['b'+i] || '').trim()).filter(Boolean); }
-function runMatchesSearch(r, q) {
+function runMatchesSearch(r, q, exact) {
   if (!q) return true;
+  if (exact) return q.length === 4 ? blocksOf(r).includes(q) : runNoOf(r) === q;
   if (q.length <= 3 && runNoOf(r).startsWith(q)) return true;
   return blocksOf(r).some(b => b.startsWith(q));
 }
@@ -1642,42 +1650,54 @@ function passesOtherFilters(r, mode) {
   if (STATE.showOpenOnly && STATE.goneRuns.has(runNoOf(r))) return false;
   return true;
 }
-// How many different run and block numbers start with q.
-function searchNumberCount(q) {
-  const nums = new Set();
+// Nothing longer can follow: q is a run and no other run or block number
+// starts with it (e.g. "120" when there is no 120x block and no run 1200+).
+function searchIsOnlyRun(q) {
+  let run = false;
   for (const r of STATE.runs) {
     if (!passesOtherFilters(r, STATE.routeMode)) continue;
-    if (q.length <= 3 && runNoOf(r).startsWith(q)) nums.add('R' + runNoOf(r));
-    for (const b of blocksOf(r)) if (b.startsWith(q)) nums.add('B' + b);
-    if (nums.size > 1) break;
+    const n = runNoOf(r);
+    if (n === q) run = true;
+    else if (n.startsWith(q)) return false;
+    if (blocksOf(r).some(b => b.startsWith(q))) return false;
   }
-  return nums.size;
+  return run;
 }
-// Keyboard: close it as soon as the answer is settled - 4 digits (a block),
-// or only one run/block number left starting with what was typed. Otherwise
-// keep it open, and close it after 1 s without typing.
 let searchIdleTimer = null;
 function cancelSearchIdle() { clearTimeout(searchIdleTimer); searchIdleTimer = null; }
+// The number is final: exact search, keyboard closed.
+function settleSearch() {
+  cancelSearchIdle();
+  const el = document.getElementById('search-num');
+  const was = searchFinal;
+  searchFinal = !!searchDigits();
+  if (document.activeElement === el) el.blur();   // blur → settleSearch again, no-op
+  if (searchFinal !== was) render();
+}
 function onSearchInput(el) {
   const q = el.value.replace(/\D/g, '').slice(0, 4);
   if (el.value !== q) el.value = q;
   cancelSearchIdle();
-  render();
-  if (!q) return;                      // cleared: no timer, keyboard stays
-  if (q.length >= 4 || searchNumberCount(q) === 1) { el.blur(); return; }
-  searchIdleTimer = setTimeout(() => {
-    searchIdleTimer = null;
-    if (document.activeElement === el) el.blur();
-  }, 1000);
+  searchFinal = false;
+  render();                                       // prefix results while typing
+  if (!q) return;                                 // cleared: no timer, keyboard stays
+  if (q.length >= 4 || searchIsOnlyRun(q)) { settleSearch(); return; }
+  searchIdleTimer = setTimeout(settleSearch, SEARCH_SETTLE_MS);
 }
-document.getElementById('search-num').addEventListener('blur', cancelSearchIdle);
+(function () {
+  const el = document.getElementById('search-num');
+  el.addEventListener('blur', settleSearch);
+  // The keyboard's check mark / Go / Enter.
+  el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); settleSearch(); } });
+  // Tapping back into a finished number: keep its exact result until a digit changes.
+})();
 
 // Applies day + run/block search + route filters, then de-dupes by run number.
 // `mode` is passed in so the empty state can ask "what would the OTHER mode
 // have shown?" using exactly the same rules.
 function filterRuns(mode) {
   const q = searchDigits();
-  const matched = STATE.runs.filter(r => passesOtherFilters(r, mode) && runMatchesSearch(r, q));
+  const matched = STATE.runs.filter(r => passesOtherFilters(r, mode) && runMatchesSearch(r, q, searchFinal));
 
   const seenRuns = new Set();
   return matched.filter(r => {
@@ -1708,6 +1728,11 @@ function buildEmptyState() {
     }
   }
 
+  const q = searchDigits();
+  if (q && searchFinal) {
+    const what = q.length === 4 ? 'Block ' + q : 'Run ' + q;
+    return '<div class="empty"><p>No ' + what + ' on ' + STATE.currentDay + '</p></div>';
+  }
   return '<div class="empty"><p>No runs match your filters</p></div>';
 }
 
