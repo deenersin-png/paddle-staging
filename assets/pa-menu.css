@@ -127,3 +127,24 @@ body.pam-lock { overflow: hidden; }
 @media (max-width: 400px) { .pam-bar-pick { font-size: 11px; } }
 /* Phones: the yellow tag + the page banner say "older"; keep the bar from overflowing. */
 @media (max-width: 480px) { .pam-bar-old { display: none; } }
+
+/* Smallest phones (under 360 wide, e.g. 320): everything in the top bar fits
+   without overlapping - slimmer buttons, a bit smaller text, less spacing; if
+   it is still too tight the title is shortened with "…", never covered. */
+.pam-bar-acts { flex-shrink: 0; }
+.pam-bar-name { overflow: hidden; }
+.pam-bar-title { overflow: hidden; text-overflow: ellipsis; }
+@media (min-width: 401px) and (max-width: 460px) {
+  .pam-bar-title { font-size: 19px; }
+  .pam-link, .pam-bar .pa-btn { padding: 0 8px !important; font-size: 12px !important; }
+}
+@media (max-width: 359px) {
+  .pam-bar { gap: 3px; padding: 0 5px 0 0; }
+  .pam-bar .pam-btn { width: 36px; height: 40px; }
+  .pam-bar .pam-btn svg { width: 22px; height: 22px; }
+  .pam-bar-icon { width: 22px; height: 22px; flex-basis: 22px; border-radius: 5px; }
+  .pam-bar-title { font-size: 15px !important; }
+  .pam-bar-pick { font-size: 10px; letter-spacing: .01em; }
+  .pam-bar-acts { gap: 3px; }
+  .pam-link, .pam-bar .pa-btn { height: 32px !important; padding: 0 5px !important; font-size: 11px !important; letter-spacing: 0 !important; }
+}
