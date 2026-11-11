@@ -290,11 +290,19 @@ a.run-chip:active{opacity:.7}
 .node-bottom{display:flex;align-items:center;gap:7px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border)}
 
 /* SECTION LABELS */
-.ts-days{display:flex;gap:6px;padding:10px 16px 2px;flex-wrap:nowrap;overflow-x:auto}
-.ts-day{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:8px 4px;border-radius:8px;border:1.5px solid currentColor;background:#fff;font:inherit;font-size:12px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;white-space:nowrap;cursor:pointer}
+/* Trip Sheets day row: under the search field, in the fields' format
+   (white, rounded, red bottom line), compact; the chosen day filled. */
+.ts-day-row{display:flex;gap:8px;margin-top:8px}
+.ts-day-row[hidden]{display:none}
+.ts-day{flex:1 1 0;min-width:0;display:flex;align-items:center;justify-content:center;gap:5px;min-height:36px;padding:4px 6px;
+  background:#fff;border:0;border-bottom:3px solid #c8102e;border-radius:8px;box-shadow:0 2px 6px rgba(8,18,43,.25);
+  font-family:'IBM Plex Sans Condensed',system-ui,sans-serif;font-size:14px;font-weight:800;letter-spacing:.02em;text-transform:uppercase;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
 .ts-day-sunday{color:#12753a}.ts-day-weekday{color:#0b4ea2}.ts-day-saturday{color:#c8102e}.ts-day.alt{color:#6a3fc1}
-.ts-day.on{color:#fff}.ts-day-sunday.on{background:#12753a;border-color:#12753a}.ts-day-weekday.on{background:#0b4ea2;border-color:#0b4ea2}.ts-day-saturday.on{background:#c8102e;border-color:#c8102e}.ts-day.alt.on{background:#6a3fc1;border-color:#6a3fc1}
-.ts-today{font-size:9px;font-weight:700;letter-spacing:.06em;opacity:.85}
+.ts-day.on{color:#fff;box-shadow:inset 0 0 0 2px #fff,0 2px 6px rgba(8,18,43,.35)}.ts-day-sunday.on{background:#12753a}.ts-day-weekday.on{background:#0b4ea2}.ts-day-saturday.on{background:#c8102e}.ts-day.alt.on{background:#6a3fc1}
+.ts-today{font-size:9px;font-weight:700;letter-spacing:.05em;padding:1px 4px;border-radius:3px;background:rgba(11,78,162,.12)}
+.ts-day.on .ts-today{background:rgba(255,255,255,.25)}
+@media (max-width:360px){.ts-day{font-size:12px;gap:3px}.ts-today{display:none}}
 .ts-also{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:6px;padding:8px 16px 4px;font-size:13px;font-weight:700;color:var(--text-dim)}
 .ts-route{padding:5px 10px;border-radius:6px;border:1.5px solid #0b4ea2;background:#fff;color:#0b4ea2;font:inherit;font-weight:800;cursor:pointer}
 .section-label{padding:10px 16px 8px;font-size:15px;font-weight:800;color:var(--text);letter-spacing:.04em;text-transform:uppercase;text-align:center;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--card);margin:4px 0}
@@ -358,6 +366,8 @@ a.run-chip:active{opacity:.7}
              autocomplete="off" placeholder="Bus/Blk #" aria-label="Find a bus or block by number">
     </form>
   </div>
+  <!-- Trip Sheets: the day buttons (tsDayButtonsHtml), always in view. -->
+  <div id="tsDayRow" class="ts-day-row" role="group" aria-label="Day" hidden></div>
 </div>
 
 <div id="alertArea"></div>
@@ -3359,9 +3369,17 @@ function tsDays() {
 }
 function tsDayButtonsHtml() {
   const today = todayDayLabel(), cur = view.tsDay || today;
-  return '<div class="ts-days">' + tsDays().map(d =>
+  return tsDays().map(d =>
     '<button type="button" class="ts-day ts-day-' + gtfsDayOf(d) + (TS_DAY_ORDER.includes(d) ? '' : ' alt') + (d === cur ? ' on' : '') +
-    '" data-ts-day="' + esc(d) + '">' + esc(d) + (d === today ? '<span class="ts-today">Today</span>' : '') + '</button>').join('') + '</div>';
+    '" data-ts-day="' + esc(d) + '">' + esc(d) + (d === today ? '<span class="ts-today">Today</span>' : '') + '</button>').join('');
+}
+// The header's day row (Trip Sheets only), redrawn with the page.
+function renderTsDayRow() {
+  const row = document.getElementById('tsDayRow');
+  if (!row || !ALL_TRIPS_PAGE) return;
+  const html = tsDayButtonsHtml();
+  if (row.innerHTML !== html) row.innerHTML = html;
+  row.hidden = false;
 }
 
 // One day's pick, every depot, on a plain day clock (night liners: 11:54 PM
@@ -3463,9 +3481,9 @@ function buildAllTripsPage(anim) {
   if (!ALL_TRIPS_PAGE) return buildAllTripsList(anim);
   // A depot without the chosen day (switched depot): back to today.
   if (view.tsDay && paddle.manifest && !tsDays().includes(view.tsDay)) { view.tsDay = ''; setTimeout(applyTsDay, 0); }
-  const days = tsDayButtonsHtml();
-  if (view.tsDayLoading) return days + '<div class="at-empty">Loading ' + esc(view.tsDay) + '…</div>';
-  return days + buildAllTripsList(anim);
+  renderTsDayRow();
+  if (view.tsDayLoading) return '<div class="at-empty">Loading ' + esc(view.tsDay) + '…</div>';
+  return buildAllTripsList(anim);
 }
 
 function buildAllTripsList(anim) {
@@ -3917,9 +3935,6 @@ function manageLayoverTimers() {
       view.run = ''; lastHTML = ''; drawView(true); window.scrollTo(0, view.liveScroll || 0); view.liveScroll = 0;
       return;
     }
-    // Trip Sheets day buttons.
-    const dd = e.target.closest('[data-ts-day]');
-    if (dd) { selectTsDay(dd.dataset.tsDay); window.scrollTo(0, 0); return; }
     // Trip Sheets search: "Also on Route 42" opens that route's trips.
     const tr = e.target.closest('[data-ts-route]');
     if (tr) { tsOpenRoute(tr.dataset.tsRoute); window.scrollTo(0, 0); return; }
@@ -4602,6 +4617,13 @@ const IDLE_HTML = document.getElementById('content').innerHTML;
   }
 
   if (ALL_TRIPS_PAGE) {
+    // Day buttons under the search field.
+    const row = document.getElementById('tsDayRow');
+    row.addEventListener('click', e => {
+      const dd = e.target.closest('[data-ts-day]');
+      if (dd) { selectTsDay(dd.dataset.tsDay); window.scrollTo(0, 0); }
+    });
+    renderTsDayRow();
     const box = document.getElementById('busSearch');
     box.placeholder = 'Run / Block #';
     box.setAttribute('aria-label', 'Find a run (up to 3 digits) or a block (4 digits)');

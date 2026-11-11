@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Pull Outs / Pull Ins</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pull Outs &amp; Pull Ins</title>
 
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-QXEKGF4DXT"></script>
@@ -27,7 +27,8 @@
 body{background:#eef2f8;color:#08122b;font-family:'IBM Plex Sans Condensed',system-ui,sans-serif;min-height:100vh;padding-bottom:calc(76px + env(safe-area-inset-bottom))}
 
 /* Depot picker band, like Live / Trip Sheets. */
-.po-head{position:sticky;top:60px;z-index:200;background:#0b4ea2;padding:12px 16px;border-bottom:3px solid #c8102e}
+.po-head{position:sticky;top:60px;z-index:200;background:#0b4ea2;padding:8px 16px 12px;border-bottom:3px solid #c8102e}
+.po-title{color:#fff;font-size:19px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;text-align:center;margin:0 0 8px}
 .po-select-wrap{position:relative}
 .po-select{width:100%;appearance:none;-webkit-appearance:none;background:#fff;color:#0b4ea2;border:0;border-bottom:3px solid #c8102e;border-radius:8px;
   font:inherit;font-size:17px;font-weight:700;padding:10px 36px 9px 12px;box-shadow:0 2px 6px rgba(8,18,43,.25)}
@@ -39,7 +40,7 @@ body{background:#eef2f8;color:#08122b;font-family:'IBM Plex Sans Condensed',syst
 .po-msg{text-align:center;padding:48px 16px;color:#56627a;font-size:15px}
 
 /* One event: the time line on top of the Paddle App run card. */
-.po-ev{margin-bottom:12px;scroll-margin-top:150px}
+.po-ev{margin-bottom:12px;scroll-margin-top:185px}
 .po-time{display:flex;align-items:center;gap:8px;padding:7px 12px;font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;color:#fff;background:#0b4ea2}
 .po-time .po-kind{font-size:10px;letter-spacing:.08em;padding:2px 6px;border-radius:3px;background:rgba(255,255,255,.2)}
 .po-time .po-clock{font-size:16px}
@@ -74,6 +75,7 @@ body{background:#eef2f8;color:#08122b;font-family:'IBM Plex Sans Condensed',syst
 <body>
 
 <div class="po-head">
+  <h1 class="po-title">Pull Outs &amp; Pull Ins</h1>
   <div class="po-select-wrap">
     <select id="depotSelect" class="po-select" aria-label="Depot" autocomplete="off"><option value="">Loading depots…</option></select>
     <span class="po-arrow">▾</span>

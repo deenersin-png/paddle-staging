@@ -19,7 +19,7 @@
   // Pages inside the app, then the Google Site menu.
   var APP = [
     ['Trip Sheets', 'block-tracker.html?view=all'],
-    ['Pull Outs / Ins', 'pullouts.html'],
+    ['Pull Outs & Pull Ins', 'pullouts.html'],
     ['Relief Runs', 'holdowner-fall-2026.html'],
     ['Detours',    'detours.html'],
     ['Older Picks', 'index.html?pick=older'],
