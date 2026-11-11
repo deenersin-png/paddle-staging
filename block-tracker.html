@@ -1182,6 +1182,8 @@ async function loadPaddleData() {
         // The run as the Paddle App's scorecard shows it: number, its routes
         // in paddle order, its paddle link. Shared by its pieces below.
         const run = { runno, depot, link: u.links.get(runno) || '', routes: [], pieces: [], night: !!u.night, lastNight: !!u.lastNight };
+        // Report time ("start" in the pick) on today's clock, for a run search.
+        run.reportMin = pm(row.start);
         for (let i = 1; i <= 10; i++) {
           const b = (row['b' + i] || '').trim();
           if (!b || b === '0') continue;
@@ -2467,13 +2469,13 @@ function doneParts(route) {
     .map(t => timeStrToMin(t.end)).filter(e => e != null && e <= nowMin);
   const lastEnd = ends.length ? fmtClock(Math.max(...ends)) : '';
   const parts = [];
-  if (done) parts.push('Pulled in at ' + fmtClock(done.min));
+  if (done) parts.push('Finished ' + dayWhen(done.min));
   else if (due) parts.push('Due to pull in at ' + fmtClock(due.min));
   if (lastEnd) parts.push('Last trip ended at ' + lastEnd);
   parts.push('Last served on Route ' + route + (blk ? ' Block ' + blk : ''));
   const next = blk && nextOut(blk);
   if (rec && rec.runs.length && !next) parts.push({ runs: rec.runs });
-  if (next) parts.push('Block ' + blk + ' goes out again at ' + fmtClock(next.min), { runs: [next.run] });
+  if (next) parts.push('Block ' + blk + (next.min >= 1440 ? ' goes out again ' : '’s next run goes out ') + dayWhen(next.min), { runs: [next.run] });
   return parts;
 }
 
@@ -2481,7 +2483,7 @@ function doneParts(route) {
 // and which run. Empty when nothing is left today.
 function nextOutParts(blk) {
   const next = blk && nextOut(blk);
-  return next ? ['Goes out at ' + fmtClock(next.min), { runs: [next.run] }] : [];
+  return next ? [(next.min >= 1440 ? 'Goes out ' : 'Today’s run goes out ') + dayWhen(next.min).replace(/^today /, ''), { runs: [next.run] }] : [];
 }
 // The headline for a searched bus / block with no card: a block with a run
 // still to come today isn't out YET (at 2 AM: last night's run ended at 1:44,
@@ -2490,17 +2492,137 @@ function doneHeadline(what, blk) {
   return blk && nextOut(blk) ? what + ' isn’t out yet' : what + ' is done for now';
 }
 
-// A searched block with nothing left now: its route, today's bus if known,
-// and its runs - or when it goes out next today.
+// A searched block with nothing left now: when it finished, its route, today's
+// bus if known, and its runs - or when it goes out next today.
 function blockDoneParts(route) {
   const blk = state.block;
   const rec = paddle.byBlock.get(blk);
+  const fin = finishedParts(blk);
   const next = nextOutParts(blk);
-  const parts = next.length ? next.slice() : ['Nothing left today on Route ' + route];
+  const parts = fin.concat(next.length ? next : ['Nothing left today on Route ' + route]);
   const bus = knownVehicleFor(blk);
   if (bus) parts.push('Served by Bus ' + bus);
   if (rec && rec.runs.length && !next.length) parts.push({ runs: rec.runs });
   return parts;
+}
+
+// A block's lines plus when it goes out next today; that run's button shows
+// once (at the end), not also among the lines above.
+function withNextOut(blk, parts) {
+  const next = nextOutParts(blk);
+  if (!next.length) return parts;
+  const no = next[1].runs[0].runno;
+  return parts.filter(p => typeof p === 'string' || !(p.runs.length === 1 && p.runs[0].runno === no)).concat(next);
+}
+
+// A time on today's clock in words, for search results: last night before
+// midnight is "yesterday at 11:08 PM", after midnight "today at 1:44 AM
+// (after midnight)", tonight's after-midnight "tonight at 12:23 AM".
+function dayWhen(min) {
+  if (min < 0) return 'yesterday at ' + fmtClock(min);
+  if (min >= 1440) return 'tonight at ' + fmtClock(min);
+  return 'today at ' + fmtClock(min) + (min < SERVICE_DAY_START_HR * 60 && inOwlWindow(new Date()) ? ' (after midnight)' : '');
+}
+// "Finished today at 1:44 AM (after midnight)": the block's last pull-in that
+// has happened, when it is the newest thing that happened on the block.
+function finishedParts(blk) {
+  const rec = blk && paddle.byBlock.get(String(blk));
+  if (!rec) return [];
+  const now = serviceNowMin();
+  const done = (rec.ins || []).filter(i => i.min <= now).pop();
+  const out = (rec.outs || []).filter(o => o.min <= now).pop();
+  return done && (!out || out.min <= done.min) ? ['Finished ' + dayWhen(done.min)] : [];
+}
+
+// ── LIVE: RUN SEARCH ─────────────────────────────────────────
+// 1-3 digits on the Live page = a run of the selected depot (4 digits stay a
+// bus or block). Out now: its block's live card, as a block search, labelled
+// with the run. Not out: when it finished (yesterday PM / today after
+// midnight / today) and when today's run reports and goes out, on which block.
+let runTimer = 0;
+
+// Every instance of run `no` (selected depot) on today's clock - after
+// midnight last night's leftover and today's - in time order.
+function runInstances(no, depot) {
+  const seen = new Set(), out = [];
+  for (const rec of paddle.byBlock.values()) for (const seg of rec.segs || []) {
+    const r = seg.run;
+    if (seen.has(r) || Number(r.runno) !== Number(no) || (depot && r.depot !== depot)) continue;
+    seen.add(r);
+    const ps = r.pieces.filter(x => x.s != null && x.e != null).sort((a, b) => a.s - b.s);
+    if (ps.length) out.push({ run: r, pieces: ps, s: ps[0].s, e: Math.max(...ps.map(x => x.e)) });
+  }
+  // No depot picked: one depot's run only (the first found).
+  const d = out.length ? out[0].run.depot : '';
+  return out.filter(i => i.run.depot === d).sort((a, b) => a.s - b.s);
+}
+
+// "Last night's run finished at 2:29 AM, after midnight" / "... yesterday at
+// 11:08 PM" / "Finished today at 2:15 PM".
+function finishedLine(i) {
+  if (!i.run.lastNight) return 'Finished ' + dayWhen(i.e);
+  return 'Last night’s run finished ' + (i.e < 0 ? 'yesterday at ' + fmtClock(i.e) : 'at ' + fmtClock(i.e) + ', after midnight');
+}
+
+function showFindMessage(h) {
+  document.getElementById('busCount').textContent = '';
+  state.route = '';
+  clearInterval(refreshTimer); clearInterval(countdownTimer);
+  setStatus('idle');
+  document.getElementById('routeBar').classList.add('hidden');
+  renderBottomBar();
+  setContent('<div class="msg find-msg">' + h + '</div>');
+}
+
+async function onRunSearch(no) {
+  document.getElementById('routeSelect').value = '';
+  document.querySelector('.input-row').classList.add('searching');
+  view.mode = 'dir'; saveMode('dir'); view.follow = true; view.run = '';
+  const f = { num: no, run: no, bus: null, block: null };
+  state.find = f; state.bus = ''; state.busBlock = ''; state.block = '';
+  document.getElementById('alertArea').innerHTML = '';
+  setStatus('loading');
+  setContent('<div class="msg"><div class="icon" style="animation:pulse 1s infinite">🔍</div><div class="main">Finding Run ' + esc(no) + '…</div><div class="sub">Run number</div></div>');
+  if (paddleReady) { try { await paddleReady; } catch (_) {} }
+  if (state.find !== f) return;
+  const depot = document.getElementById('depotSelect').value;
+  const inst = runInstances(no, depot);
+  if (!inst.length) {
+    showFindMessage(findSecHtml('bus', 'Run ' + no + ' not found', 'No Run ' + esc(no) + (depot ? ' at ' + esc(depot) : '') + ' today'));
+    return;
+  }
+  const now = serviceNowMin();
+  const cur = inst.find(i => i.s <= now && now < i.e);
+  const piece = cur && cur.pieces.find(x => x.s <= now && now < x.e);
+  // Out now: its block, live.
+  if (piece) return onBusSearch({ run: no, block: piece.blk });
+
+  const lines = [];
+  const where = x => 'on Block ' + x.blk + (x.rt ? ' (' + x.rt + ')' : '');
+  const finished = inst.filter(i => i.e <= now).pop();
+  const next = inst.find(i => i.s > now);
+  let head;
+  if (cur) {
+    // Between pieces: on a break.
+    const back = cur.pieces.find(x => x.s > now);
+    head = 'Run ' + no + ' is on a break';
+    if (back) lines.push('Back out ' + dayWhen(back.s) + ' ' + where(back));
+  } else if (next) {
+    head = 'Run ' + no + ' isn’t out yet';
+    if (finished) lines.push(finishedLine(finished));
+    const rep = next.run.reportMin;
+    const when = m => m >= 1440 ? dayWhen(m) : 'at ' + fmtClock(m);
+    const lead = finished ? 'Today’s run ' : '';
+    lines.push((rep != null && rep < next.s
+      ? (lead ? lead + 'reports ' : 'Reports ') + when(rep) + ', goes out ' + when(next.s)
+      : (lead ? lead + 'goes out ' : 'Goes out ') + when(next.s)) + ' ' + where(next.pieces[0]));
+  } else {
+    head = 'Run ' + no + ' is done for today';
+    if (finished) lines.push(finishedLine(finished));
+  }
+  const show = (cur || next || finished).run;
+  lines.push({ runs: [{ runno: show.runno, link: show.link }] });
+  showFindMessage(findSecHtml('bus', head, lines));
 }
 
 // One search-result section: icon ('bus' / 'block'), headline, lines.
@@ -2520,7 +2642,7 @@ function renderBusMain(merged, route) {
   const mine = findCardsFor(merged);
   const what = [];
   if (state.bus) what.push('Bus ' + state.bus + (state.busBlock ? ' · Block ' + state.busBlock : ''));
-  if (state.block) what.push('Block ' + state.block);
+  if (state.block) what.push((state.find && state.find.run ? 'Run ' + state.find.run + ' · ' : '') + 'Block ' + state.block);
 
   if (!mine.length) {
     document.getElementById('busCount').textContent = what.join(' & ');
@@ -3936,15 +4058,17 @@ function restoreSaved() {
 // "Select Route" and loads the route showing only those cards: both when they
 // share a route, else the bus's, with a button over to the block's.
 const SEEN_DAYS = 14;
-async function onBusSearch() {
-  const num = document.getElementById('busSearch').value.trim();
+async function onBusSearch(arg) {
+  // From a run search: that run's block, as a block only ({ run, block }).
+  const runFind = arg && arg.run ? arg : null;
+  const num = runFind ? runFind.block : document.getElementById('busSearch').value.trim();
   if (!num) return;
   // A search covers every depot and route; the dropdowns are set aside
   // (dimmed, route cleared) and come back when the field is cleared.
   document.getElementById('routeSelect').value = '';
   document.querySelector('.input-row').classList.add('searching');
   view.mode = 'dir'; saveMode('dir'); view.follow = true; view.run = ''; // show the found bus, in its own direction
-  const f = { num, bus: null, block: null, busSeen: null, blockSeen: null };
+  const f = { num, bus: null, block: null, busSeen: null, blockSeen: null, run: runFind ? runFind.run : '' };
   state.find = f; state.bus = ''; state.busBlock = ''; state.block = '';
   const superseded = () => state.find !== f; // a route was picked (or another number searched) meanwhile
   document.getElementById('alertArea').innerHTML = '';
@@ -3953,7 +4077,7 @@ async function onBusSearch() {
 
   try {
     const live = await fetchAllLive();
-    const v = live.find(x => x.vehicleId === num);
+    const v = !runFind && live.find(x => x.vehicleId === num);
     if (v) f.bus = { route: v.route, block: v.block };
     const b = live.find(x => x.block === num);
     if (b) f.block = { route: b.route };
@@ -3964,7 +4088,7 @@ async function onBusSearch() {
     const st = await fetchWithTimeout(GTFS_OBSERVED_BASE + '/state.json?t=' + Date.now());
     const rows = Object.values(st.blocks || {});
     rows.forEach(r => notePair(r.blockId, r.vehicleId, r.lastSeenAtMs || r.endedAtMs || 0, r.routeId));
-    if (!f.bus) {
+    if (!f.bus && !runFind) {
       // Not live: its block today from the pairing (newest sighting, not
       // swapped off since), then the route that block is on now or runs next
       // — a block can change route (9119: route 21 → 65) while it's quiet.
@@ -3986,8 +4110,9 @@ async function onBusSearch() {
       if (seen && blockRanTodayUnseen(num, seen)) f.blockSeen = blockUnrecordedParts(num, seen);
       else if (seen) f.blockSeen = lastSeenParts(seen, 'block');
       else if (!f.block) f.blockPick = blockPickParts(num);
-      // Still to go out today: say when (at 2 AM: today's 3:20 PM run).
-      if (f.blockSeen) f.blockSeen = f.blockSeen.concat(nextOutParts(num));
+      // Finished / still to go out today: say when (at 2 AM: last night's
+      // run back at 1:44 AM, today's out at 3:20 PM).
+      if (f.blockSeen) f.blockSeen = withNextOut(num, finishedParts(num).concat(f.blockSeen));
     }
   } catch(e) {
     if (superseded()) return;
@@ -4011,8 +4136,9 @@ async function onBusSearch() {
     const sec = findSecHtml;
     let h = '';
     if (f.busSeen) h += sec('bus', 'Bus ' + num + ' is currently offline', f.busSeen);
-    if (f.blockSeen) h += sec('block', 'Block ' + num + ' isn\'t in service now', f.blockSeen);
-    else if (f.blockPick) h += sec('block', 'Block ' + num + ' isn\'t in service now', f.blockPick);
+    const blkName = (f.run ? 'Run ' + f.run + ' · ' : '') + 'Block ' + num;
+    if (f.blockSeen) h += sec('block', blkName + ' isn\'t in service now', f.blockSeen);
+    else if (f.blockPick) h += sec('block', blkName + ' isn\'t in service now', withNextOut(num, finishedParts(num).concat(f.blockPick)));
     if (!h) h = sec('bus', num + ' not found', 'No bus or block with this number<br>seen in the last ' + SEEN_DAYS + ' days');
     setContent('<div class="msg find-msg">' + h + '</div>');
     return;
@@ -4079,10 +4205,23 @@ function blockPickParts(num) {
 // A searched block number's route, or null unless that block is running now
 // (mid-trip, or between trips once out): from today's pick (which routes it
 // runs) and the poller's sightings, the route it is on.
+// Is the block in the depot right now: its last pull-in that has happened
+// came after its last pull-out (last night's Run 144 back on 9153 at 1:44 AM,
+// today's not out until 3:20 PM)? Only for a search, after the live feed
+// had no bus on it.
+function blockInDepotNow(blk) {
+  const rec = paddle.byBlock.get(String(blk));
+  if (!rec) return false;
+  const now = serviceNowMin();
+  const lastIn = (rec.ins || []).filter(i => i.min <= now).pop();
+  if (!lastIn) return false;
+  return !(rec.outs || []).some(o => o.min > lastIn.min && o.min <= now);
+}
+
 async function blockToday(num, rows) {
   const rec = paddle.byBlock.get(num);
   if (paddle.loaded && !rec) return null; // not in today's pick
-  if (blockPulledIn(num)) return null;
+  if (blockPulledIn(num) || blockInDepotNow(num)) return null;
   const at = r => r.lastSeenAtMs || r.endedAtMs || 0;
   const seen = rows.filter(r => String(r.blockId) === num).sort((a, c) => at(c) - at(a));
   const routes = [...new Set([...seen.map(r => String(r.routeId)), ...pickRoutes(rec ? rec.routes : [])])];
@@ -4296,6 +4435,10 @@ const IDLE_HTML = document.getElementById('content').innerHTML;
     const box = document.getElementById('busSearch');
     box.placeholder = 'Run / Block #';
     box.setAttribute('aria-label', 'Find a run (up to 3 digits) or a block (4 digits)');
+  } else {
+    const box = document.getElementById('busSearch');
+    box.placeholder = 'Bus / Block / Run #';
+    box.setAttribute('aria-label', 'Find a bus or block (4 digits) or a run (up to 3 digits)');
   }
 
   state.route = routeSel.value;
@@ -4322,11 +4465,15 @@ const IDLE_HTML = document.getElementById('content').innerHTML;
       tsTimer = setTimeout(() => tripSheetSearch(digits), 120);
       return;
     }
+    clearTimeout(runTimer);
     if (digits.length === 4) {
-      if (!state.find || digits !== state.find.num) { e.target.blur(); onBusSearch(); } // blur closes the phone keyboard
+      if (!state.find || digits !== state.find.num || state.find.run) { e.target.blur(); onBusSearch(); } // blur closes the phone keyboard
       return;
     }
-    if (digits || !state.find) return;
+    // 1-3 digits: a run, once typing pauses (a 4-digit bus or block typed
+    // quickly never stops at its first digits).
+    if (digits) { runTimer = setTimeout(() => { if (e.target.value === digits) onRunSearch(digits); }, 700); return; }
+    if (!state.find) return;
     restoreSaved();
   });
 
