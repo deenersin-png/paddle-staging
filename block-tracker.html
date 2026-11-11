@@ -4669,35 +4669,59 @@ const IDLE_HTML = document.getElementById('content').innerHTML;
 
   routeSel.addEventListener('change', onRouteChange);
   document.getElementById('depotSelect').addEventListener('change', onDepotChange);
+  // The search box - same rule as the Paddles page. Type freely; the number
+  // is final after 800 ms with no new digit, the keyboard's check mark /
+  // search key, tapping elsewhere, or a 4th digit. Then it is searched
+  // EXACTLY and the keyboard closes:
+  //   Live:        1-3 digits = that run; 4 = that bus or block.
+  //   Trip Sheets: 1-3 digits = that run; 4 = that block.
+  // ("3" at Midvale = Run 3, not something starting with 3.) Trip Sheets also
+  // closes at once when the run typed exists and no other run or block starts
+  // with it. Box emptied (✕ or backspace) after a search → back to normal.
+  const box = document.getElementById('busSearch');
+  let boxTimer = 0, boxDone = '';   // boxDone: the number already searched
+  const boxDigits = () => box.value.replace(/\D/g, '').slice(0, 4);
+  function settleBox() {
+    clearTimeout(boxTimer); boxTimer = 0;
+    const digits = boxDigits();
+    if (!digits || digits === boxDone) { if (document.activeElement === box) box.blur(); return; }
+    boxDone = digits;                                 // before blur: blur calls settleBox again
+    if (document.activeElement === box) box.blur();   // closes the phone keyboard
+    if (ALL_TRIPS_PAGE) { clearTimeout(tsTimer); tripSheetSearch(digits); return; }
+    clearTimeout(runTimer);
+    if (digits.length === 4) onBusSearch(); else onRunSearch(digits);
+  }
+  // Trip Sheets: run q exists here and nothing longer can follow it.
+  function tsOnlyRun(q) {
+    if (q.length > 3) return false;
+    const depot = document.getElementById('depotSelect').value;
+    let run = false;
+    for (const r of allPickRuns()) {
+      if (depot && r.depot !== depot) continue;
+      const n = String(Number(r.runno));
+      if (n === q) run = true; else if (n.startsWith(q)) return false;
+    }
+    for (const b of paddle.byBlock.keys()) if (String(b).startsWith(q)) return false;
+    return run;
+  }
   document.getElementById('busForm').addEventListener('submit', e => {
     e.preventDefault();
-    document.getElementById('busSearch').blur(); // close the phone keyboard
-    if (ALL_TRIPS_PAGE) return;  // Trip Sheets searches as you type
-    onBusSearch();
+    settleBox();
   });
-  // Digits only; the 4th digit starts the search. Field emptied (✕ or
-  // backspace) after a search → back to the saved depot and route.
-  document.getElementById('busSearch').addEventListener('input', e => {
-    const digits = e.target.value.replace(/\D/g, '').slice(0, 4);
-    if (digits !== e.target.value) e.target.value = digits;
-    // Trip Sheets: run (1-3 digits) or block (4), shown as you type.
-    if (ALL_TRIPS_PAGE) {
-      clearTimeout(tsTimer);
-      if (!digits) { tripSheetClear(); return; }
-      if (digits.length === 4) e.target.blur(); // a block is complete: close the keyboard
-      tsTimer = setTimeout(() => tripSheetSearch(digits), 120);
+  box.addEventListener('blur', settleBox);
+  box.addEventListener('input', () => {
+    const digits = boxDigits();
+    if (digits !== box.value) box.value = digits;
+    clearTimeout(boxTimer); boxTimer = 0;
+    boxDone = '';
+    if (!digits) {
+      if (ALL_TRIPS_PAGE) { tripSheetClear(); return; }
+      clearTimeout(runTimer);
+      if (state.find) restoreSaved();
       return;
     }
-    clearTimeout(runTimer);
-    if (digits.length === 4) {
-      if (!state.find || digits !== state.find.num || state.find.run) { e.target.blur(); onBusSearch(); } // blur closes the phone keyboard
-      return;
-    }
-    // 1-3 digits: a run, once typing pauses (a 4-digit bus or block typed
-    // quickly never stops at its first digits).
-    if (digits) { runTimer = setTimeout(() => { if (e.target.value === digits) onRunSearch(digits); }, 700); return; }
-    if (!state.find) return;
-    restoreSaved();
+    if (digits.length === 4 || (ALL_TRIPS_PAGE && paddle.loaded && tsOnlyRun(digits))) { settleBox(); return; }
+    boxTimer = setTimeout(settleBox, 800);
   });
 
   window.addEventListener('online',  () => { if (state.route) loadRoute(state.route); });
