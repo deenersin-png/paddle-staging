@@ -2381,10 +2381,29 @@ function annotateLeaderTimeline(merged) {
 let lastHTML = '';
 let isFirstRender = true;
 
+// A refresh (the 30-s timer or ↻) keeps the page where it is. Swapping the
+// content in makes the page shorter for a moment (the live map is put back
+// a beat later), and Safari - no scroll anchoring - then pulled the page up,
+// so the map you had scrolled down to was gone. During a refresh the content
+// keeps its height until the new cards and map are in, and the scroll
+// position is put back. Changing view (EB / WB, Run only, a search) still
+// goes to the top as before.
+let refreshScrollY = null;   // set by tick() for the time of a refresh
 function setContent(html) {
   if (html === lastHTML) return;
   lastHTML = html;
-  document.getElementById('content').innerHTML = html;
+  const el = document.getElementById('content');
+  const keepY = refreshScrollY;
+  if (keepY == null || view.scrollNow || keepY <= 0) { el.innerHTML = html; return; }
+  el.style.minHeight = el.offsetHeight + 'px';
+  el.innerHTML = html;
+  if (Math.abs(window.scrollY - keepY) > 1) window.scrollTo(0, keepY);
+  // After the map is back in (drawLiveMap attaches it right after this),
+  // let the height go and stay at the same spot.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    el.style.minHeight = '';
+    if (window.scrollY < keepY - 1) window.scrollTo(0, Math.min(keepY, document.documentElement.scrollHeight - window.innerHeight));
+  }));
 }
 
 function renderMain(merged, route) {
@@ -3969,6 +3988,7 @@ let ticking = false;
 async function tick() {
   if (ticking || !state.route) return;
   ticking = true;
+  refreshScrollY = window.scrollY;   // see setContent: a refresh stays put
   setStatus('syncing');
   try {
     const [live] = await Promise.all([fetchTV(state.route), refreshPairs()]);
@@ -3996,6 +4016,7 @@ async function tick() {
       setContent('<div class="msg"><div class="icon">⚠️</div><div class="main">Could not reach SEPTA API</div><div class="sub">Check your connection and try again</div><button class="retry-btn" onclick="loadRoute(state.route)">Retry</button></div>');
     }
   }
+  refreshScrollY = null;
   ticking = false;
 }
 
