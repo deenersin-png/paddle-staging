@@ -112,8 +112,16 @@
 /* Design system: day names in the day tags' colours (Sunday green, weekdays
    blue, Saturday red); run tag + block tags in the day rows. */
 .day-label.dk-sunday{color:#12753a}.day-label.dk-weekday{color:#0b4ea2}.day-label.dk-saturday{color:#c8102e}
-.day-blocks{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 2px 44px}
-@media (max-width:600px){.day-blocks{margin-left:0}}
+/* A working day: the day at the left, the rest in one column (run tag,
+   start/finish, block tags) with each piece's times and the swing indented. */
+.day-row.dr{display:grid;grid-template-columns:40px minmax(0,1fr);column-gap:8px;align-items:start}
+.dr .day-label{width:auto;padding-top:3px}
+.dr-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.dr-times{display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;font-size:12px;color:#56627a}
+.dr-piece{margin-top:9px;line-height:0}
+.dr-pp{margin:4px 0 0 18px;font-size:12.5px;color:#56627a;font-family:'IBM Plex Sans Condensed',system-ui,sans-serif;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dr-dur{color:#8a93a6}
+.dr-swing{margin:6px 0 0 36px;font-size:12px;font-weight:700;color:#0b4ea2}
 .day-header-left .pa-run{padding:2px 7px}.day-header-left .pa-run .pa-run-n{font-size:15px}
 .swing-detail-row .pa-blk{flex-shrink:0}
 </style>
@@ -493,24 +501,35 @@ function buildDetailHTML(pkg){
     const dayType  = DAY_TO_TYPE[d.day];
     const linkHTML = PaTags.runTag(d.runno, dayType, href);
 
-    return '<div class="day-row">'+
-      '<div class="day-header">'+
-        '<div class="day-header-left">'+
-          '<span class="day-label dk-'+dayType.toLowerCase()+'">'+d.day+'</span>'+
-          linkHTML+
-        '</div>'+
-        '<span class="day-pay">'+d.info.pay+' hrs</span>'+
+    // Layout (user, 2026-11-12): the day stays at the left; everything else
+    // in one indented column -
+    //   Sun  [RUN#: 52 SUNDAY]                8 hrs
+    //        12:09 AM → 8:20 AM   8:01           start / finish
+    //        [MFO/9902]                          block tag
+    //           O 12:09 AM → CG 05:30 AM (5:21)  its pull out / pull in
+    //              Swing: 1Hrs 42Min             (a swing: under the first half)
+    //        [52/9519]                           second half
+    //           O 11:00 AM → I 02:31 PM (3:31)
+    const ps = d.info.routes;
+    // The swing falls where a piece pulls IN and the next one pulls OUT.
+    const isIn = x => /^\s*I\b/i.test(x.pit), isOut = x => /^\s*O\b/i.test(x.pot);
+    let swingAfter = -1;
+    if (isSwing) {
+      swingAfter = ps.findIndex((x, i) => i < ps.length - 1 && isIn(x) && isOut(ps[i + 1]));
+      if (swingAfter < 0) swingAfter = Math.max(0, Math.floor(ps.length / 2) - 1);
+    }
+    const pieceHTML = (x, i) =>
+      '<div class="dr-piece">'+blockTagOf(d.day, x)+'</div>'+
+      '<div class="dr-pp">'+x.pot+' → '+x.pit+(x.stime?' <span class="dr-dur">('+x.stime+')</span>':'')+'</div>'+
+      (i === swingAfter ? '<div class="dr-swing">Swing: '+d.info.swingdur+'</div>' : '');
+
+    return '<div class="day-row dr">'+
+      '<span class="day-label dk-'+dayType.toLowerCase()+'">'+d.day+'</span>'+
+      '<div class="dr-main">'+
+        '<div class="dr-top">'+linkHTML+'<span class="day-pay">'+d.info.pay+' hrs</span></div>'+
+        '<div class="dr-times"><span>'+d.info.start+' → '+d.info.finish+'</span><span>'+d.info.worktime+'</span></div>'+
+        ps.map(pieceHTML).join('')+
       '</div>'+
-      // Its blocks ("MFO/9902 21/9902"); a swing day lists them with times below.
-      (isSwing?'':'<div class="day-blocks">'+d.info.routes.map(x=>blockTagOf(d.day, x)).join('')+'</div>')+
-      '<div class="day-details">'+
-        '<span>'+d.info.start+' → '+d.info.finish+'</span>'+
-        '<span>'+d.info.worktime+'</span>'+
-      '</div>'+
-      (isSwing?'<div style="margin-left:44px;margin-top:6px;font-size:12px;color:#0b4ea2;font-weight:600;">Swing: '+d.info.swingdur+'</div>':'')+
-      (isSwing?'<div class="swing-details">'+
-        d.info.routes.map((rt2)=>'<div class="swing-detail-row">'+blockTagOf(d.day, rt2)+'<span>'+rt2.pot+' → '+rt2.pit+'</span><span style="color:var(--w30);">('+rt2.stime+')</span></div>').join('')+
-      '</div>':'')+
     '</div>';
   }).join('');
 }
