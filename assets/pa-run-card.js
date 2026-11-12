@@ -62,13 +62,13 @@ export function card(m, opts = {}) {
   const url = opts.paddleUrl || '';
   const n = document.createElement('div');
   n.className = 'prc day-' + day;
-  // Each piece: its route, then the block tag ("21/9901").
+  // Each piece: the block tag ("21/9901"), which names the route too.
   const segs = (m.segments || []).map(s => `
       <div class="prc-seg">
         <div class="prc-seg-connector"><div class="prc-seg-dot"></div><div class="prc-seg-line"></div></div>
         <div class="prc-seg-body">
           <div class="prc-seg-top">
-            <span class="prc-seg-route">${esc(s.route)}</span>
+            ${T() ? '' : `<span class="prc-seg-route">${esc(s.route)}</span>`}
             ${blockHtml(s, m.dayType)}
             <span class="prc-seg-sched">${esc(s.sched)}</span>
           </div>

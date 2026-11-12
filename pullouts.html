@@ -35,13 +35,16 @@ body{background:#eef2f8;color:#08122b;font-family:'IBM Plex Sans Condensed',syst
   font:inherit;font-size:17px;font-weight:700;padding:10px 36px 9px 12px;box-shadow:0 2px 6px rgba(8,18,43,.25)}
 .po-arrow{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#c8102e;pointer-events:none;font-size:14px}
 
+/* Cards in a grid like the Paddles page: 340px columns, as many as fit (one on a phone). */
+#poList{padding:16px 12px 24px!important;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(340px,100%),1fr));gap:12px;align-items:start}
+#poList > .po-msg{grid-column:1/-1}
 .po-label{padding:10px 16px 8px;font-size:15px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;text-align:center;
   border-bottom:1px solid #d5dce8;background:#fff}
 .po-sub{display:block;font-size:11px;font-weight:600;letter-spacing:.06em;color:#56627a;margin-top:2px}
 .po-msg{text-align:center;padding:48px 16px;color:#56627a;font-size:15px}
 
 /* One event: the time line on top of the Paddle App run card. */
-.po-ev{margin-bottom:12px;scroll-margin-top:calc(68px + var(--po-hh,190px))}
+.po-ev{margin-bottom:0;scroll-margin-top:calc(68px + var(--po-hh,190px))}
 .po-time{display:flex;align-items:center;gap:8px;padding:7px 12px;font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;color:#fff;background:#0b4ea2}
 .po-time .po-kind{font-size:10px;letter-spacing:.08em;padding:2px 6px;border-radius:3px;background:rgba(255,255,255,.2)}
 .po-time .po-clock{font-size:16px}

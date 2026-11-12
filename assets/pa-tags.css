@@ -44,7 +44,7 @@
 
 /* Piece rows (Paddles cards, run scorecards): route, then the block tag,
    the tags lined up under each other. */
-.prc-seg-top .prc-seg-route{min-width:6ch}
+/* (the block tag replaces the piece's route word) */
 .at-trips .pa-blk{font-size:12px}
 @media (max-width:360px){.at-trips:has(.at-load) .pa-blk{padding:2px 5px;font-size:11px}}
 .find-msg .pa-blk,.find-msg .pa-bus{font-size:15px;line-height:20px;padding:3px 9px}

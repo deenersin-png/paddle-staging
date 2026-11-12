@@ -1842,7 +1842,7 @@ function render() {
       const r = run['r' + i];
       const b = run['b' + i];
       if (!r || !b) break;
-      // Block tag "21/9901" after the piece's route. A two-route piece
+      // Block tag "21/9901" (route / block; the route isn't repeated). A two-route piece
       // ("21-42") shows the route of the trip the block starts it on.
       const ps = clockMin(run['pot' + i]), pe0 = clockMin(run['pit' + i]);
       const pe = ps != null && pe0 != null && pe0 < ps ? pe0 + 1440 : pe0;
@@ -1852,7 +1852,6 @@ function render() {
           <div class="seg-connector"><div class="seg-dot"></div><div class="seg-line"></div></div>
           <div class="seg-body">
             <div class="seg-top">
-              <span class="seg-route">${r}</span>
               ${blkTag}
               <span class="seg-sched">${run['stime' + i] || ''}</span>
             </div>

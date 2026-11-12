@@ -107,7 +107,18 @@
 <link rel="stylesheet" href="assets/pa-account.css">
 <link rel="stylesheet" href="assets/pa-theme.css">
 <link rel="stylesheet" href="assets/pa-menu.css">
+<link rel="stylesheet" href="assets/pa-tags.css">
+<style>
+/* Design system: day names in the day tags' colours (Sunday green, weekdays
+   blue, Saturday red); run tag + block tags in the day rows. */
+.day-label.dk-sunday{color:#12753a}.day-label.dk-weekday{color:#0b4ea2}.day-label.dk-saturday{color:#c8102e}
+.day-blocks{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 2px 44px}
+@media (max-width:600px){.day-blocks{margin-left:0}}
+.day-header-left .pa-run{padding:2px 7px}.day-header-left .pa-run .pa-run-n{font-size:15px}
+.swing-detail-row .pa-blk{flex-shrink:0}
+</style>
 <script src="assets/pa-menu.js" defer></script>
+<script src="assets/pa-tags.js"></script>
 </head>
 <body>
 
@@ -438,6 +449,20 @@ function getPackageDetails(pkg){
   return{ details, totalPay:Math.round(totalPay*100)/100, workDays, routes:[...routes], offDays };
 }
 
+// "O 12:09 AM" → minutes after midnight (null if no time).
+function clockMin(t){
+  const m=String(t||"").match(/(\d{1,2}):(\d{2})\s*([AP])M/i);
+  return m ? (Number(m[1])%12+(/p/i.test(m[3])?12:0))*60+Number(m[2]) : null;
+}
+// A piece's block tag "21/9101": route / block (a "21-42" piece: the route
+// the block starts it on, looked up in the timetable).
+function blockTagOf(day, rt){
+  if(!rt.b) return routeTag(rt.r,true);
+  const s=clockMin(rt.pot), e0=clockMin(rt.pit);
+  const e=(s!=null&&e0!=null&&e0<s)?e0+1440:e0;
+  return PaTags.blockTag(null, rt.b, {label:rt.r, day:DAY_TO_TYPE[day], at:s, s, e});
+}
+
 function routeTag(route,small){
   const bg=ROUTE_COLORS[route]||"#555";
   return '<span class="route-tag'+(small?' small':'')+'" style="background:'+bg+'">'+route+'</span>';
@@ -464,26 +489,27 @@ function buildDetailHTML(pkg){
     const rt      = d.info.routes[0];
     const isSwing = d.info.isSwing;
     const href    = getMoblink(d.day, d.runno);
-    const linkHTML = href
-      ? '<a href="'+href+'" target="_blank" class="run-link">'+d.runno+' <span class="run-link-icon">↗</span></a>'
-      : '<span style="font-size:12px;font-family:var(--mono);color:var(--w30)">'+d.runno+'</span>';
+    // Run tag "RUN#: 52 SUNDAY" (opens the paddle), as on every page.
+    const dayType  = DAY_TO_TYPE[d.day];
+    const linkHTML = PaTags.runTag(d.runno, dayType, href);
 
     return '<div class="day-row">'+
       '<div class="day-header">'+
         '<div class="day-header-left">'+
-          '<span class="day-label">'+d.day+'</span>'+
-          routeTag(rt.r,true)+
+          '<span class="day-label dk-'+dayType.toLowerCase()+'">'+d.day+'</span>'+
           linkHTML+
         '</div>'+
         '<span class="day-pay">'+d.info.pay+' hrs</span>'+
       '</div>'+
+      // Its blocks ("MFO/9902 21/9902"); a swing day lists them with times below.
+      (isSwing?'':'<div class="day-blocks">'+d.info.routes.map(x=>blockTagOf(d.day, x)).join('')+'</div>')+
       '<div class="day-details">'+
         '<span>'+d.info.start+' → '+d.info.finish+'</span>'+
         '<span>'+d.info.worktime+'</span>'+
       '</div>'+
       (isSwing?'<div style="margin-left:44px;margin-top:6px;font-size:12px;color:#0b4ea2;font-weight:600;">Swing: '+d.info.swingdur+'</div>':'')+
       (isSwing?'<div class="swing-details">'+
-        d.info.routes.map((rt2)=>'<div class="swing-detail-row">'+routeTag(rt2.r,true)+'<span>'+rt2.pot+' → '+rt2.pit+'</span><span style="color:var(--w30);">('+rt2.stime+')</span></div>').join('')+
+        d.info.routes.map((rt2)=>'<div class="swing-detail-row">'+blockTagOf(d.day, rt2)+'<span>'+rt2.pot+' → '+rt2.pit+'</span><span style="color:var(--w30);">('+rt2.stime+')</span></div>').join('')+
       '</div>':'')+
     '</div>';
   }).join('');
@@ -542,6 +568,7 @@ function render(){
     '</div>';
   }).join('');
 
+  PaTags.resolveBlockTags(list);
   list.querySelectorAll('.pkg-card').forEach(card=>{
     card.addEventListener('click',()=>{
       const relief=card.dataset.relief;
