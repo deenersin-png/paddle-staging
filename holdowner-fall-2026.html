@@ -119,11 +119,11 @@
 .dr-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .dr-times{display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;font-size:12px;color:#56627a}
 .dr-pieces{grid-column:1/-1;margin-top:4px}
-.dr-piece{display:flex;align-items:center;gap:6px;margin-top:7px;min-width:0}
-.dr-pp{min-width:0;font-size:12px;color:#56627a;font-family:'IBM Plex Sans Condensed',system-ui,sans-serif;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dr-piece{display:flex;flex-direction:column;align-items:flex-start;gap:3px;margin-top:9px;min-width:0}
+.dr-pp{max-width:100%;font-size:12.5px;color:#56627a;font-family:'IBM Plex Sans Condensed',system-ui,sans-serif;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dr-dur{color:#8a93a6}
 .dr-swing{margin-top:7px;font-size:12px;font-weight:700;color:#0b4ea2}
-@media (max-width:359px){.dr-pp{white-space:normal}}
+
 .day-header-left .pa-run{padding:2px 7px}.day-header-left .pa-run .pa-run-n{font-size:15px}
 .swing-detail-row .pa-blk{flex-shrink:0}
 </style>
@@ -504,13 +504,15 @@ function buildDetailHTML(pkg){
     const linkHTML = PaTags.runTag(d.runno, dayType, href);
 
     // Layout (user, 2026-11-12): run tag and start / finish next to the day;
-    // the pieces and the swing from the day's left edge, a piece per line -
+    // the pieces and the swing from the day's left edge, each block tag with
+    // its out / in times under it -
     //   Sun  [RUN#: 52 SUNDAY]               8 hrs
     //        12:09 AM → 8:20 AM   8:01
-    //   [52/9505] O 05:04 AM → CG 06:58 AM (1:54)
-    //   [40/9505] CG 08:16 AM → I 09:18 AM (1:02)
+    //   [52/9505]
+    //   O 05:04 AM → CG 06:58 AM (1:54)
     //   Swing: 1Hrs 42Min
-    //   [52/9519] O 11:00 AM → I 02:31 PM (3:31)
+    //   [52/9519]
+    //   O 11:00 AM → I 02:31 PM (3:31)
     const ps = d.info.routes;
     // The swing falls where a piece pulls IN and the next one pulls OUT.
     const isIn = x => /^\s*I\b/i.test(x.pit), isOut = x => /^\s*O\b/i.test(x.pot);
