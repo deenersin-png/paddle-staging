@@ -1740,8 +1740,11 @@ function mergeScheduledBlocks(merged, liveBuses) {
   for (const blk of sched.blockTrips.keys()) {
     if (known.has(blk)) continue;
     if (blockPulledIn(blk)) continue; // operator pick says it's already pulled in → done
-    const st = scheduledBlockStatus(blk, nowMin);
+    let st = scheduledBlockStatus(blk, nowMin);
     if (!st || st.state === 'done') continue;
+    // Between two trips but the pick has it back in the depot (one run pulled
+    // in, the next not out yet - block 1221 at 1 AM): not out yet, not layover.
+    if (st.state === 'layover_expected' && blockInDepotNow(blk)) st = { ...st, state: 'not_started' };
     if (st.state === 'not_started' && (st.dueOutMin - nowMin) > SCHED_LOOKAHEAD_MIN) continue;
 
     // Terminal-arrival time for the layover timer: the poller's real ended-at
@@ -1831,6 +1834,32 @@ function annotateLayovers(merged) {
       const dName = (sched.dirNames && sched.dirNames[st.trip.dir]) ||
                     (st.trip.dir != null ? 'Direction ' + st.trip.dir : bus.Direction);
       bus.Direction = canonDir(dName);
+      out.push(bus);
+      continue;
+    }
+
+    // Back in the depot, not on layover: its run pulled in (the pick says so)
+    // or the next trip belongs to another run of the block (scheduledBlockStatus
+    // 'not_started'). Block 9413 at 12:42 AM: last night's Run 708 in at
+    // 12:18 AM, today's Route 38 trips from 5:33 PM - it showed LAYOVER with a
+    // 16-hour countdown. Shown like any block not out yet (only once it is
+    // due within SCHED_LOOKAHEAD_MIN), else not at all.
+    if ((st && st.state === 'not_started') || blockInDepotNow(blk)) {
+      if (!st || st.state !== 'not_started' || st.dueOutMin - nowMin > SCHED_LOOKAHEAD_MIN) continue;
+      bus._isLayover     = false;
+      bus._scheduledOnly = true;
+      bus._schedState    = 'not_started';
+      bus._dueOutMin     = st.dueOutMin;
+      bus._overdueMin    = 0;
+      bus._firstStop     = st.trip.first || '';
+      bus._lastStop      = st.trip.last  || '';
+      bus._depMin        = st.trip.s;
+      bus._arrMin        = st.trip.e;
+      bus._layoverSince  = null;
+      bus.next_stop_sequence = 0;
+      const nName = (sched.dirNames && sched.dirNames[st.trip.dir]) ||
+                    (st.trip.dir != null ? 'Direction ' + st.trip.dir : bus.Direction);
+      bus.Direction = canonDir(nName);
       out.push(bus);
       continue;
     }
