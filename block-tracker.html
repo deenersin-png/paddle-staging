@@ -338,6 +338,7 @@ a.run-chip:active{opacity:.7}
 <link rel="stylesheet" href="assets/pa-theme.css">
 <link rel="stylesheet" href="assets/pa-menu.css">
 <link rel="stylesheet" href="assets/pa-tags.css">
+<script src="assets/pa-picks.js"></script>
 <script src="assets/pa-menu.js" defer></script>
 <script src="assets/pa-tags.js"></script>
 <script src="assets/pa-holiday.js"></script>
@@ -489,10 +490,16 @@ const GTFS_OBSERVED_BASE = 'https://deenersin-png.github.io/septa-gtfs/data-obse
 // Absolute URL so it works both locally and when this page is hosted inside
 // the septa-scheduler repo itself.
 const PADDLE_BASE = 'https://deenersin-png.github.io/septa-scheduler/data';
-// The Paddles page's id for the current pick (index.html SEASONS current:true).
-// The depot is app-wide: a change here is also saved as that page's depot
-// (paddleDepot_<pick>) so the account never holds two different depots.
-const CURRENT_PICK_ID = 'fall2026';
+// The Paddles page's id for the current pick, from the pick sheet
+// (assets/pa-picks.js). The depot is app-wide: a change here is also saved as
+// that page's depot (paddleDepot_<pick>) so the account never holds two
+// different depots.
+let CURRENT_PICK_ID = '';
+(function () {
+  const c = PaPicks.cached();
+  if (c) CURRENT_PICK_ID = PaPicks.current(c).id;
+  PaPicks.load().then(p => { CURRENT_PICK_ID = PaPicks.current(p).id; }, () => {});
+})();
 
 // SEPTA's BusDetours API doesn't send CORS headers, and corsproxy.io now
 // refuses requests without an API key (401), so it is read with JSONP like
@@ -4391,7 +4398,7 @@ function onDepotChange() {
   renderHolidayLive();
   lsSet('bt_depot', depot);
   const pid = paddle.depotIds && paddle.depotIds.get(depot);
-  if (pid && lsGet('paddleDepot_' + CURRENT_PICK_ID) !== pid) lsSet('paddleDepot_' + CURRENT_PICK_ID, pid);
+  if (pid && CURRENT_PICK_ID && lsGet('paddleDepot_' + CURRENT_PICK_ID) !== pid) lsSet('paddleDepot_' + CURRENT_PICK_ID, pid);
   // Keep the route when this depot runs it too; else wait for a pick.
   const route = fillRoutes(depot, state.find ? lsGet('bt_route') : state.route || lsGet('bt_route'));
   if (route) { if (state.find || route !== state.route) onRouteChange(); return; }

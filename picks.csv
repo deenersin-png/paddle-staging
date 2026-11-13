@@ -1,4 +1,0 @@
-season_id,label,start_date,end_date,manifest,html
-spring2026,Spring 2026,2026-02-26,2026-06-14,manifest_fall2026.json,fall2026.html
-summer2026,Summer 2026,2026-06-14,2026-08-23,manifest_summer.json,summer2026.html
-fall2026,Fall 2026,2026-08-23,,manifest-fall-2026.json,fall-2026.html

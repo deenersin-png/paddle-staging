@@ -2,7 +2,7 @@
 // Paddle App — static schedule engine.
 //
 // Everything here is derived from published schedule data: the paddle CSVs
-// in this repo, picks.csv, and the GTFS JSON that the septa-gtfs pipeline
+// in this repo, the pick sheet (assets/pa-picks.js), and the GTFS JSON that the septa-gtfs pipeline
 // publishes. There is NO Firebase in this module and NO live vehicle data.
 //
 // That second point is a product rule, not a convenience. Any countdown an
@@ -29,7 +29,6 @@ const SITE_BASE = typeof document !== 'undefined'
   : (globalThis.PA_SITE || 'https://deenersin-png.github.io/septa-scheduler/');
 
 export const PADDLE_BASE = new URL('data/', SITE_BASE).href;
-export const PICKS_URL   = new URL('picks.csv', SITE_BASE).href;
 export const GTFS_BASE   = 'https://deenersin-png.github.io/septa-gtfs/data';
 
 // ---- time helpers ---------------------------------------------------------
@@ -155,23 +154,30 @@ export function parseCSV(text) {
   });
 }
 
-// ---- seasons (picks.csv) --------------------------------------------------
-// picks.csv is the season registry that already existed in the repo and that
-// nothing read. A season applies to a date when start <= date < end (end
-// empty = current pick).
+// ---- seasons (the pick sheet) ---------------------------------------------
+// Every pick comes from the owner's Google Sheet, read by assets/pa-picks.js
+// (pick name, first day, last day; the last copy on the device if the sheet
+// does not answer). Each season: { id, label, startDate, endDate (Dates; the
+// end is the LAST day, null = open), start, last ("YYYY-MM-DD"), manifest }.
 
-export async function loadSeasons() {
-  const rows = parseCSV(await fetchText(PICKS_URL));
-  return rows.map(r => ({
-    id: r.season_id, label: r.label,
-    start: r.start_date || '', end: r.end_date || null,
-    manifest: r.manifest
-  })).filter(s => s.id && s.start);
+let picksMod = null;
+async function picksApi() {
+  if (globalThis.PaPicks) return globalThis.PaPicks;
+  if (!picksMod) picksMod = import('./pa-picks.js').catch(e => { picksMod = null; throw e; });
+  await picksMod;
+  return globalThis.PaPicks;
 }
 
+/** All picks, oldest first. [] when the sheet cannot be read and the device
+ *  has no copy of it (pa-picks.js then shows a red bar on the page), as when
+ *  the old picks.csv did not load. */
+export async function loadSeasons() {
+  try { return await (await picksApi()).load(); } catch (_) { return []; }
+}
+
+/** The pick that covers a date ("YYYY-MM-DD" or Date), or null. */
 export function seasonFor(seasons, iso) {
-  const hits = seasons.filter(s => s.start <= iso && (!s.end || iso < s.end));
-  return hits.sort((a, b) => b.start.localeCompare(a.start))[0] || null;
+  return globalThis.PaPicks ? globalThis.PaPicks.forDate(seasons, iso) : null;
 }
 
 export async function loadManifest(season) {
@@ -469,7 +475,7 @@ const tripsMem = new Map();
  * instance stays warm for days, and would otherwise keep serving last week's
  * picks and holidays, so it calls this on a timer.
  */
-export function clearCaches() { mem.clear(); tripsMem.clear(); }
+export function clearCaches() { mem.clear(); tripsMem.clear(); if (globalThis.PaPicks) globalThis.PaPicks.reset(); }
 /**
  * septa-gtfs's lists still carry the previous schedule: trips with short
  * (4-digit) ids beside the current 6-digit ones (route 21 weekday: 202 of

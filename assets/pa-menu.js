@@ -28,8 +28,26 @@
   ];
   // The pick the app is on, shown under "Paddle App". A page can name another
   // one with <html data-pa-pick="..."> (+ data-pa-pick-old for an older pick)
-  // and a 'pa:pick' event when it changes. Keep in step with index.html SEASONS.
-  var CURRENT_PICK = 'Fall 2026';
+  // and a 'pa:pick' event when it changes. Otherwise it is the current pick
+  // from the pick sheet (assets/pa-picks.js, loaded here if the page has not).
+  var CURRENT_PICK = '';
+  (function () {
+    function fromPicks() {
+      var P = window.PaPicks;
+      var c = P.cached();
+      if (c) CURRENT_PICK = P.current(c).label;
+      P.load().then(function (picks) {
+        CURRENT_PICK = P.current(picks).label;
+        window.dispatchEvent(new CustomEvent('pa:pick'));
+      }, function () {});
+    }
+    if (window.PaPicks) return fromPicks();
+    var me = document.currentScript && document.currentScript.src;
+    var s = document.createElement('script');
+    s.src = me ? me.replace(/pa-menu\.js(\?.*)?$/, 'pa-picks.js') : 'assets/pa-picks.js';
+    s.onload = fromPicks;
+    document.head.appendChild(s);
+  })();
   var SITE = [];
   // Other season / viewer pages count as their parent menu item.
   var ALIAS = {
@@ -103,12 +121,13 @@
     pick.className = 'pam-bar-pick';
     function showPick() {
       var d = document.documentElement.dataset;
-      var old = d.paPickOld === '1';
+      // data-pa-pick-old="1" = an older pick, "new" = an upcoming one.
+      var old = d.paPickOld === '1' || d.paPickOld === 'new';
       pick.textContent = d.paPick || CURRENT_PICK;
       if (old) {
         var tag = document.createElement('span');
         tag.className = 'pam-bar-old';
-        tag.textContent = ' · OLDER PICK';
+        tag.textContent = d.paPickOld === 'new' ? ' · UPCOMING PICK' : ' · OLDER PICK';
         pick.appendChild(tag);
       }
       pick.classList.toggle('old', old);

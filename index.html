@@ -1108,6 +1108,7 @@ header { flex-wrap: wrap !important; }
 }
 #vtip[hidden] { display: none; }
 </style>
+<script src="assets/pa-picks.js"></script>
 <script src="assets/pa-menu.js" defer></script>
 <script src="assets/pa-tags.js"></script>
 <script src="assets/pa-holiday.js"></script>
@@ -1117,7 +1118,7 @@ header { flex-wrap: wrap !important; }
 
 <div class="older-banner" id="older-banner" role="alert" hidden>
   <span class="older-banner-ico" aria-hidden="true">&#9888;</span>
-  <span class="older-banner-txt"><b>OLDER PICK</b> &mdash; you are looking at <b id="older-banner-pick">an older pick</b>, not the current <b>Fall 2026</b> pick.</span>
+  <span class="older-banner-txt"><b id="older-banner-kind">OLDER PICK</b> &mdash; you are looking at <b id="older-banner-pick">an older pick</b>, not the current<b id="older-banner-cur"></b> pick.</span>
   <a class="older-banner-back" href="index.html">Back to current pick</a>
 </div>
 
@@ -1191,31 +1192,22 @@ const isMobile = window.innerWidth <= 768;
 const DAY_ORDER = ['Sunday', 'Weekday', 'Saturday'];
 
 // ==========================================================================
-// SEASONS (picks). Each entry points at its own manifest file.
+// SEASONS (picks). Every pick comes from the owner's pick sheet (a Google
+// Sheet: pick name, start date, end date), read by assets/pa-picks.js. No
+// pick name or date is written here; a new pick is a new row in the sheet.
 //
-// The Paddles page (index.html) always shows the CURRENT pick - no pick
-// dropdown, so nobody lands on an old pick by accident. Its name shows under
-// "Paddle App" in the top bar (assets/pa-menu.js CURRENT_PICK - keep the two
-// in step when a new pick starts).
+// The Paddles page (index.html) always shows the CURRENT pick - the one whose
+// range holds today - with no pick dropdown, so nobody lands on another pick
+// by accident. Its name shows under "Paddle App" in the top bar.
 //
-// The older picks live on index.html?pick=older (menu: "Older Picks"): a pick
-// dropdown with every entry except the current one, newest first, plus a
-// yellow OLDER PICK banner so it is obvious this is not the current pick.
-//
-// NEW PICK: add it at the top with current: true and drop current from the
-// old one; update CURRENT_PICK in assets/pa-menu.js.
+// Every other pick in the sheet, past and future, is on index.html?pick=older
+// (menu: "Older Picks"): a pick dropdown, newest first, plus a yellow banner
+// so it is obvious this is not the current pick.
 // ==========================================================================
-const SEASONS = [
-  { id: 'fall2026',   label: 'Fall 2026',   manifest: 'data/manifest-fall-2026.json', current: true },
-  { id: 'summer2026', label: 'Summer 2026', manifest: 'data/manifest_summer.json' },
-  { id: 'spring2026', label: 'Spring 2026', manifest: 'data/manifest_fall2026.json' }
-];
+let SEASONS = [];          // newest first, filled in by initSeasons()
 const OLDER_PICKS = new URLSearchParams(location.search).get('pick') === 'older';
-const CURRENT_SEASON = SEASONS.find(s => s.current) || SEASONS[0];
-const PAGE_SEASONS = OLDER_PICKS ? SEASONS.filter(s => s !== CURRENT_SEASON) : [CURRENT_SEASON];
-// Tell the top bar (pa-menu.js, loads after this script) which pick to name.
-document.documentElement.dataset.paPick = PAGE_SEASONS[0].label;
-if (OLDER_PICKS) document.documentElement.dataset.paPickOld = '1';
+let CURRENT_SEASON = null;
+let PAGE_SEASONS = [];
 
 // ==========================================================================
 // ROUTE MATCH MODES
@@ -1370,17 +1362,29 @@ function getRunRoutes(run) {
   return routes;
 }
 
-function initSeasons() {
+async function initSeasons() {
   updateModeUI();
 
   const select = document.getElementById('season-select');
-  if (!SEASONS || SEASONS.length === 0) {
+  let picks = null;
+  try { picks = await PaPicks.load(); } catch (e) {
+    document.getElementById('grid').innerHTML = `<div class="error">${PaTags.esc(e.message)}</div>`;
+    return;
+  }
+  if (!picks || picks.length === 0) {
     document.getElementById('grid').innerHTML = `<div class="error">No seasons configured</div>`;
+    return;
+  }
+  SEASONS = picks.slice().reverse();
+  CURRENT_SEASON = PaPicks.current(picks);
+  PAGE_SEASONS = OLDER_PICKS ? SEASONS.filter(s => s.id !== CURRENT_SEASON.id) : [CURRENT_SEASON];
+  if (!PAGE_SEASONS.length) {
+    document.getElementById('grid').innerHTML = `<div class="error">The pick sheet has no other picks yet.</div>`;
     return;
   }
 
   select.innerHTML = PAGE_SEASONS
-    .map(s => `<option value="${s.id}">${s.label}</option>`)
+    .map(s => `<option value="${PaTags.esc(s.id)}">${PaTags.esc(s.label)}</option>`)
     .join('');
 
   // Paddles page: current pick only, no dropdown. Older Picks: dropdown.
@@ -1388,6 +1392,7 @@ function initSeasons() {
   if (OLDER_PICKS) {
     document.body.classList.add('older-pick');
     document.getElementById('older-banner').hidden = false;
+    document.getElementById('older-banner-cur').textContent = ' ' + CURRENT_SEASON.label;
   }
 
   // The older page keeps its own choice, so the rest of the app (My Run,
@@ -1395,7 +1400,10 @@ function initSeasons() {
   let saved = null;
   try { saved = localStorage.getItem(OLDER_PICKS ? 'paddleOldSeason' : 'paddleSeason'); } catch (_) {}
   const validSaved = PAGE_SEASONS.find(s => s.id === saved);
-  select.value = validSaved ? saved : PAGE_SEASONS[0].id;
+  // Older Picks opens on the newest pick before the current one, as before
+  // upcoming picks were listed too.
+  const first = PAGE_SEASONS.find(s => s.startDate < CURRENT_SEASON.startDate) || PAGE_SEASONS[0];
+  select.value = validSaved ? saved : first.id;
   changeSeason();
 }
 
@@ -1408,12 +1416,18 @@ async function changeSeason() {
     if (localStorage.getItem(key) !== season.id) localStorage.setItem(key, season.id);
   } catch (_) {}
   document.documentElement.dataset.paPick = season.label;
+  // A pick after the current one is an upcoming pick, not an older one.
+  const upcoming = OLDER_PICKS && season.startDate > CURRENT_SEASON.startDate;
+  if (OLDER_PICKS) document.documentElement.dataset.paPickOld = upcoming ? 'new' : '1';
   const bn = document.getElementById('older-banner-pick');
   if (bn) bn.textContent = season.label;
+  const bk = document.getElementById('older-banner-kind');
+  if (bk) bk.textContent = upcoming ? 'UPCOMING PICK' : 'OLDER PICK';
   window.dispatchEvent(new CustomEvent('pa:pick'));
 
   try {
-    const response = await fetch(season.manifest);
+    const response = await fetch('data/' + season.manifest);
+    if (response.status === 404) throw new Error('no paddles for ' + season.label + ' yet');
     if (!response.ok) throw new Error('Manifest not found');
     STATE.manifest = await response.json();
     initializeDistricts();

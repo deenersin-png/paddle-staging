@@ -164,7 +164,7 @@ export async function openSetup(node, { user, profile, overrides, onDone, runsOn
     perDay:     draft.perDay || null,
     scope:      draft.scope || null,
     slate:      draft.slate || { today: '', todayRun: '', tomorrow: '', tomorrowRun: '', week: 'none' },
-    // Filled in from picks.csv; the runs step needs the pick it is filling.
+    // Filled in from the pick sheet; the runs step needs the pick it is filling.
     season: null, depots: []
   };
 
@@ -761,10 +761,9 @@ export function windowFor(w, today) {
   const ws = S.weekStartOf(today);
   if (w.driverType === 'regular') {
     const from = w.season && w.season.start ? w.season.start : ws;
-    // picks.csv holds the NEXT pick's start as this one's end, so the last
-    // day covered is the day before it. The current pick has none: it runs
-    // until the operator enters their next one.
-    const to = w.season && w.season.end ? S.addDays(w.season.end, -1) : null;
+    // The pick sheet gives the pick's last day. A pick with none runs until
+    // the operator enters their next one.
+    const to = w.season && w.season.last ? w.season.last : null;
     return { from, to, preset: 'pick' };
   }
   const preset = w.driverType === 'slate' ? 'slate-week' : 'relief-week';
