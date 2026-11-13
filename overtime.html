@@ -164,19 +164,25 @@ body{background:#eef2f8;color:#08122b;font-family:'IBM Plex Sans Condensed',syst
 <script type="module">
 // ==========================================================================
 // Holiday Overtime: the runs posted for overtime sign-up on a holiday, from
-// a Google Sheet the app owner fills in:
+// a Google Sheet the app owner fills in. ONE TAB PER DEPOT, named like the
+// app's depot ("Callowhill Bus", "Allegheny"):
 //
-//   Run Number | Pick Date by | Holiday Date | Depot (optional)
-//   52         | 12/18/2026   | 12/25/2026   | Callowhill
+//   Run Number | Pick Date by | Holiday Date | Day
+//   201        | 12/18/2026   | 12/25/2026   | Sunday
+//   209        |              |              |          <- blank = same as above
 //
-// "Run Number" may hold several runs ("52, 53, 60"). Dates as Google Sheets
-// shows them (12/25/2026, 2026-12-25, Dec 25 2026; no year = the next one).
-// A row with no Depot counts for the depot picked on the page.
+// Pick Date by = when the sign-up ends. Day = the schedule worked that day
+// (a Friday holiday on the Sunday schedule says "Sunday"): its paddles are
+// shown. Blank Day = the schedule SEPTA's calendar says (PaHoliday).
+// Pick Date / Holiday Date / Day only need to be typed on the first row:
+// blank cells take the row above's. "Run Number" may hold several runs
+// ("52, 53, 60"). Dates as Google Sheets shows them (12/25/2026,
+// 2026-12-25, Dec 25 2026; no year = the next one).
 //
-// Each run is drawn as the Paddles scorecard from the paddle of the schedule
-// SEPTA runs on that date (PaHoliday: Christmas = Sunday paddles; an
-// alternate schedule uses the regular paddles + a warning, as elsewhere).
-// The pick is the one in force on the holiday. Scheduled times only.
+// Google answers a tab name it doesn't have with the FIRST tab, so the tab
+// list is read first (the sheet's htmlview page) and each tab is fetched by
+// its gid. Each run is drawn as the Paddles scorecard; the pick is the one
+// in force on the holiday. Scheduled times only.
 // ==========================================================================
 import {
   loadSeasons, seasonFor, loadManifest, loadPaddle, normalizeRun, loadPaddleLinks, parseCSV, dayLabel, fmtClock
@@ -184,7 +190,7 @@ import {
 import { modelFromRun, card, stack } from './assets/pa-run-card.js';
 
 const SHEET_ID = '1C8fuIoS_YOIRdtxBQgQ2o-BbyE1x_wF6DKppZKHEIPQ';
-const SHEET_CSV = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq?tqx=out:csv';
+const SHEET_BASE = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID;
 const H = window.PaHoliday;
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -231,6 +237,16 @@ function parseDate(s, today) {
   return { iso, min };
 }
 
+/** "Sunday" / "SUN" / "Sat" / "Weekday" -> 'sunday' | 'saturday' | 'weekday', else ''. */
+function parseDay(s) {
+  const l = String(s || '').trim().toLowerCase();
+  if (!l) return '';
+  if (l.startsWith('sun')) return 'sunday';
+  if (l.startsWith('sat')) return 'saturday';
+  if (/^(wk|week|mon|tue|wed|thu|fri)/.test(l)) return 'weekday';
+  return '';
+}
+
 // Header names, loosely ("Run #", "Holiday", "Pick by"...).
 // The first name that matches wins ("Holiday Date" before "Pick Date by" for 'date').
 function col(row, ...names) {
@@ -242,50 +258,81 @@ function col(row, ...names) {
   return '';
 }
 
-/** The sheet's rows -> [{ iso, runNo, pickIso, pickMin, depot }]. */
-function entriesOf(text, today) {
+/** One tab's rows -> [{ iso, runNo, pickIso, pickMin, day, depot }]. Blank
+ *  Pick Date / Holiday Date / Day cells take the row above's. */
+function entriesOf(text, depotName, today) {
   const out = [];
+  let hol = null, pick = null, day = '';
   parseCSV(text).forEach((r, i) => {
-    const hol = parseDate(col(r, 'holiday', 'workdate', 'date'), today);
+    const h = parseDate(col(r, 'holiday', 'workdate'), today);
+    const p = parseDate(col(r, 'pick', 'signup', 'deadline'), today);
+    // "Day" but not "Holiday Date".
+    const dk = Object.keys(r).find(k => /^(day|schedule|scheduleday|dayschedule|servingday)$/.test(k.replace(/[^a-z]/g, '')));
+    const dy = parseDay(dk ? r[dk] : '');
+    if (h) hol = h;
+    if (p) pick = p;
+    if (dy) day = dy;
     if (!hol) return;
-    const pick = parseDate(col(r, 'pick', 'signup', 'by', 'deadline'), today);
-    const depot = col(r, 'depot', 'district', 'garage').trim();
+    const depot = (col(r, 'depot', 'district', 'garage') || '').trim() || depotName;   // a Depot column (test list) wins
     const runs = String(col(r, 'run') || '').match(/\d{1,4}/g) || [];
-    runs.forEach(n => out.push({ iso: hol.iso, runNo: String(+n), pickIso: pick ? pick.iso : '', pickMin: pick ? pick.min : null, depot, row: i + 2 }));
+    runs.forEach(n => out.push({ iso: hol.iso, runNo: String(+n), pickIso: pick ? pick.iso : '', pickMin: pick ? pick.min : null, day, depot, row: i + 2 }));
   });
   // The same run twice on one date (listed again): once.
   const seen = new Set();
   return out.filter(e => { const k = e.iso + '|' + e.runNo + '|' + e.depot.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
 }
 
+// The sheet's tabs [{ name, gid }], from its htmlview page.
+async function sheetTabs() {
+  const r = await fetch(SHEET_BASE + '/htmlview?t=' + Date.now(), { cache: 'no-store' });
+  if (!r.ok) throw new Error(r.status);
+  const html = await r.text();
+  const unq = s => s.replace(/\\x([0-9a-f]{2})/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
+                    .replace(/\\u([0-9a-f]{4})/gi, (_, h) => String.fromCharCode(parseInt(h, 16))).replace(/\\(.)/g, '$1');
+  const tabs = [], re = /items\.push\(\{name: "((?:[^"\\]|\\.)*)",[^}]*?gid: "(\d+)"/g;
+  let m;
+  while ((m = re.exec(html))) tabs.push({ name: unq(m[1]).trim(), gid: m[2] });
+  if (!tabs.length) throw new Error('no tabs');
+  return tabs;
+}
+
+// Every tab: [{ name, text }]. Saved for no connection.
 let sheetSavedAt = 0, sheetStale = false;
 async function loadSheet() {
   const test = new URLSearchParams(location.search).get('sheet');           // staging test: a CSV next to the page
-  const url = test && /^[\w\/.-]+\.csv$/.test(test) ? test : SHEET_CSV + '&t=' + Date.now();
-  try {
-    const r = await fetch(url, { cache: 'no-store' });
-    if (!r.ok) throw new Error(r.status);
-    const text = await r.text();
-    if (!/run/i.test(text.split('\n')[0] || '')) throw new Error('not the sheet');
-    if (!test) { lsSet('ot_sheet', text); lsSet('ot_sheet_at', String(Date.now())); }
+  if (test && /^[\w\/.-]+\.csv$/.test(test)) {
+    const r = await fetch(test, { cache: 'no-store' });
     sheetSavedAt = Date.now(); sheetStale = false;
-    return text;
+    return [{ name: '', text: await r.text() }];
+  }
+  try {
+    const tabs = await sheetTabs();
+    const out = await Promise.all(tabs.map(async t => {
+      const r = await fetch(SHEET_BASE + '/gviz/tq?tqx=out:csv&gid=' + t.gid + '&t=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) throw new Error(r.status);
+      return { name: t.name, text: await r.text() };
+    }));
+    lsSet('ot_sheet2', JSON.stringify(out)); lsSet('ot_sheet_at', String(Date.now()));
+    sheetSavedAt = Date.now(); sheetStale = false;
+    return out;
   } catch (e) {
-    const saved = lsGet('ot_sheet');
+    let saved = null;
+    try { saved = JSON.parse(lsGet('ot_sheet2') || 'null'); } catch (_) {}
     if (!saved) throw e;
     sheetSavedAt = +lsGet('ot_sheet_at') || 0; sheetStale = true;
     return saved;
   }
 }
+const entriesOfAll = (tabs, today) => tabs.flatMap(t => entriesOf(t.text, t.name, today));
 
 // ---- depots ---------------------------------------------------------------------
+const letters = s => String(s || '').toLowerCase().replace(/[^a-z]/g, '');
 const normDepot = s => String(s || '').toLowerCase().replace(/\b(bus|depot|district|garage)\b/g, '').replace(/[^a-z]/g, '');
-/** Does a sheet Depot ("Callowhill", "Frankford Bus") name the depot `label` ("Callowhill Bus")? */
+/** Does a tab / Depot name ("Callowhill Bus", "Callowhill") name the depot `label`?
+ *  ("Frankford" = Frankford Bus, never Frankford Rail.) A row with no depot fits any. */
 function depotMatches(sheetDepot, label) {
   if (!sheetDepot) return true;
-  const a = String(sheetDepot).toLowerCase().replace(/[^a-z]/g, ''), b = String(label).toLowerCase().replace(/[^a-z]/g, '');
-  if (a === b) return true;
-  return normDepot(sheetDepot) === normDepot(label) || (normDepot(label).startsWith(normDepot(sheetDepot)) && normDepot(sheetDepot).length >= 4);
+  return letters(sheetDepot) === letters(label) || normDepot(sheetDepot) === normDepot(label);
 }
 
 // ---- state ------------------------------------------------------------------------
@@ -330,14 +377,16 @@ async function build() {
   const label = $('otDepot').value;
   const mine = entries.filter(e => depotMatches(e.depot, label));
   $('otList').innerHTML = mine.length ? '<div class="ot-msg">Loading ' + esc(label) + ' runs…</div>' : '';
-  const dates = [...new Set(mine.map(e => e.iso))];
+  // One group per date + schedule (the sheet's Day, else SEPTA's calendar).
+  const groups = [...new Set(mine.map(e => e.iso + '|' + e.day))];
   const out = [];
-  await Promise.all(dates.map(async iso => {
+  await Promise.all(groups.map(async g => {
+    const [iso, sheetDay] = g.split('|');
     const season = seasonFor(seasons, iso);
     const districts = season ? await loadManifest(season).catch(() => []) : [];
     const dist = districts.find(d => (d.label || d.name) === label) || districts.find(d => depotMatches(d.label || d.name, label));
     const base = H.info(iso, null, hdata);
-    const dayType = base.day;                         // 'sunday' | 'weekday' | 'saturday'
+    const dayType = sheetDay || base.day;             // 'sunday' | 'weekday' | 'saturday'
     let rows = new Map(), links = new Map();
     if (dist && (dist.days || []).includes(dayLabel(dayType))) {
       [rows, links] = await Promise.all([
@@ -346,8 +395,12 @@ async function build() {
     }
     // The depot's routes that day, so an alternate schedule counts only when it covers one.
     const runs = [...rows.values()].map(r => normalizeRun(r, dayType)).filter(Boolean);
-    const info = H.info(iso, [...new Set(runs.flatMap(r => r.pieces.map(p => p.routeLabel)))], hdata);
-    mine.filter(e => e.iso === iso).forEach(e => {
+    let info = H.info(iso, [...new Set(runs.flatMap(r => r.pieces.map(p => p.routeLabel)))], hdata);
+    // The sheet's Day wins. SEPTA's alternate-timetable warning stays only
+    // when it is about that same schedule.
+    if (sheetDay && sheetDay !== info.day) info = { ...info, day: sheetDay, dayLabel: dayLabel(sheetDay), changed: sheetDay !== info.plain, alt: false, altRoutes: [] };
+    else if (sheetDay) info = { ...info, changed: sheetDay !== info.plain };
+    mine.filter(e => e.iso === iso && e.day === sheetDay).forEach(e => {
       const row = rows.get(e.runNo) || null;
       const run = row ? normalizeRun(row, dayType) : null;
       const link = links.get(dayLabel(dayType) + '-' + e.runNo);
@@ -441,7 +494,7 @@ function dayHeader(iso, list) {
   if (i.alt) warn = '<div class="ot-warn"><b>Alternate schedule, no paddles:</b> SEPTA runs '
     + (i.changed ? 'a special timetable on ' + esc(i.altRoutes.join(', ')) : 'an alternate ' + esc(i.dayLabel) + ' timetable')
     + '. The times below are from the regular ' + esc(i.dayLabel) + ' paddles and may not match.</div>';
-  else if (i.changed) warn = '<div class="ot-n">SEPTA runs the <b>' + esc(i.dayLabel) + ' schedule</b>: these are the ' + esc(i.dayLabel) + ' paddles.</div>';
+  else if (i.changed) warn = '<div class="ot-n">Worked on the <b>' + esc(i.dayLabel) + ' schedule</b>: these are the ' + esc(i.dayLabel) + ' paddles.</div>';
   return '<div class="ot-dh ' + k + '"><div class="ot-cal" aria-label="' + esc(shortDate(iso)) + '"><div class="dw">' + DOW[d.getDay()] + '</div><div class="dn">' + d.getDate() + '</div><div class="mo">' + MON[d.getMonth()] + '</div></div>'
     + '<div class="ot-dh-body"><div class="ot-dh-top"><span class="ot-name">' + esc(name) + '</span>' + when + '</div>'
     + '<div class="ot-badges">' + badges + '</div><div class="ot-pick">' + pickLine + '</div>' + warn + '</div></div>';
@@ -558,10 +611,11 @@ window.addEventListener('storage', e => {
 let lastText = '';
 async function refresh() {
   try {
-    const text = await loadSheet();
+    const tabs = await loadSheet(), text = JSON.stringify(tabs);
     if (text === lastText) { render(); return; }
     lastText = text;
-    entries = entriesOf(text, today());
+    entries = entriesOfAll(tabs, today());
+    fillDepots();
     await build();
   } catch (_) {}
 }
@@ -570,22 +624,32 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 // "3 days left" / closed: once a minute.
 setInterval(() => { if (items.length) render(); }, 60000);
 
+// Depot dropdown: every depot of the pick; the ones with upcoming overtime say how many runs.
+function fillDepots() {
+  const sel = $('otDepot'), cur = sel.value, t = today();
+  sel.innerHTML = curDistricts.map(d => {
+    const label = d.label || d.name;
+    const n = entries.filter(e => e.iso >= t && depotMatches(e.depot, label)).length;
+    return '<option value="' + esc(label) + '">' + esc(label) + (n ? ' · ' + n + (n === 1 ? ' run' : ' runs') : '') + '</option>';
+  }).join('');
+  if (cur && curDistricts.some(d => (d.label || d.name) === cur)) sel.value = cur;
+}
+
 (async function init() {
   const s = lsGet('ot_sort');
   if (s && [...$('otSort').options].some(o => o.value === s)) $('otSort').value = s;
   $('otOpen').classList.toggle('on', openOnly); $('otOpen').setAttribute('aria-pressed', openOnly);
   try {
-    let text;
-    [seasons, hdata, text] = await Promise.all([loadSeasons(), H.load(), loadSheet()]);
-    lastText = text;
-    entries = entriesOf(text, today());
+    let tabs;
+    [seasons, hdata, tabs] = await Promise.all([loadSeasons(), H.load(), loadSheet()]);
+    lastText = JSON.stringify(tabs);
+    entries = entriesOfAll(tabs, today());
     // Depots of today's pick (the list's dates use their own pick's paddles).
     const season = seasonFor(seasons, today());
     curDistricts = season ? await loadManifest(season) : [];
-    const sel = $('otDepot');
-    sel.innerHTML = curDistricts.map(d => '<option value="' + esc(d.label || d.name) + '">' + esc(d.label || d.name) + '</option>').join('');
+    fillDepots();
     const saved = lsGet('bt_depot');
-    if (curDistricts.some(d => (d.label || d.name) === saved)) sel.value = saved;
+    if (curDistricts.some(d => (d.label || d.name) === saved)) $('otDepot').value = saved;
     await build();
   } catch (e) {
     $('otList').innerHTML = '<div class="ot-msg">Could not load the overtime list. Check your connection and try again.</div>';
