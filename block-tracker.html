@@ -451,6 +451,24 @@ const ROUTE_ALIASES = {
 function getAliases(route) {
   return ROUTE_ALIASES[route] || [route];
 }
+// Every route id SEPTA's GTFS has (data/shapes/index.json, built by
+// tools/build-shapes.mjs - BLVDDIR, 49, 135, …) plus this page's own ids
+// (ROUTES), so a route the list above doesn't name still counts. Keyed
+// without case, spaces or underscores ("L1OWL" = "L1 OWL" = "L1_OWL"); the
+// value is the id as TransitView and the GTFS files spell it. A pick name
+// on neither (work codes WR3-4, AFL, HRS, …) is not a route.
+const routeKey = r => String(r || '').toUpperCase().replace(/[\s_]+/g, '');
+const knownRoutes = new Map();
+function addKnownRoute(id) { const k = routeKey(id); if (k && !knownRoutes.has(k)) knownRoutes.set(k, String(id)); }
+ROUTES.forEach(addKnownRoute);
+let knownRoutesP = null;
+// Loaded once, before the pick is read; if it fails, ROUTES alone is used.
+function loadKnownRoutes() {
+  return knownRoutesP || (knownRoutesP = fetch(PADDLE_BASE + '/shapes/index.json')
+    .then(r => r.ok ? r.json() : null)
+    .then(j => { ((j && j.routes) || []).forEach(addKnownRoute); })
+    .catch(e => { console.warn('Route list load failed:', e); }));
+}
 const REFRESH_MS         = 30000;
 const FETCH_TIMEOUT_MS   = 8000;
 const LAYOVER_TIMEOUT_MS = 45 * 60000;
@@ -1274,7 +1292,7 @@ async function loadPaddleData() {
   if (paddle.loaded || paddle.loading) return;
   paddle.loading = true;
   try {
-    const [manifest, variants] = await Promise.all([fetch(PADDLE_BASE + '/manifest.json').then(r => r.json()), loadRunVariants()]);
+    const [manifest, variants] = await Promise.all([fetch(PADDLE_BASE + '/manifest.json').then(r => r.json()), loadRunVariants(), loadKnownRoutes()]);
     const now = new Date();
     const day = getDayType();                                        // today
     const late = isLateEvening(now);                                 // 11 PM-midnight
@@ -3550,7 +3568,7 @@ function renderTsDayRow() {
 async function loadPickDay(label) {
   if (tsPickCache.has(label)) return tsPickCache.get(label);
   const m = paddle.manifest || await fetch(PADDLE_BASE + '/manifest.json').then(r => r.json());
-  const variants = await loadRunVariants();
+  const [variants] = await Promise.all([loadRunVariants(), loadKnownRoutes()]);
   // A run listed in two versions: the one worked on this day's next date.
   let on = new Date();
   for (let i = 1; i <= 8; i++) { on = new Date(); on.setDate(on.getDate() + i); if (dayTypeOfDate(on) === label.toLowerCase()) break; }
@@ -4302,7 +4320,9 @@ function endSearch() {
 // kept by its label ("Frontier"), which stays the same from pick to pick.
 const lsGet = k => { try { return localStorage.getItem(k) || ''; } catch(e) { return ''; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch(e) {} };
-const routeRank = r => { const n = parseInt(r, 10); return isNaN(n) ? [1, r] : [0, n, r]; };
+// Numbered routes first, by number; then lettered ones (BLVDDIR, MFO, T1, …)
+// A-Z. Only an all-digit id is a number ("88S" is not route 88).
+const routeRank = r => /^\d+$/.test(String(r)) ? [0, Number(r), r] : [1, String(r)];
 function sortRoutes(list) {
   return list.slice().sort((a, b) => {
     const x = routeRank(a), y = routeRank(b);
@@ -4615,15 +4635,23 @@ async function blockToday(num, rows) {
 
 // The pick names routes its own way: owl lines by line name and a block
 // shared by two routes as "21-42". To this page's route ids; names with no
-// match (WR3-4, AFL, …) are dropped.
-const PICK_ROUTE_IDS = { 'B1 OWL': 'BSO', 'L1 OWL': 'MFO' };
+// match (WR3-4, AFL, …) are dropped. Any id SEPTA has works, letters or
+// digits (BLVDDIR, 49, T1); see knownRoutes. Keyed by routeKey, so the
+// pick's "L1OWL" (Comly) is the same night line as "L1 OWL".
+const PICK_ROUTE_IDS = { 'B1OWL': 'BSO', 'L1OWL': 'MFO' };
+function pickRouteId(n) {
+  n = String(n || '').trim();
+  if (!n) return null;
+  if (PICK_ROUTE_IDS[routeKey(n)]) return PICK_ROUTE_IDS[routeKey(n)];
+  if (ROUTES.some(x => isSameRoute(x, n))) return n;
+  return knownRoutes.get(routeKey(n)) || null;
+}
 function pickRoutes(names) {
-  const known = r => ROUTES.some(x => isSameRoute(x, r));
   return names.flatMap(n => {
-    if (PICK_ROUTE_IDS[n]) return [PICK_ROUTE_IDS[n]];
-    if (known(n)) return [n];
-    const parts = n.split('-');
-    return parts.length > 1 && parts.every(known) ? parts : [];
+    const id = pickRouteId(n);
+    if (id) return [id];
+    const parts = String(n || '').split('-').map(pickRouteId);
+    return parts.length > 1 && parts.every(Boolean) ? parts : [];
   });
 }
 
