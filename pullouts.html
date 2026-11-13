@@ -140,6 +140,11 @@ const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMin
 
 let districts = [], overrides = {}, view = lsGet('po_view') === 'in' ? 'in' : 'out';
 let events = { out: [], in: [] }, loadSeq = 0, dayKey = '';
+// Last night's pull ins stay on the list until the last one is in (+2 min),
+// not cut at 4 AM: Midvale has some at 4:03 / 4:04 AM. Clock minutes.
+let leftoverEnd = OWL_END;
+const LEFTOVER_LOOK = 8 * 60;       // look for last night's pull ins until 8 AM
+const keyFor = now => todayIso() + '|' + (now < Math.max(OWL_END, leftoverEnd) ? 'owl' : now >= NIGHT_FROM ? 'late' : 'day');
 // Day tags: today's day (live: next / past, "in 5 min") or another day of the
 // depot's schedule (that day's list, plain). Search: run or block number.
 let selDay = '';                    // '' = today
@@ -195,7 +200,7 @@ async function build() {
     if (my !== loadSeq) return;
     events = ev;
     fillRoutes();
-    dayKey = today + '|' + (now < OWL_END ? 'owl' : now >= NIGHT_FROM ? 'late' : 'day');
+    dayKey = keyFor(now);
     render(true);
     return;
   }
@@ -205,10 +210,19 @@ async function build() {
   const sets = [];
   // Today's runs, on today's clock.
   if (has(tType)) sets.push({ list: await runsOf(dist.name, tType).catch(() => []), shift: 0, keep: () => true });
-  // Midnight-4 AM: last night's runs that pull in after midnight.
-  if (now < OWL_END) {
+  // After midnight: last night's runs that pull in after midnight - until 4 AM,
+  // or later while one of them still has to pull in (then +2 min).
+  leftoverEnd = OWL_END;
+  if (now < LEFTOVER_LOOK) {
     const yType = dayTypeFor(addDays(today, -1), overrides);
-    if (has(yType)) sets.push({ list: await runsOf(dist.name, yType).catch(() => []), shift: -1440, keep: x => !isNight(x.row), lastNight: true });
+    if (has(yType)) {
+      const list = await runsOf(dist.name, yType).catch(() => []);
+      let last = -1;
+      for (const x of list) if (x.run && !isNight(x.row)) for (const p of x.run.pieces)
+        if (String(p.endType).toUpperCase() === 'I' && p.endMin != null && p.endMin - 1440 >= 0) last = Math.max(last, p.endMin - 1440);
+      leftoverEnd = Math.max(OWL_END, last + 3);
+      if (now < leftoverEnd) sets.push({ list, shift: -1440, keep: x => !isNight(x.row), lastNight: true });
+    }
   }
   // From 11 PM: tomorrow's night liners pull out after midnight.
   if (now >= NIGHT_FROM) {
@@ -239,7 +253,7 @@ async function build() {
   if (my !== loadSeq) return;
   events = ev;
   fillRoutes();
-  dayKey = today + '|' + (now < OWL_END ? 'owl' : now >= NIGHT_FROM ? 'late' : 'day');
+  dayKey = keyFor(now);
   render(true);
 }
 
@@ -423,7 +437,7 @@ function render(scroll) {
 // Every 30 s: "in 5 min" / "2 min ago" and which are past; at midnight, 4 AM
 // and 11 PM the day's set changes, so build again.
 setInterval(() => {
-  const now = nowMin(), key = todayIso() + '|' + (now < OWL_END ? 'owl' : now >= NIGHT_FROM ? 'late' : 'day');
+  const now = nowMin(), key = keyFor(now);
   if (key !== dayKey) { build(); return; }
   if (otherDay()) return;
   const list = inView();
