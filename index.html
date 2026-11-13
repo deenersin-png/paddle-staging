@@ -1487,10 +1487,12 @@ async function changeDistrict() {
   const myToken = ++loadToken;
 
   try {
+    // The day the user picked stays when they switch depots (if it has it);
+    // otherwise the depot opens on today's day (startDay, after loading).
+    const pickedDay = DAY_CHOSEN ? STATE.currentDay : '';
     STATE.runs = [];
     STATE.availableDays = [];
     STATE.pdfLinks = {};
-    STATE.currentDay = 'Weekday';
 
     // Load into locals, then publish to STATE only if this is still the
     // newest request. Capture the district name too, so a mid-flight switch
@@ -1542,6 +1544,7 @@ async function changeDistrict() {
     STATE.runs = runs;
     STATE.availableDays = availableDays;
     STATE.pdfLinks = pdfLinks;
+    STATE.currentDay = availableDays.includes(pickedDay) ? pickedDay : startDay();
 
     initializeDayButtons();
     render();
@@ -1581,8 +1584,24 @@ function applyTodayLabel() {
   let t = PaTags.todayLabel();
   if (HOLIDAY_DATA) t = PaHoliday.info(PaHoliday.todayIso(), null, HOLIDAY_DATA).dayLabel;
   if (sheetNotices().some(n => n.kind === 'sunday')) t = 'Sunday';
-  if (t !== TODAY_LABEL) { TODAY_LABEL = t; renderDayTags(); }
+  if (t === TODAY_LABEL) return;
+  TODAY_LABEL = t;
+  // The holiday data came in after the runs: still on the day it opened
+  // with (not one the user picked) -> move to today's.
+  if (!DAY_CHOSEN && STATE.availableDays.includes(t) && STATE.currentDay !== t) changeDay(t);
+  else renderDayTags();
 }
+// PADDLES OPENS ON TODAY'S DAY (user's rule, 2026-11-13): Sunday on a
+// Sunday, Weekday Mon-Fri, Saturday on a Saturday - and on a holiday, the
+// schedule SEPTA runs (Thanksgiving: Sunday). TODAY_LABEL has that; a depot
+// without that day's paddles opens on Weekday (else its first day). Once the
+// user taps a day it stays theirs (DAY_CHOSEN), also across depots.
+var DAY_CHOSEN = false;   // var: changeDistrict reads it before this line runs
+function startDay() {
+  const d = STATE.availableDays;
+  return d.includes(TODAY_LABEL) ? TODAY_LABEL : d.includes('Weekday') ? 'Weekday' : (d[0] || 'Weekday');
+}
+function chooseDay(day) { DAY_CHOSEN = true; changeDay(day); }
 // Today's notices from the overtime sheet's Dates tab (columns H-K).
 function sheetNotices() {
   if (!OT_DATA || OLDER_PICKS) return [];
@@ -1608,7 +1627,7 @@ function renderHoliday() {
 }
 document.getElementById('pa-holiday').addEventListener('click', e => {
   const b = e.target.closest('[data-pa-hol-day]');
-  if (b && STATE.availableDays.includes(b.dataset.paHolDay)) changeDay(b.dataset.paHolDay);
+  if (b && STATE.availableDays.includes(b.dataset.paHolDay)) chooseDay(b.dataset.paHolDay);
 });
 
 function renderDayTags() {
@@ -1672,11 +1691,11 @@ setInterval(renderOvertime, 60000);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') loadOvertime(true); });
 document.getElementById('pa-ot').addEventListener('click', e => {
   const b = e.target.closest('[data-pa-hol-day]');
-  if (b && STATE.availableDays.includes(b.dataset.paHolDay) && b.dataset.paHolDay !== STATE.currentDay) changeDay(b.dataset.paHolDay);
+  if (b && STATE.availableDays.includes(b.dataset.paHolDay) && b.dataset.paHolDay !== STATE.currentDay) chooseDay(b.dataset.paHolDay);
 });
 document.getElementById('day-selector').addEventListener('click', e => {
   const b = e.target.closest('[data-day]');
-  if (b && b.dataset.day !== STATE.currentDay) changeDay(b.dataset.day);
+  if (b && b.dataset.day !== STATE.currentDay) chooseDay(b.dataset.day);
 });
 
 function initializeDayButtons() {
