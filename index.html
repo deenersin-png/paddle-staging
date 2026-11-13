@@ -1548,8 +1548,9 @@ let TODAY_LABEL = PaTags.todayLabel();
 // (day after Thanksgiving, Christmas Eve, the week after Christmas, MLK Day,
 // some suburban Saturdays) there are no paddles for what runs: the banner
 // says the info here is limited and points to Live, which uses SEPTA's live
-// data for the day. Only when it covers this depot's routes. Below it, the
-// special days of the next two weeks. index.html?today=2026-11-27 previews a date.
+// data for the day. Only when it covers this depot's routes. Shown on the day
+// itself and the day before (user's rule, 2026-11-13) - the full list is on
+// holidays.html. index.html?today=2026-11-27 previews a date.
 let HOLIDAY_DATA = null;
 PaHoliday.load().then(d => {
   HOLIDAY_DATA = d;
@@ -1564,9 +1565,11 @@ function renderHoliday() {
   if (HOLIDAY_DATA && !OLDER_PICKS && STATE.runs.length) {
     const routes = [...new Set(STATE.runs.flatMap(getRunRoutes))];
     const today = PaHoliday.todayIso();
-    html = PaHoliday.noticeHtml(PaHoliday.info(today, routes, HOLIDAY_DATA), {
-      page: 'paddles', curDay: STATE.currentDay, liveHref: 'block-tracker.html',
-      next: PaHoliday.upcoming(HOLIDAY_DATA, routes, 14, today) });
+    const ti = PaHoliday.info(today, routes, HOLIDAY_DATA);
+    const tmr = PaHoliday.info(PaHoliday.addDays(today, 1), routes, HOLIDAY_DATA);
+    const opts = { page: 'paddles', curDay: STATE.currentDay, liveHref: 'block-tracker.html', listHref: 'holidays.html' };
+    if (PaHoliday.isSpecial(ti)) html = PaHoliday.noticeHtml(ti, Object.assign(opts, { next: [tmr] }));
+    else if (PaHoliday.isSpecial(tmr)) html = PaHoliday.noticeHtml(tmr, Object.assign(opts, { tomorrow: true }));
   }
   if (el.innerHTML !== html) el.innerHTML = html;
 }

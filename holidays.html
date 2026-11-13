@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Holidays · Paddle App</title>
+
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-QXEKGF4DXT"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-XXXXXXXXXX');
+</script>
+
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/pa-account.css">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b4ea2">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--sans:'IBM Plex Sans Condensed',sans-serif;--mono:'IBM Plex Mono',monospace;
+  --sun:#12753a;--sun-bg:#e7f4ec;--alt:#b4510d;--alt-bg:#fff1d6;--alt-line:#c8102e}
+body{background:var(--ink,#f2f5fa);color:var(--text,#17213a);font-family:var(--sans);min-height:100vh}
+header{padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;position:sticky;z-index:200}
+.wrap{max-width:720px;margin:0 auto;padding:18px 16px 48px}
+h1{font-size:24px;line-height:1.2;color:var(--bright,#08122b);margin-bottom:6px}
+.lead{font-size:16px;line-height:1.5;color:var(--mid,#3a4660);margin-bottom:16px}
+
+/* The two kinds of day */
+.kinds{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px}
+.kind{background:#fff;border:1px solid var(--line,rgba(10,30,70,.14));border-left:5px solid;border-radius:8px;padding:10px 12px;font-size:14px;line-height:1.45}
+.kind b.k{display:block;font-size:13px;letter-spacing:.04em;margin-bottom:3px}
+.kind.sun{border-left-color:var(--sun)}.kind.sun b.k{color:var(--sun)}
+.kind.alt{border-left-color:var(--alt)}.kind.alt b.k{color:var(--alt)}
+
+/* Next special day */
+.next{display:flex;align-items:center;gap:12px;background:var(--pa-blue,#0b4ea2);color:#fff;border-radius:10px;padding:12px 14px;margin-bottom:20px}
+.next .cnt{font-family:var(--mono);font-weight:600;font-size:26px;line-height:1;white-space:nowrap}
+.next .cnt small{display:block;font-size:11px;font-weight:500;letter-spacing:.06em;opacity:.85;margin-top:3px}
+.next .what{flex:1;min-width:0;font-size:15px;line-height:1.35}
+.next .what b{display:block;font-size:16px}
+
+/* Month groups + day cards */
+.month{font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.1em;color:var(--dim,#56627a);margin:18px 2px 8px}
+.day{display:flex;gap:12px;background:#fff;border:1px solid var(--line,rgba(10,30,70,.14));border-radius:10px;padding:10px;margin-bottom:8px}
+.day.is-today{box-shadow:0 0 0 3px var(--pa-blue,#0b4ea2)}
+.date{flex:0 0 58px;border-radius:8px;color:#fff;text-align:center;padding:6px 0 7px;font-family:var(--mono);align-self:flex-start}
+.date .dw{font-size:11px;font-weight:600;letter-spacing:.06em;opacity:.9}
+.date .dn{font-size:24px;font-weight:600;line-height:1.05}
+.date .mo{font-size:11px;font-weight:500;letter-spacing:.06em;opacity:.9}
+.day.sun .date{background:var(--sun)}.day.alt .date{background:var(--alt)}
+.body{flex:1;min-width:0}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin-bottom:4px}
+.name{font-weight:700;font-size:17px;color:var(--bright,#08122b)}
+.when{font-family:var(--mono);font-size:11px;font-weight:600;padding:2px 7px;border-radius:999px;background:var(--ink3,#e6ecf6);color:var(--mid,#3a4660)}
+.when.now{background:var(--pa-blue,#0b4ea2);color:#fff}
+.badge{display:inline-block;font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.03em;padding:3px 7px;border-radius:4px;margin:2px 4px 4px 0}
+.badge.sun{background:var(--sun-bg);color:var(--sun)}
+.badge.alt{background:var(--alt-bg);color:var(--alt);box-shadow:inset 0 0 0 1px rgba(180,81,13,.35)}
+.lines{list-style:none;font-size:14px;line-height:1.45;color:var(--text,#17213a)}
+.lines li{padding-left:16px;position:relative;margin-top:2px}
+.lines li::before{content:'';position:absolute;left:3px;top:.6em;width:6px;height:6px;border-radius:50%;background:var(--line3,rgba(10,30,70,.42))}
+.lines li.warn::before{background:var(--alt-line)}
+details.routes{margin-top:6px}
+details.routes summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--pa-blue,#0b4ea2);list-style:none;display:inline-flex;align-items:center;gap:4px;min-height:28px}
+details.routes summary::-webkit-details-marker{display:none}
+details.routes summary::before{content:'\25B8';transition:transform .15s}
+details.routes[open] summary::before{transform:rotate(90deg)}
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.chip{font-family:var(--mono);font-size:12px;font-weight:600;padding:2px 6px;border-radius:4px;background:var(--ink3,#e6ecf6);color:var(--bright,#08122b)}
+.acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.act{font-size:13px;font-weight:700;text-decoration:none;padding:6px 11px;border-radius:6px;background:var(--pa-blue,#0b4ea2);color:#fff}
+.act.alt{background:var(--alt-line)}
+
+details.past{margin-top:22px}
+details.past > summary{cursor:pointer;font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.1em;color:var(--dim,#56627a);min-height:32px;display:flex;align-items:center}
+details.past .day{opacity:.6}
+
+.foot{margin-top:22px;font-size:13px;line-height:1.5;color:var(--dim,#56627a)}
+.foot p+p{margin-top:6px}
+.msg{padding:24px 4px;color:var(--dim,#56627a);font-size:15px}
+@media (max-width:560px){
+  .kinds{grid-template-columns:1fr}
+  .date{flex-basis:52px}.date .dn{font-size:21px}
+  .name{font-size:16px}
+}
+</style>
+<link rel="stylesheet" href="assets/pa-theme.css">
+<link rel="stylesheet" href="assets/pa-menu.css">
+<script src="assets/pa-menu.js" defer></script>
+<script src="assets/pa-tags.js"></script>
+<script src="assets/pa-holiday.js"></script>
+</head>
+<body>
+
+<header>
+  <div class="hd-left">
+    <div><div class="hd-title">HOLIDAYS</div></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <h1>Holidays &amp; alternate schedules</h1>
+  <p class="lead">Days when SEPTA does not run its normal timetable, from SEPTA's own schedule data.</p>
+
+  <div class="kinds">
+    <div class="kind sun"><b class="k">SUNDAY SCHEDULE</b>
+      SEPTA runs the Sunday timetable. The Sunday paddles are complete: use them for the day.</div>
+    <div class="kind alt"><b class="k">ALTERNATE SCHEDULE &middot; NO PADDLES</b>
+      A special timetable with no paddles. Run times, reports and pull-outs in the app come from the regular paddles and may not match. Live and Trip Sheets show the day's real trips.</div>
+  </div>
+
+  <div id="list"><p class="msg">Loading SEPTA's calendar&hellip;</p></div>
+
+  <div class="foot" id="foot"></div>
+</main>
+
+<script>
+(function () {
+  'use strict';
+  const H = window.PaHoliday, esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+  const MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const DOW = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+  const DAYMS = 86400000;
+  const daysBetween = (a, b) => Math.round((H.dateOf(b) - H.dateOf(a)) / DAYMS);
+  const longDate = iso => { const d = H.dateOf(iso); return DOW[d.getDay()] + ' ' + MON[d.getMonth()] + ' ' + d.getDate() + ' ' + d.getFullYear(); };
+
+  // The day's name: the holiday, else what kind of day it is.
+  function title(i) {
+    if (i.name) return i.name;
+    const md = i.iso.slice(5);
+    if (i.alt && i.plain === 'weekday' && md >= '12-20') return 'Holiday week';
+    if (i.alt) return 'Alternate ' + i.dayLabel;
+    return i.dayLabel + ' schedule';
+  }
+  function whenTag(n) {
+    if (n === 0) return '<span class="when now">TODAY</span>';
+    if (n === 1) return '<span class="when now">TOMORROW</span>';
+    if (n > 1) return '<span class="when">IN ' + n + ' DAYS</span>';
+    return '';
+  }
+  // An alternate that covers only a few routes on a day that otherwise runs
+  // another schedule (Thanksgiving: Sunday, + L1/B1 on their own timetable).
+  const partAlt = i => i.alt && i.changed;
+
+  function card(i, today) {
+    const n = daysBetween(today, i.iso), d = H.dateOf(i.iso);
+    const kind = i.alt && !partAlt(i) ? 'alt' : 'sun';
+    let badges = '', lines = [];
+    if (i.changed) {
+      badges += '<span class="badge sun">' + esc(i.day.toUpperCase()) + ' SCHEDULE</span>';
+      lines.push('<li>Use the <b>' + esc(i.dayLabel) + ' paddles</b> for the day.</li>');
+    }
+    if (i.alt) {
+      const r = i.altRoutes;
+      if (partAlt(i)) {
+        badges += '<span class="badge alt">' + esc(r.join(', ')) + ': ALTERNATE &middot; NO PADDLES</span>';
+        lines.push('<li class="warn"><b>' + esc(r.join(' and ')) + '</b> run their own special timetable: no paddles, so their run times may not match. Live shows the real trips.</li>');
+      } else {
+        badges += '<span class="badge alt">ALTERNATE ' + esc(i.dayLabel.toUpperCase()) + ' &middot; NO PADDLES</span>';
+        lines.push('<li class="warn"><b>No paddles:</b> run times, reports and pull-outs come from the regular ' + esc(i.dayLabel) + ' paddles and may not match.</li>');
+        lines.push('<li>Live and Trip Sheets show the day\'s real trips.</li>');
+        lines.push('<li>' + r.length + ' route' + (r.length === 1 ? '' : 's') + ' on it; the others run their normal ' + esc(i.dayLabel) + ' schedule.</li>');
+      }
+    }
+    const routes = i.alt && !partAlt(i)
+      ? '<details class="routes"><summary>Routes on the alternate schedule (' + i.altRoutes.length + ')</summary><div class="chips">'
+        + i.altRoutes.map(r => '<span class="chip">' + esc(r) + '</span>').join('') + '</div></details>' : '';
+    const acts = n === 0
+      ? '<div class="acts"><a class="act" href="index.html">Open Paddles</a>' + (i.alt ? '<a class="act alt" href="block-tracker.html">Open Live</a>' : '') + '</div>' : '';
+    return '<div class="day ' + kind + (n === 0 ? ' is-today' : '') + '" id="d-' + i.iso + '">'
+      + '<div class="date" aria-label="' + esc(longDate(i.iso)) + '"><div class="dw">' + DOW[d.getDay()] + '</div><div class="dn">' + d.getDate() + '</div><div class="mo">' + MON[d.getMonth()] + '</div></div>'
+      + '<div class="body"><div class="top"><span class="name">' + esc(title(i)) + '</span>' + whenTag(n) + '</div>'
+      + '<div>' + badges + '</div><ul class="lines">' + lines.join('') + '</ul>' + routes + acts + '</div></div>';
+  }
+
+  function groups(list, today) {
+    let html = '', month = '';
+    list.forEach(i => {
+      const d = H.dateOf(i.iso), m = MONTH[d.getMonth()] + ' ' + d.getFullYear();
+      if (m !== month) { month = m; html += '<div class="month">' + esc(m.toUpperCase()) + '</div>'; }
+      html += card(i, today);
+    });
+    return html;
+  }
+
+  function nextBox(i, today) {
+    const n = daysBetween(today, i.iso);
+    const cnt = n === 0 ? 'TODAY' : n === 1 ? '1<small>DAY</small>' : n + '<small>DAYS</small>';
+    const what = i.alt && !partAlt(i) ? 'Alternate ' + i.dayLabel + ' schedule, no paddles'
+      : i.dayLabel + ' schedule' + (i.alt ? ' (' + i.altRoutes.join(', ') + ' alternate)' : '');
+    return '<a class="next" href="#d-' + i.iso + '" style="text-decoration:none"><div class="cnt">' + cnt + '</div>'
+      + '<div class="what"><b>' + (n > 1 ? 'Next: ' : '') + esc(title(i)) + ' &middot; ' + esc(longDate(i.iso).slice(0, -5)) + '</b>' + esc(what) + '</div></a>';
+  }
+
+  H.load().then(data => {
+    const today = H.todayIso();
+    const dates = Object.keys(data.days || {}).sort();
+    const isos = dates.length ? dates : Object.keys(data.ov || {}).sort();
+    const all = isos.map(iso => H.info(iso, null, data)).filter(H.isSpecial);
+    const past = all.filter(i => i.iso < today), coming = all.filter(i => i.iso >= today);
+    const el = document.getElementById('list');
+    if (!all.length) { el.innerHTML = '<p class="msg">No holiday or alternate schedule in SEPTA\'s current calendar.</p>'; return; }
+    let html = coming.length ? nextBox(coming[0], today) + groups(coming, today)
+      : '<p class="msg">No more holidays in SEPTA\'s current schedule.</p>';
+    if (past.length) html += '<details class="past"><summary>PAST DATES (' + past.length + ')</summary>' + groups(past, today) + '</details>';
+    el.innerHTML = html;
+    const last = dates[dates.length - 1];
+    document.getElementById('foot').innerHTML =
+      (last ? '<p>SEPTA\'s current schedule runs through <b>' + esc(longDate(last)) + '</b>. Later holidays (Memorial Day, July 4th&hellip;) show here once SEPTA publishes its next schedule.</p>' : '')
+      + '<p>This is an unofficial tool. Always check SEPTA\'s official holiday notices and your depot.</p>';
+  }).catch(() => {
+    document.getElementById('list').innerHTML = '<p class="msg">Could not load SEPTA\'s calendar. Check your connection and try again.</p>';
+  });
+})();
+</script>
+<script type="module" src="assets/pa-account-ui.js"></script>
+</body>
+</html>

@@ -23,6 +23,7 @@
     ['Relief Runs', 'holdowner-fall-2026.html'],
     ['Detours',    'detours.html'],
     ['Older Picks', 'index.html?pick=older'],
+    ['Holidays',   'holidays.html'],
     ['About',      'about.html']
   ];
   // The pick the app is on, shown under "Paddle App". A page can name another

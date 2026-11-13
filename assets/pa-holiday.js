@@ -144,26 +144,25 @@
 
   /**
    * The banner for a special day, '' for a plain one.
-   * opts.today   it is today (default) - else "on <date>"
+   * opts.tomorrow  the day is tomorrow (the day-before notice) - else today
    * opts.page    'paddles' (buttons: show that day's runs / open Live) or 'live'
    * opts.curDay  the day the page shows ('Weekday'...), so a button to the
    *              right one only shows when it is not on it
    * opts.liveHref  where "Open Live" goes
-   * opts.next    upcoming(...) - one line each under the banner
+   * opts.next    special days after it (tomorrow's) - one line each under the banner
+   * opts.listHref  the Holidays page ("All holidays" link)
    */
   function noticeHtml(i, opts) {
     const o = opts || {}, esc = T().esc;
-    const when = o.today === false ? 'on ' + fmt(i.iso) : 'today';
-    const next = (o.next || []).filter(isSpecial).slice(0, 3);
-    if (!isSpecial(i)) {
-      if (!next.length) return '';
-      return '<div class="pa-hol pa-hol-soon" role="status">' + nextLines(next) + '</div>';
-    }
-    const title = esc((i.name ? i.name.toUpperCase() + ' · ' : '') + fmt(i.iso));
+    const tm = !!o.tomorrow;
+    const when = tm ? 'tomorrow' : 'today';
+    const next = (o.next || []).filter(isSpecial).slice(0, 2);
+    if (!isSpecial(i)) return '';
+    const title = esc((tm ? 'TOMORROW · ' : '') + (i.name ? i.name.toUpperCase() + ' · ' : '') + fmt(i.iso));
     let body = '', btn = '';
     if (i.changed) {
       body += 'SEPTA runs the <b>' + esc(i.day.toUpperCase()) + ' schedule</b> ' + when + '.';
-      if (!i.alt) body += ' ' + (o.today === false ? 'Its' : "Today's") + ' runs are the ' + esc(i.dayLabel) + ' paddles.';
+      if (!i.alt) body += ' ' + (tm ? "Tomorrow's" : "Today's") + ' runs are the ' + esc(i.dayLabel) + ' paddles.';
     }
     if (i.alt) {
       body += (i.changed ? ' On ' + esc(routesText(i)) + ' it is an <b>alternate timetable</b>.'
@@ -171,13 +170,15 @@
       body += ' <b>Its paddles are not available</b>, so the info here is limited: run times, reports and pull-outs are from the regular '
         + esc(i.dayLabel) + ' paddles and may not match.';
       body += o.page === 'live'
-        ? ' The trips and buses here are SEPTA\'s ' + (o.today === false ? '' : 'live ') + 'data for ' + (o.today === false ? 'that day' : 'today') + '.'
-        : ' Live and Trip Sheets show ' + (o.today === false ? 'that day' : "today") + '\'s real trips from SEPTA\'s live data.';
+        ? (tm ? '' : ' The trips and buses here are SEPTA\'s live data for today.')
+        : (tm ? ' On the day, Live and Trip Sheets show its real trips from SEPTA\'s live data.'
+              : ' Live and Trip Sheets show today\'s real trips from SEPTA\'s live data.');
     }
     if (o.page === 'paddles') {
       if (o.curDay && o.curDay !== i.dayLabel) btn += '<button type="button" class="pa-hol-btn" data-pa-hol-day="' + esc(i.dayLabel) + '">Show ' + esc(i.dayLabel) + ' runs</button>';
-      if (i.alt && o.today !== false) btn += '<a class="pa-hol-btn" href="' + esc(o.liveHref || 'block-tracker.html') + '">Open Live</a>';
+      if (i.alt && !tm) btn += '<a class="pa-hol-btn" href="' + esc(o.liveHref || 'block-tracker.html') + '">Open Live</a>';
     }
+    if (o.listHref) btn += '<a class="pa-hol-btn pa-hol-btn2" href="' + esc(o.listHref) + '">All holidays</a>';
     return '<div class="pa-hol ' + (i.alt ? 'pa-hol-alt' : 'pa-hol-sun') + '" role="status">'
       + '<span class="pa-hol-ico" aria-hidden="true">' + (i.alt ? '&#9888;' : '&#128197;') + '</span>'
       + '<div class="pa-hol-txt"><b class="pa-hol-title">' + title + '</b><span>' + body + '</span>'
@@ -186,7 +187,7 @@
   }
   function nextLines(list) {
     const esc = T().esc;
-    return list.map(i => '<span class="pa-hol-line"><b>Coming up:</b> ' + esc(fmt(i.iso)) + (i.name ? ' · ' + esc(i.name) : '') + ' · '
+    return list.map(i => '<span class="pa-hol-line"><b>Tomorrow:</b> ' + esc(fmt(i.iso)) + (i.name ? ' · ' + esc(i.name) : '') + ' · '
       + (i.alt ? (i.changed ? esc(i.dayLabel) + ' schedule, alternate on some routes' : 'alternate ' + esc(i.dayLabel) + ' schedule') + ' <i>(no paddles)</i>'
                : esc(i.dayLabel) + ' schedule') + '</span>').join('');
   }
@@ -197,7 +198,6 @@
   font-size: 14px; line-height: 1.35; border-bottom: 3px solid; }
 .pa-hol-sun { background: #e8f1ff; color: #06295a; border-color: #06295a; }
 .pa-hol-alt { background: #fff1d6; color: #3a2400; border-color: #c8102e; }
-.pa-hol-soon { background: #f3f6fb; color: #06295a; border-color: #c9d6ea; border-bottom-width: 1px; padding: 6px 16px; font-size: 13px; }
 .pa-hol-ico { font-size: 20px; line-height: 1.1; }
 .pa-hol-txt { flex: 1 1 240px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .pa-hol-title { letter-spacing: .02em; }
@@ -207,11 +207,12 @@
 .pa-hol-btn { flex: 0 0 auto; padding: 7px 12px; border-radius: 6px; border: 0; background: #06295a; color: #fff;
   font: inherit; font-weight: 700; font-size: 13px; text-decoration: none; cursor: pointer; }
 .pa-hol-alt .pa-hol-btn { background: #c8102e; }
+.pa-hol .pa-hol-btn2 { background: transparent; color: inherit; box-shadow: inset 0 0 0 2px currentColor; }
 @media (max-width: 480px) { .pa-hol { padding: 8px 12px; font-size: 13px; } }`;
   if (!document.getElementById('pa-hol-css')) {
     const s = document.createElement('style'); s.id = 'pa-hol-css'; s.textContent = css;
     (document.head || document.documentElement).appendChild(s);
   }
 
-  window.PaHoliday = { load, todayIso, info, upcoming, noticeHtml, holidayName, isoOf, addDays };
+  window.PaHoliday = { load, todayIso, info, isSpecial, upcoming, noticeHtml, holidayName, isoOf, addDays, dateOf };
 })();
