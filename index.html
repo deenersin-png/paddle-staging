@@ -1049,12 +1049,17 @@ body.older-pick .hd-dot { display: none; }
 header { flex-wrap: wrap !important; }
 .hd-tools { flex: 1 1 100%; min-width: 0; }
 /* Holiday overtime open for sign-up (assets/pa-overtime.js): one long button
-   per holiday under the day tags, while it is published. */
+   per holiday under the day tags, while it is published. Gold on the blue
+   header (red reads as Saturday / an error). The same long button tells
+   every depot what to use on a day of the sheet's H-K columns: green for
+   "Use Sunday Paddles", orange for "Use Alternate Paddles". */
 .pa-ot:empty { display: none; }
 .pa-ot { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .pa-ot-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; min-height: 44px;
-  padding: 8px 12px; border-radius: 8px; background: #c8102e; color: #fff !important; text-decoration: none !important;
+  padding: 8px 12px; border: 0; border-radius: 8px; background: #ffc72c; color: #08122b !important; text-decoration: none !important; cursor: pointer;
   box-shadow: 0 2px 6px rgba(8,18,43,.25); font-family: 'IBM Plex Sans Condensed', system-ui, sans-serif; text-align: center; line-height: 1.2; }
+.pa-ot-btn.pa-ot-sun { background: #12753a; color: #fff !important; box-shadow: inset 0 0 0 2px rgba(255,255,255,.55), 0 2px 6px rgba(8,18,43,.25); }
+.pa-ot-btn.pa-ot-alt { background: #b4510d; color: #fff !important; box-shadow: inset 0 0 0 2px rgba(255,255,255,.55), 0 2px 6px rgba(8,18,43,.25); }
 .pa-ot-btn b { font-size: 16px; font-weight: 800; letter-spacing: .02em; text-transform: uppercase; }
 .pa-ot-btn small { font-size: 12px; font-weight: 600; opacity: .92; margin-top: 2px; }
 .pa-ot-btn:active { filter: brightness(.92); }
@@ -1567,10 +1572,23 @@ let TODAY_LABEL = PaTags.todayLabel();
 let HOLIDAY_DATA = null;
 PaHoliday.load().then(d => {
   HOLIDAY_DATA = d;
-  const t = PaHoliday.info(PaHoliday.todayIso(), null, d).dayLabel;
-  if (t !== TODAY_LABEL) { TODAY_LABEL = t; renderDayTags(); }
+  applyTodayLabel();
   renderHoliday();
 });
+// "Today" sits on the day whose paddles are used today: the sheet's "Use
+// Sunday Paddles" dates first (the app owner's word), else SEPTA's calendar.
+function applyTodayLabel() {
+  let t = PaTags.todayLabel();
+  if (HOLIDAY_DATA) t = PaHoliday.info(PaHoliday.todayIso(), null, HOLIDAY_DATA).dayLabel;
+  if (sheetNotices().some(n => n.kind === 'sunday')) t = 'Sunday';
+  if (t !== TODAY_LABEL) { TODAY_LABEL = t; renderDayTags(); }
+}
+// Today's notices from the overtime sheet's Dates tab (columns H-K).
+function sheetNotices() {
+  if (!OT_DATA || OLDER_PICKS) return [];
+  const t = PaHoliday.todayIso();
+  return (OT_DATA.notices || []).filter(n => n.iso === t);
+}
 function renderHoliday() {
   const el = document.getElementById('pa-holiday');
   if (!el) return;
@@ -1581,7 +1599,9 @@ function renderHoliday() {
     const ti = PaHoliday.info(today, routes, HOLIDAY_DATA);
     const tmr = PaHoliday.info(PaHoliday.addDays(today, 1), routes, HOLIDAY_DATA);
     const opts = { page: 'paddles', curDay: STATE.currentDay, liveHref: 'block-tracker.html', listHref: 'holidays.html' };
-    if (PaHoliday.isSpecial(ti)) html = PaHoliday.noticeHtml(ti, Object.assign(opts, { next: [tmr] }));
+    // A date on the sheet's H-K columns has its own button under the day
+    // tags (renderOvertime) - no second banner for it here.
+    if (PaHoliday.isSpecial(ti) && !sheetNotices().length) html = PaHoliday.noticeHtml(ti, Object.assign(opts, { next: [tmr] }));
     else if (PaHoliday.isSpecial(tmr)) html = PaHoliday.noticeHtml(tmr, Object.assign(opts, { tomorrow: true }));
   }
   if (el.innerHTML !== html) el.innerHTML = html;
@@ -1605,26 +1625,38 @@ function renderDayTags() {
 // "Open Runs for Overtime on Thanksgiving". index.html?preview=1 shows
 // unpublished ones too. The sheet is read again every 5 minutes; the pick
 // time is checked every minute.
-let OT_DATA = null;
+var OT_DATA = null;   // var: renderHoliday may read it before this line runs
 function loadOvertime(force) {
   if (OLDER_PICKS || !window.PaOvertime) return;
-  PaOvertime.load({ force }).then(d => { OT_DATA = d; renderOvertime(); }).catch(() => {});
+  PaOvertime.load({ force }).then(d => { OT_DATA = d; applyTodayLabel(); renderOvertime(); renderHoliday(); }).catch(() => {});
 }
 function renderOvertime() {
   const el = document.getElementById('pa-ot');
   if (!el) return;
   let html = '';
+  const esc = PaTags.esc;
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], DW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const when = iso => { const x = PaHoliday.dateOf(iso); return DW[x.getDay()] + ' ' + MON[x.getMonth()] + ' ' + x.getDate(); };
+  // Every depot, on that date only: what to use today (the sheet's H-K columns).
+  html += sheetNotices().map(n => {
+    const name = n.name || PaHoliday.holidayName(n.iso) || 'Today';
+    if (n.kind === 'sunday') {
+      const tap = STATE.currentDay !== 'Sunday' && STATE.availableDays.includes('Sunday') ? ' · tap for the Sunday runs' : '';
+      return '<button type="button" class="pa-ot-btn pa-ot-sun" data-pa-hol-day="Sunday"><b>' + esc(name + ' · ' + n.title) + '</b>'
+        + '<small>' + esc('Today, ' + when(n.iso) + ': SEPTA runs the Sunday schedule' + tap) + '</small></button>';
+    }
+    const plain = PaHoliday.info(n.iso, null, null).dayLabel;
+    return '<a class="pa-ot-btn pa-ot-alt" href="block-tracker.html"><b>' + esc(name + ' · ' + n.title) + '</b>'
+      + '<small>' + esc('Today, ' + when(n.iso) + ': alternate paddles are not in the app, so times here are from the regular ' + plain + ' paddles and may not match · tap for Live') + '</small></a>';
+  }).join('');
   const d = OT_DATA && !OLDER_PICKS && STATE.manifest && (STATE.manifest.districts || []).find(x => x.name === STATE.currentDistrict);
   if (d) {
     const label = d.label || d.name, prev = PaOvertime.preview();
     const mine = OT_DATA.entries.filter(e => PaOvertime.depotMatches(e.depot, label) && (prev || PaOvertime.published(e.holiday)));
     const byIso = new Map();
     mine.forEach(e => { if (!byIso.has(e.iso)) byIso.set(e.iso, []); byIso.get(e.iso).push(e); });
-    const esc = PaTags.esc;
-    const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], DW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const when = iso => { const x = PaHoliday.dateOf(iso); return DW[x.getDay()] + ' ' + MON[x.getMonth()] + ' ' + x.getDate(); };
     const clock = m => { const h = Math.floor(m / 60) % 24; return (h % 12 || 12) + ':' + String(m % 60).padStart(2, '0') + (h < 12 ? ' AM' : ' PM'); };
-    html = [...byIso.keys()].sort().map(iso => {
+    html += [...byIso.keys()].sort().map(iso => {
       const list = byIso.get(iso), e = list[0];
       const name = e.name || PaHoliday.holidayName(iso) || when(iso);
       const by = e.pickIso ? 'Sign up by ' + when(e.pickIso) + (e.pickMin != null ? ' ' + clock(e.pickMin) : '') + ' · ' : '';
@@ -1638,6 +1670,10 @@ loadOvertime(false);
 setInterval(() => loadOvertime(true), 5 * 60000);
 setInterval(renderOvertime, 60000);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') loadOvertime(true); });
+document.getElementById('pa-ot').addEventListener('click', e => {
+  const b = e.target.closest('[data-pa-hol-day]');
+  if (b && STATE.availableDays.includes(b.dataset.paHolDay) && b.dataset.paHolDay !== STATE.currentDay) changeDay(b.dataset.paHolDay);
+});
 document.getElementById('day-selector').addEventListener('click', e => {
   const b = e.target.closest('[data-day]');
   if (b && b.dataset.day !== STATE.currentDay) changeDay(b.dataset.day);

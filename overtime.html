@@ -91,7 +91,7 @@ body{background:#eef2f8;color:#08122b;font-family:'IBM Plex Sans Condensed',syst
 .ot-note{margin:4px 12px 0;padding:8px 12px;font-size:13px;line-height:1.4;color:#3a2400;background:#fff1d6;border-radius:6px}
 .ot-past{display:block;margin:16px auto 0;font:inherit;font-size:14px;font-weight:700;color:#0b4ea2;background:none;border:1.5px solid #0b4ea2;border-radius:20px;padding:8px 16px;cursor:pointer}
 .ot-foot{max-width:720px;margin:18px auto 0;padding:0 16px;font-size:13px;line-height:1.5;color:#56627a;text-align:center}
-@media (max-width:420px){.ot-name{font-size:16px}.ot-cal{flex-basis:52px}.ot-cal .dn{font-size:21px}.ot-strip .ot-s-sch{display:none}}
+@media (max-width:420px){.ot-name{font-size:16px}.ot-cal{flex-basis:52px}.ot-cal .dn{font-size:21px}}
 </style>
 <link rel="stylesheet" href="assets/pa-theme.css">
 <style>
@@ -200,6 +200,8 @@ function scheduleText(info) {
   if (info.alt && !info.changed) return 'ALTERNATE ' + info.dayLabel.toUpperCase();
   return info.day.toUpperCase() + ' SCHEDULE';
 }
+// The card's top line: "Sunday Schedule" / "Alternate Weekday Schedule".
+const stripText = info => (info.alt && !info.changed ? 'Alternate ' + info.dayLabel : info.dayLabel) + ' Schedule';
 
 // ---- build: the depot's runs for every date on the list ------------------------------
 async function build() {
@@ -332,9 +334,8 @@ function runCard(x) {
   }
   const top = document.createElement('div');
   top.className = 'ot-strip';
-  top.innerHTML = '<span class="ot-s-date">' + esc(shortDate(x.e.iso).toUpperCase()) + '</span>'
-    + '<span class="ot-s-sch">' + esc(scheduleText(x.info)) + '</span>'
-    + '<span class="ot-s-left">' + esc(x.e.pickIso && !isClosed(x.e) ? 'BY ' + shortDate(x.e.pickIso).toUpperCase().slice(4) + ' · ' + l.t : l.t) + '</span>';
+  // One line: "Sunday Schedule on Fri Nov 20" (the sign-up date is in the day header).
+  top.innerHTML = '<span class="ot-s-date">' + esc(stripText(x.info) + ' on ' + shortDate(x.e.iso)) + '</span>';
   const c = card(modelFromRun(x.run), { paddleUrl: x.url });
   wrap.appendChild(stack(top, c, x.run.dayType));
   return wrap;

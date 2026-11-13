@@ -19,7 +19,8 @@
 // Google answers a tab name it doesn't have with the FIRST tab, so the tab
 // list is read from the sheet's htmlview page and each tab fetched by gid.
 //
-//   PaOvertime.load({ force })     -> { holidays, entries, stale, savedAt }
+//   PaOvertime.load({ force })     -> { holidays, entries, notices, stale, savedAt }
+//                                     notices: the Dates tab's H-K day notices
 //   PaOvertime.published(h)        holiday on now (Online YES, before pick time)
 //   PaOvertime.depotMatches(a, b)  tab / depot names
 //   PaOvertime.preview()           ?preview=1
@@ -138,6 +139,29 @@
     return out.sort((a, b) => a.iso.localeCompare(b.iso));
   }
 
+  // ---- the Dates tab's day notices (columns H-K) -----------------------------------
+  // For EVERY depot, overtime list or not. Row 1 says what to use, row 2 is a
+  // "Date" / "Day" sub-header, then one date + its name per row:
+  //   H1 "Use Sunday Paddles"     H3.. dates  I3.. the holiday ("Thanksgiving")
+  //   J1 "Use Alternate Paddles"  J3.. dates  K3.. the kind of day ("Holiday week")
+  // -> [{ iso, kind: 'sunday' | 'alt', name, title: the row-1 text }]
+  function noticesOf(text, today) {
+    const rows = csvRows(text);
+    if (!rows.length) return [];
+    const head = rows[0], out = [];
+    const cols = [[colIdx(head, /^use.*sunday/, 'sundaypaddles', 'sundayschedule'), 'sunday'],
+                  [colIdx(head, /^use.*alternate/, 'alternatepaddles', 'alternateschedule'), 'alt']];
+    cols.forEach(([i, kind]) => {
+      if (i < 0) return;
+      const title = String(head[i] || '').trim() || (kind === 'sunday' ? 'Use Sunday Paddles' : 'Use Alternate Paddles');
+      rows.slice(1).forEach(r => {
+        const d = parseDate(r[i], today);                    // "Date" / blank rows: no date
+        if (d) out.push({ iso: d.iso, kind, name: String(r[i + 1] || '').trim(), title });
+      });
+    });
+    return out.sort((a, b) => a.iso.localeCompare(b.iso));
+  }
+
   // ---- a depot tab ---------------------------------------------------------------
   function entriesOf(text, depotName, holidays, today) {
     const rows = csvRows(text);
@@ -225,7 +249,8 @@
     const today = todayIso();
     const holidays = tabs.filter(t => isDatesTab(t.name)).flatMap(t => holidaysOf(t.text, today));
     const entries = tabs.filter(t => !isDatesTab(t.name)).flatMap(t => entriesOf(t.text, t.name, holidays, today));
-    cache = { holidays, entries, stale, savedAt, raw: JSON.stringify(tabs) };
+    const notices = tabs.filter(t => isDatesTab(t.name)).flatMap(t => noticesOf(t.text, today));
+    cache = { holidays, entries, notices, stale, savedAt, raw: JSON.stringify(tabs) };
     cacheAt = Date.now();
     return cache;
   }
