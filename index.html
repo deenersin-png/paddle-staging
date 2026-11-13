@@ -1052,7 +1052,7 @@ header { flex-wrap: wrap !important; }
    per holiday under the day tags, while it is published. Gold on the blue
    header (red reads as Saturday / an error). The same long button tells
    every depot what to use on a day of the sheet's H-K columns: green for
-   "Use Sunday Paddles", orange for "Use Alternate Paddles". */
+   "Use Sunday Paddles", orange for "Use Alternate Paddles" (-> SEPTA's picking page). */
 .pa-ot:empty { display: none; }
 .pa-ot { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .pa-ot-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; min-height: 44px;
@@ -1645,9 +1645,9 @@ function renderOvertime() {
       return '<button type="button" class="pa-ot-btn pa-ot-sun" data-pa-hol-day="Sunday"><b>' + esc(name + ' · ' + n.title) + '</b>'
         + '<small>' + esc('Today, ' + when(n.iso) + ': SEPTA runs the Sunday schedule' + tap) + '</small></button>';
     }
-    const plain = PaHoliday.info(n.iso, null, null).dayLabel;
-    return '<a class="pa-ot-btn pa-ot-alt" href="block-tracker.html"><b>' + esc(name + ' · ' + n.title) + '</b>'
-      + '<small>' + esc('Today, ' + when(n.iso) + ': alternate paddles are not in the app, so times here are from the regular ' + plain + ' paddles and may not match · tap for Live') + '</small></a>';
+    // The alternate paddles are not in the app: they are on SEPTA's picking page.
+    return '<a class="pa-ot-btn pa-ot-alt" href="https://www4.septa.org/picking/" target="_blank" rel="noopener"><b>' + esc(name + ' · ' + n.title) + '</b>'
+      + '<small>' + esc('Today, ' + when(n.iso) + ': the alternate paddles are not in the app. Check them on SEPTA\'s picking page · tap to open') + '</small></a>';
   }).join('');
   const d = OT_DATA && !OLDER_PICKS && STATE.manifest && (STATE.manifest.districts || []).find(x => x.name === STATE.currentDistrict);
   if (d) {
