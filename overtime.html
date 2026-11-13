@@ -34,29 +34,17 @@ body{background:#eef2f8;color:#08122b;font-family:'IBM Plex Sans Condensed',syst
 .ot-select{width:100%;appearance:none;-webkit-appearance:none;background:#fff;color:#0b4ea2;border:0;border-bottom:3px solid #c8102e;border-radius:8px;
   font:inherit;font-size:17px;font-weight:700;padding:10px 36px 9px 12px;box-shadow:0 2px 6px rgba(8,18,43,.25)}
 .ot-arrow{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#c8102e;pointer-events:none;font-size:14px}
-.ot-search{position:relative;margin-top:8px}
-.ot-search svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#56627a;pointer-events:none}
-.ot-search input{width:100%;background:#fff;color:#08122b;border:0;border-bottom:3px solid #c8102e;border-radius:8px;box-shadow:0 2px 6px rgba(8,18,43,.25);
-  font:inherit;font-size:16px;font-weight:700;padding:10px 40px 9px 34px;outline:none}
-.ot-search input::placeholder{color:#8a94a8;font-weight:600}
-
-/* Date tags: All + one per holiday date on the list. */
-.ot-dates{display:flex;gap:8px;margin-top:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
-.ot-dates::-webkit-scrollbar{display:none}
-.ot-dt{flex:1 0 auto;min-width:64px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:40px;padding:4px 10px;
-  background:#fff;border:0;border-bottom:3px solid #c8102e;border-radius:8px;box-shadow:0 2px 6px rgba(8,18,43,.25);cursor:pointer;
-  font-family:inherit;font-size:14px;font-weight:800;letter-spacing:.02em;text-transform:uppercase;color:#0b4ea2;white-space:nowrap;line-height:1.1}
-.ot-dt small{font-size:10px;font-weight:700;letter-spacing:.05em;opacity:.85}
-.ot-dt.sun{color:#12753a}.ot-dt.sat{color:#c8102e}.ot-dt.alt{color:#b4510d}
-.ot-dt.on{color:#fff;background:#0b4ea2;box-shadow:inset 0 0 0 2px #fff,0 2px 6px rgba(8,18,43,.35)}
-.ot-dt.sun.on{background:#12753a}.ot-dt.sat.on{background:#c8102e}.ot-dt.alt.on{background:#b4510d}
-.ot-dt.past{opacity:.6}
-
 /* Route + sort + count, under the band. */
 .ot-tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;background:#fff;border-bottom:1px solid #d5dce8}
 .ot-tools select{appearance:none;-webkit-appearance:none;background:#f2f5fa url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%230b4ea2'/%3E%3C/svg%3E") no-repeat right 10px center;
   border:1px solid #c9d3e3;border-radius:8px;font:inherit;font-size:15px;font-weight:700;color:#0b4ea2;padding:8px 28px 8px 10px;min-width:0}
-#otRoute{flex:1 1 130px}#otSort{flex:1 1 150px}
+#otSort{flex:1 1 150px}
+/* Route chips (Paddles look, pa-theme .fchip): tap one or more, the runs on any of them. */
+.ot-routes{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:6px}
+.ot-routes[hidden]{display:none}
+.ot-routes .fchip{font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:700;padding:7px 12px;border-radius:4px;border:1px solid #c9d3e3;background:#f2f5fa;color:#0b4ea2;cursor:pointer;white-space:nowrap}
+.ot-routes .fchip .cnt{font-size:11px;font-weight:600;opacity:.65;margin-left:5px}
+.ot-routes .fchip.all{font-family:inherit;letter-spacing:.03em}
 .ot-open{font:inherit;font-size:14px;font-weight:800;padding:8px 12px;border-radius:20px;border:1.5px solid #12753a;background:#fff;color:#12753a;cursor:pointer;white-space:nowrap}
 .ot-open.on{background:#12753a;color:#fff}
 .ot-count{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;color:#56627a;white-space:nowrap}
@@ -115,7 +103,6 @@ body{background:#eef2f8;color:#08122b;font-family:'IBM Plex Sans Condensed',syst
 .ot-card.sat .prc-stack .ot-strip.prc-top{background:#c8102e !important}
 .ot-card.alt .prc-stack .ot-strip.prc-top{background:#b4510d !important}
 .ot-card .prc-stack{border:1px solid #c9d3e3 !important}
-.ot-search svg{width:15px;height:15px}
 </style>
 <link rel="stylesheet" href="assets/pa-menu.css">
 <link rel="stylesheet" href="assets/pa-tags.css">
@@ -131,16 +118,10 @@ body{background:#eef2f8;color:#08122b;font-family:'IBM Plex Sans Condensed',syst
     <select id="otDepot" class="ot-select" aria-label="Depot" autocomplete="off"><option value="">Loading depots…</option></select>
     <span class="ot-arrow">▾</span>
   </div>
-  <div class="ot-search">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-    <input type="search" id="otSearch" data-pa-clear placeholder="Run / Block #" maxlength="4" inputmode="numeric" pattern="[0-9]*"
-           enterkeyhint="search" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Find a run (1-3 digits) or block (4 digits)">
-  </div>
-  <div id="otDates" class="ot-dates" role="group" aria-label="Holiday date"></div>
 </div>
 
 <div class="ot-tools">
-  <select id="otRoute" aria-label="Route" autocomplete="off"><option value="">All routes</option></select>
+  <div id="otRoutes" class="ot-routes" role="group" aria-label="Routes" hidden></div>
   <select id="otSort" aria-label="Sort" autocomplete="off">
     <option value="run-asc">Run</option>
     <option value="start-asc">Earliest Start</option>
@@ -337,11 +318,10 @@ function depotMatches(sheetDepot, label) {
 
 // ---- state ------------------------------------------------------------------------
 let seasons = [], curDistricts = [], hdata = { days: {}, ov: {} }, entries = [];
-let selDate = lsGet('ot_date');        // '' = all dates
-let routeSel = lsGet('ot_route');
+// Route chips: the routes picked (none = all), remembered.
+const routeSel = new Set(lsGet('ot_routes').split(',').filter(Boolean));
 let openOnly = lsGet('ot_open') === '1';
 let showPast = false;
-let query = '', queryFinal = false, searchTimer = null;
 let loadSeq = 0;
 let items = [];                        // [{ e, run, row, url, dayType, info }] for the depot
 const today = () => H.todayIso();
@@ -410,28 +390,33 @@ async function build() {
   }));
   if (my !== loadSeq) return;
   items = out;
-  fillRoutes();
   render();
 }
 
+const routesOf = x => x.run ? [...new Set(x.run.pieces.flatMap(p => PaTags.labelRoutes(p.routeLabel).map(PaTags.shortRoute)))] : [];
+// The cards that can show (upcoming, unless past dates are open; open sign-ups only).
+const shownItems = () => items.filter(x => (showPast || x.e.iso >= today()) && !(openOnly && isClosed(x.e)));
 function fillRoutes() {
   const rank = r => { const n = parseInt(r, 10); return isNaN(n) ? [1, 0, r] : [0, n, r]; };
-  const routes = [...new Set(items.filter(x => x.run).flatMap(x => x.run.pieces.flatMap(p => PaTags.labelRoutes(p.routeLabel).map(PaTags.shortRoute))))]
+  const list = shownItems();
+  const routes = [...new Set(list.flatMap(routesOf))]
     .sort((a, b) => { const x = rank(a), y = rank(b); return x[0] - y[0] || x[1] - y[1] || String(x[2]).localeCompare(String(y[2])); });
-  if (routeSel && !routes.includes(routeSel)) routeSel = '';
-  $('otRoute').innerHTML = '<option value="">All routes</option>' + routes.map(r => '<option value="' + esc(r) + '">Route ' + esc(r) + '</option>').join('');
-  $('otRoute').value = routeSel;
+  for (const r of [...routeSel]) if (!routes.includes(r)) routeSel.delete(r);
+  const box = $('otRoutes');
+  box.hidden = routes.length < 2;
+  box.innerHTML = (routeSel.size ? '<button type="button" class="fchip all" data-ot-route="">ALL ROUTES</button>' : '')
+    + routes.map(r => {
+      const n = list.filter(x => routesOf(x).includes(r)).length;
+      return '<button type="button" class="fchip' + (routeSel.has(r) ? ' active' : '') + '" data-ot-route="' + esc(r) + '" aria-pressed="' + routeSel.has(r) + '" title="Route ' + esc(r) + ': ' + n + ' run' + (n === 1 ? '' : 's') + '">'
+        + esc(r) + '<span class="cnt">' + n + '</span></button>';
+    }).join('');
 }
 
 // ---- filters + sort ------------------------------------------------------------------
 const swingMin = x => { const s = parseInt(x.row && x.row.swingdursec, 10); return x.run && x.run.swing && s > 0 ? s / 60 : 0; };
 function matches(x) {
-  if (routeSel && !(x.run && x.run.pieces.some(p => PaTags.labelRoutes(p.routeLabel).map(PaTags.shortRoute).includes(routeSel)))) return false;
+  if (routeSel.size && !routesOf(x).some(r => routeSel.has(r))) return false;
   if (openOnly && isClosed(x.e)) return false;
-  if (query) {
-    if (query.length === 4) return !!(x.run && x.run.blocks.some(b => String(b) === query));
-    return queryFinal ? x.e.runNo === String(+query) : x.e.runNo.startsWith(String(+query));
-  }
   return true;
 }
 function sorter() {
@@ -457,23 +442,6 @@ function sorter() {
 }
 
 // ---- render -------------------------------------------------------------------------
-function renderDates() {
-  const t = today();
-  const dates = [...new Set(items.map(x => x.e.iso))].sort();
-  const shown = dates.filter(d => d >= t || showPast);
-  if (selDate && !dates.includes(selDate)) selDate = '';
-  if (selDate && selDate < t && !showPast) selDate = '';
-  const info = iso => (items.find(x => x.e.iso === iso) || {}).info;
-  let html = shown.length > 1 || selDate ? '<button type="button" class="ot-dt' + (selDate ? '' : ' on') + '" data-ot-date="">ALL<small>' + shown.length + ' DATES</small></button>' : '';
-  html += shown.map(iso => {
-    const d = H.dateOf(iso), i = info(iso), k = i ? kindOf(i) : 'wkd';
-    return '<button type="button" class="ot-dt ' + k + (iso === selDate ? ' on' : '') + (iso < t ? ' past' : '') + '" data-ot-date="' + iso + '">'
-      + MON[d.getMonth()] + ' ' + d.getDate() + '<small>' + DOW[d.getDay()] + (i ? ' · ' + esc(i.day === 'weekday' ? 'WKD' : i.day.slice(0, 3).toUpperCase()) : '') + '</small></button>';
-  }).join('');
-  $('otDates').innerHTML = html;
-  $('otDates').hidden = !html;
-}
-
 function dayHeader(iso, list) {
   const i = list[0].info, d = H.dateOf(iso), k = kindOf(i), t = today();
   const n = Math.round((d - H.dateOf(t)) / 86400000);
@@ -522,7 +490,7 @@ function runCard(x) {
 }
 
 function render() {
-  renderDates();
+  fillRoutes();
   const t = today(), label = $('otDepot').value;
   const note = sheetStale ? '<div class="ot-note">No connection: showing the list saved ' + esc(new Date(sheetSavedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })) + '.</div>' : '';
   $('otNote').innerHTML = note;
@@ -531,7 +499,7 @@ function render() {
     box.innerHTML = '<div class="ot-msg"><b>No holiday overtime runs posted yet.</b><br>When the runs for a holiday are posted, they show up here.</div>';
     $('otCount').textContent = ''; return;
   }
-  const base = items.filter(x => (showPast || x.e.iso >= t) && (!selDate || x.e.iso === selDate));
+  const base = items.filter(x => showPast || x.e.iso >= t);
   const list = base.filter(matches);
   $('otCount').textContent = list.length + (list.length === 1 ? ' run' : ' runs');
   const past = items.filter(x => x.e.iso < t).length;
@@ -542,8 +510,7 @@ function render() {
   }
   if (!list.length) {
     let why = 'No runs match your filters.';
-    if (query && queryFinal) why = 'No ' + (query.length === 4 ? 'Block ' + query : 'Run ' + (+query)) + ' on the overtime list' + (selDate ? ' for ' + shortDate(selDate) : '') + '.';
-    else if (!base.length) why = 'No upcoming holiday overtime for ' + esc(label) + '.';
+    if (!base.length) why = 'No upcoming holiday overtime for ' + esc(label) + '.';
     else if (openOnly && base.every(x => isClosed(x.e))) why = 'Sign-up is closed for every run shown. Turn off "Open sign-ups only" to see them.';
     box.innerHTML = '<div class="ot-msg">' + why + '</div>' + pastBtn;
     return;
@@ -567,39 +534,22 @@ function render() {
 }
 
 // ---- controls ---------------------------------------------------------------------------
-$('otDates').addEventListener('click', e => {
-  const b = e.target.closest('[data-ot-date]');
-  if (!b) return;
-  selDate = b.dataset.otDate === selDate ? '' : b.dataset.otDate;
-  lsSet('ot_date', selDate);
-  render(); window.scrollTo(0, 0);
-});
 $('otList').addEventListener('click', e => { if (e.target.id === 'otPastBtn') { showPast = true; render(); } });
-$('otRoute').addEventListener('change', () => { routeSel = $('otRoute').value; lsSet('ot_route', routeSel); render(); });
+$('otRoutes').addEventListener('click', e => {
+  const b = e.target.closest('[data-ot-route]');
+  if (!b) return;
+  const r = b.dataset.otRoute;
+  if (!r) routeSel.clear();
+  else if (routeSel.has(r)) routeSel.delete(r); else routeSel.add(r);
+  lsSet('ot_routes', [...routeSel].join(','));
+  render();
+});
 $('otSort').addEventListener('change', () => { lsSet('ot_sort', $('otSort').value); render(); });
 $('otOpen').addEventListener('click', () => {
   openOnly = !openOnly; lsSet('ot_open', openOnly ? '1' : '');
   $('otOpen').classList.toggle('on', openOnly); $('otOpen').setAttribute('aria-pressed', openOnly);
   render();
 });
-// Search: prefix while typing, the exact run once the number is final
-// (800 ms pause, Enter, leaving the box or a 4th digit = a block).
-const input = $('otSearch');
-function setQuery(final) {
-  query = input.value.replace(/\D/g, '').slice(0, 4);
-  queryFinal = final || query.length === 4;
-  render();
-}
-input.addEventListener('input', () => {
-  if (input.value !== input.value.replace(/\D/g, '')) input.value = input.value.replace(/\D/g, '');
-  clearTimeout(searchTimer);
-  setQuery(false);
-  if (query.length === 4) { input.blur(); return; }
-  if (query) searchTimer = setTimeout(() => { setQuery(true); input.blur(); }, 800);
-});
-input.addEventListener('keydown', e => { if (e.key === 'Enter') { clearTimeout(searchTimer); setQuery(true); input.blur(); } });
-input.addEventListener('blur', () => { clearTimeout(searchTimer); if (query && !queryFinal) setQuery(true); });
-
 // The depot is app-wide: bt_depot (label), like Paddles / Live / Pull Outs.
 $('otDepot').addEventListener('change', () => { lsSet('bt_depot', $('otDepot').value); build(); });
 window.addEventListener('storage', e => {
