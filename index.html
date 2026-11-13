@@ -1095,6 +1095,7 @@ header { flex-wrap: wrap !important; }
 </style>
 <script src="assets/pa-menu.js" defer></script>
 <script src="assets/pa-tags.js"></script>
+<script src="assets/pa-holiday.js"></script>
 </head>
 <body>
 
@@ -1132,6 +1133,9 @@ header { flex-wrap: wrap !important; }
     <div class="pa-days" id="day-selector" role="group" aria-label="Day"></div>
   </div>
 </header>
+
+<!-- Holiday / alternate schedule notice (assets/pa-holiday.js, renderHoliday). -->
+<div id="pa-holiday"></div>
 
 <div class="toolbar">
 
@@ -1537,11 +1541,45 @@ async function changeDistrict() {
 // Sheets - Sunday, Weekday, Saturday (+ any alternate schedule), the chosen
 // day filled, "Today" on today's.
 let TODAY_LABEL = PaTags.todayLabel();
-PaTags.todayLabelAsync().then(t => { if (t !== TODAY_LABEL) { TODAY_LABEL = t; renderDayTags(); } });
+
+// HOLIDAYS (assets/pa-holiday.js, from SEPTA's GTFS calendar). On a holiday
+// on the Sunday schedule (Thanksgiving, Christmas, New Year's Day) "Today"
+// moves to the Sunday tag and a banner says so. On an ALTERNATE schedule day
+// (day after Thanksgiving, Christmas Eve, the week after Christmas, MLK Day,
+// some suburban Saturdays) there are no paddles for what runs: the banner
+// says the info here is limited and points to Live, which uses SEPTA's live
+// data for the day. Only when it covers this depot's routes. Below it, the
+// special days of the next two weeks. index.html?today=2026-11-27 previews a date.
+let HOLIDAY_DATA = null;
+PaHoliday.load().then(d => {
+  HOLIDAY_DATA = d;
+  const t = PaHoliday.info(PaHoliday.todayIso(), null, d).dayLabel;
+  if (t !== TODAY_LABEL) { TODAY_LABEL = t; renderDayTags(); }
+  renderHoliday();
+});
+function renderHoliday() {
+  const el = document.getElementById('pa-holiday');
+  if (!el) return;
+  let html = '';
+  if (HOLIDAY_DATA && !OLDER_PICKS && STATE.runs.length) {
+    const routes = [...new Set(STATE.runs.flatMap(getRunRoutes))];
+    const today = PaHoliday.todayIso();
+    html = PaHoliday.noticeHtml(PaHoliday.info(today, routes, HOLIDAY_DATA), {
+      page: 'paddles', curDay: STATE.currentDay, liveHref: 'block-tracker.html',
+      next: PaHoliday.upcoming(HOLIDAY_DATA, routes, 14, today) });
+  }
+  if (el.innerHTML !== html) el.innerHTML = html;
+}
+document.getElementById('pa-holiday').addEventListener('click', e => {
+  const b = e.target.closest('[data-pa-hol-day]');
+  if (b && STATE.availableDays.includes(b.dataset.paHolDay)) changeDay(b.dataset.paHolDay);
+});
+
 function renderDayTags() {
   const el = document.getElementById('day-selector');
   const html = PaTags.dayTags(STATE.availableDays, STATE.currentDay, TODAY_LABEL, 'data-day');
   if (el.innerHTML !== html) el.innerHTML = html;
+  renderHoliday();
 }
 document.getElementById('day-selector').addEventListener('click', e => {
   const b = e.target.closest('[data-day]');

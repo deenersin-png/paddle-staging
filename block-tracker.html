@@ -340,6 +340,7 @@ a.run-chip:active{opacity:.7}
 <link rel="stylesheet" href="assets/pa-tags.css">
 <script src="assets/pa-menu.js" defer></script>
 <script src="assets/pa-tags.js"></script>
+<script src="assets/pa-holiday.js"></script>
 </head>
 <body>
 
@@ -375,6 +376,8 @@ a.run-chip:active{opacity:.7}
   <div id="tsDayRow" class="pa-days" role="group" aria-label="Day" hidden></div>
 </div>
 
+<!-- Holiday / alternate schedule notice (assets/pa-holiday.js, renderHolidayLive). -->
+<div id="paHoliday"></div>
 <div id="alertArea"></div>
 <div id="alertsPanel" class="info-panel alert-type hidden">
   <div class="info-panel-header" onclick="togglePanel('alertsPanel')">
@@ -518,6 +521,8 @@ let paddleReady = null; // loadPaddleData()'s promise, so a search can wait for 
 // build publishes those exceptions (from GTFS calendar_dates.txt) as a
 // date→daytype map, which we consult before falling back to day-of-week.
 let calendarOverrides = {};
+let calendarDays = {};     // calendar-days.json: date → { day, services, alt, altRoutes }
+let holidayData = null;    // PaHoliday.load()
 
 // THE DAY IS THE CALENDAR DAY, FROM MIDNIGHT (user's rule, 2026-11-11: at
 // 2 AM Wednesday it is Wednesday, not "Tuesday until 4 AM"). Today's runs are
@@ -583,9 +588,12 @@ function getDayType() { return dayTypeOfDate(serviceDate()); }
 
 // Day type of a calendar date: a GTFS calendar exception first, else the
 // day of the week.
+function isoOfDate(date) {
+  return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+}
 function dayTypeOfDate(date) {
-  const iso = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
-  const ov = calendarOverrides[iso];
+  const iso = isoOfDate(date);
+  const ov = (calendarDays[iso] && calendarDays[iso].day) || calendarOverrides[iso];
   if (ov) return ov;
   const d = date.getDay();
   if (d === 0) return 'sunday';
@@ -593,11 +601,30 @@ function dayTypeOfDate(date) {
   return 'weekday';
 }
 
+// Holidays + alternate schedules (assets/pa-holiday.js): calendar-days.json
+// = each date's services (tripsOfDate) and whether an alternate timetable
+// with no paddles runs; calendar-overrides.json = the older Sunday-holiday map.
 async function loadCalendarOverrides() {
   try {
-    const res = await fetch(GTFS_BASE + '/calendar-overrides.json');
-    if (res.ok) calendarOverrides = await res.json();
+    const d = await PaHoliday.load();
+    calendarOverrides = d.ov || {};
+    calendarDays = d.days || {};
+    holidayData = d;
   } catch(e) {}
+  renderHolidayLive();
+}
+// The banner under the header: today's holiday / alternate schedule for the
+// selected depot's routes, and that run info from the paddles is limited then.
+function renderHolidayLive() {
+  const el = document.getElementById('paHoliday');
+  if (!el) return;
+  let html = '';
+  const depot = document.getElementById('depotSelect').value;
+  if (holidayData && depot && paddle.loaded) {
+    const routes = depotRoutes(depot);
+    html = PaHoliday.noticeHtml(PaHoliday.info(PaHoliday.todayIso(), routes, holidayData), { page: 'live' });
+  }
+  if (el.innerHTML !== html) el.innerHTML = html;
 }
 
 // "HH:MM:SS" (GTFS allows hour >= 24 for past-midnight trips) → minutes since
@@ -664,12 +691,42 @@ function parseCSV(text) {
 // weekday block a second, overlapping Sunday timetable. A weekday trip that
 // is also in the Saturday or Sunday list is one of those (same rule as
 // assets/pa-schedule.js loadRouteTrips).
-function dayTrips(data, day) {
+//
+// With a `date`, SEPTA's exact timetable for that date when septa-gtfs has it
+// (tripsOfDate): what really runs on a holiday or an alternate schedule day.
+function dayTrips(data, day, date) {
+  const exact = date ? tripsOfDate(data, date) : null;
+  if (exact) return exact;
   const list = withoutOldSchedule((data && data[day]) || []);
   if (day !== 'weekday') return list;
   const weekend = new Set([...(data.saturday || []), ...(data.sunday || [])].map(t => String(t.trip_id)));
   const own = list.filter(t => !weekend.has(String(t.trip_id)));
   return own.length ? own : list;
+}
+
+// The trips that run on one date. septa-gtfs's calendar-days.json lists the
+// date's services and each trip carries its service (`sv`), so this is the
+// day's real SEPTA timetable - the alternate one on the day after
+// Thanksgiving, Christmas Eve, the week after Christmas... (no paddles for
+// those), the Sunday one on a Sunday-schedule holiday. It also drops what the
+// day-type lists mix in: the alternate trips on plain days (L1: 221 of 553
+// weekday trips are the Thanksgiving / New Year's timetable), the old 4-digit
+// ids, the school trips of other weekdays. null when the files don't have it
+// (older data, a date outside the feed): the day-type list then.
+function tripsOfDate(data, date) {
+  const e = data && calendarDays[isoOfDate(date)];
+  if (!e || !Array.isArray(e.services)) return null;
+  const sv = new Set(e.services.map(String));
+  const seen = new Set(), out = [];
+  let tagged = false;
+  for (const k of ['weekday', 'saturday', 'sunday']) for (const t of (data[k] || [])) {
+    if (t.sv == null) continue;
+    tagged = true;
+    const id = String(t.trip_id);
+    if (!sv.has(String(t.sv)) || seen.has(id)) continue;
+    seen.add(id); out.push(t);
+  }
+  return tagged ? out.sort((a, b) => String(a.start).localeCompare(String(b.start))) : null;
 }
 
 // septa-gtfs's lists still carry the previous schedule: trips with short
@@ -704,10 +761,10 @@ function withoutOldSchedule(list) {
 // first Route 21 trip 5:44 AM - this route's timetable alone can't tell.
 function serviceDayTrips(data, extra) {
   const now = new Date();
-  let trips = dayTrips(data, getDayType());
+  let trips = dayTrips(data, getDayType(), serviceDate());
 
   if (inOwlWindow(now)) {
-    const all = dayTrips(data, dayTypeOfDate(yesterdayDate()))
+    const all = dayTrips(data, dayTypeOfDate(yesterdayDate()), yesterdayDate())
       .map(t => ({ ...t, start: shiftTime(t.start, -1440), end: shiftTime(t.end, -1440), lastNight: true }));
     if (extra) extra.lastNightAll = all;
     const left = all.filter(t => (timeStrToMin(t.end) ?? -1) >= 0);
@@ -723,7 +780,7 @@ function serviceDayTrips(data, extra) {
   // A block that goes out before 4 AM comes with its whole run, not just its
   // trips before 4: route 42 block 9102 (out 1:27 AM, trips 1:34-10:38 AM).
   const owlEnd = SERVICE_DAY_START_HR * 60;
-  const tomorrow = dayTrips(data, dayTypeOfDate(nightRunsDate()));
+  const tomorrow = dayTrips(data, dayTypeOfDate(nightRunsDate()), nightRunsDate());
   const byTT = new Set(tomorrow.filter(t => (timeStrToMin(t.start) ?? Infinity) < owlEnd).map(t => String(t.block_id)));
   // By the paddle: the night liner's trips up to its own pull-in (night liners
   // run as late as 3:17 PM; a later trip on that block is another run's).
@@ -3455,6 +3512,16 @@ function gtfsDayOf(label) {
   const l = String(label).toLowerCase();
   return l.includes('sat') ? 'saturday' : l.includes('sun') ? 'sunday' : 'weekday';
 }
+// Trip Sheets on another day: that day type's next PLAIN date (not a holiday
+// or an alternate schedule), so "Weekday" is the regular weekday timetable.
+function plainDateOf(dayType) {
+  for (let i = 1; i <= 21; i++) {
+    const d = new Date(); d.setDate(d.getDate() + i);
+    const e = calendarDays[isoOfDate(d)];
+    if (dayTypeOfDate(d) === dayType && !(e && (e.special || e.alt))) return d;
+  }
+  return null;
+}
 function todayDayLabel() { const d = getDayType(); return d.charAt(0).toUpperCase() + d.slice(1); }
 // The selected depot's days, in the Paddles page's order; alternates after.
 function tsDays() {
@@ -3550,7 +3617,7 @@ async function applyTsDay() {
     if (!tsBackup) tsBackup = { route, byBlock: paddle.byBlock, sched: { blockTrips: sched.blockTrips, lastNightAll: sched.lastNightAll, todayAll: sched.todayAll, tomorrowAll: sched.tomorrowAll } };
     paddle.byBlock = pick.byBlock;
     const blockTrips = new Map(), order = [];
-    for (const t of dayTrips(data || {}, gtfsDayOf(view.tsDay))) {
+    for (const t of dayTrips(data || {}, gtfsDayOf(view.tsDay), plainDateOf(gtfsDayOf(view.tsDay)))) {
       const b = String(t.block_id);
       if (!blockTrips.has(b)) { blockTrips.set(b, []); order.push(b); }
       blockTrips.get(b).push({ ...t, route });
@@ -4273,6 +4340,7 @@ function fillDepots() {
   const depot = initialDepot();
   dsel.innerHTML = '<option value="">Depot</option>' + paddle.depots.map(d => '<option value="' + esc(d) + '">' + esc(d) + '</option>').join('');
   dsel.value = depot;
+  renderHolidayLive();
   const route = fillRoutes(depot, lsGet('bt_route'));
   if (state.find) { document.getElementById('routeSelect').value = ''; return; } // a search is showing; leave it
   if (view.tsPrevRoute != null) { document.getElementById('routeSelect').value = state.route; return; } // Trip Sheets search moved the route; leave it
@@ -4300,6 +4368,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 function onDepotChange() {
   const depot = document.getElementById('depotSelect').value;
   if (!depot) return;
+  renderHolidayLive();
   lsSet('bt_depot', depot);
   const pid = paddle.depotIds && paddle.depotIds.get(depot);
   if (pid && lsGet('paddleDepot_' + CURRENT_PICK_ID) !== pid) lsSet('paddleDepot_' + CURRENT_PICK_ID, pid);
