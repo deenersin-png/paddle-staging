@@ -1647,7 +1647,7 @@ function renderOvertime() {
     }
     // The alternate paddles are not in the app: they are on SEPTA's picking page.
     return '<a class="pa-ot-btn pa-ot-alt" href="https://www4.septa.org/picking/" target="_blank" rel="noopener"><b>' + esc(name + ' · ' + n.title) + '</b>'
-      + '<small>' + esc('Today, ' + when(n.iso) + ': the alternate paddles are not in the app. Check them on SEPTA\'s picking page · tap to open') + '</small></a>';
+      + '<small>Not available on Paddle App · Tap to check on SEPTA\'s page</small></a>';
   }).join('');
   const d = OT_DATA && !OLDER_PICKS && STATE.manifest && (STATE.manifest.districts || []).find(x => x.name === STATE.currentDistrict);
   if (d) {
