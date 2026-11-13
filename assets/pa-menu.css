@@ -148,3 +148,10 @@ body.pam-lock { overflow: hidden; }
   .pam-bar-acts { gap: 3px; }
   .pam-link, .pam-bar .pa-btn { height: 32px !important; padding: 0 5px !important; font-size: 11px !important; letter-spacing: 0 !important; }
 }
+
+/* An upcoming pick's menu link ("Spring 2027  upcoming"). */
+.pam-new {
+  margin-left: 8px; padding: 1px 7px; border-radius: 999px;
+  background: #e6ecf6; color: #0b4ea2; font-size: 11px; font-weight: 700;
+  letter-spacing: .03em; text-transform: uppercase; vertical-align: 1px;
+}

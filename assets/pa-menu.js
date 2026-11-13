@@ -31,14 +31,28 @@
   // and a 'pa:pick' event when it changes. Otherwise it is the current pick
   // from the pick sheet (assets/pa-picks.js, loaded here if the page has not).
   var CURRENT_PICK = '';
+  // The picks after the current one: each gets its own menu link, above
+  // Older Picks, named as in the pick sheet ("Spring 2027").
+  var UPCOMING = [];
+  function showUpcoming() {
+    var box = document.getElementById('pam-upcoming');
+    if (!box) return;
+    box.innerHTML = UPCOMING.map(function (p) {
+      var href = 'index.html?pick=' + p.id;
+      return '<a href="' + esc(href) + '"' + (href === here ? ' class="on" aria-current="page"' : '') + '>'
+        + esc(p.label) + '<span class="pam-new">upcoming</span></a>';
+    }).join('');
+  }
   (function () {
     function fromPicks() {
       var P = window.PaPicks;
       var c = P.cached();
-      if (c) CURRENT_PICK = P.current(c).label;
+      if (c) { CURRENT_PICK = P.current(c).label; UPCOMING = P.upcoming(c); }
       P.load().then(function (picks) {
         CURRENT_PICK = P.current(picks).label;
+        UPCOMING = P.upcoming(picks);
         window.dispatchEvent(new CustomEvent('pa:pick'));
+        showUpcoming();
       }, function () {});
     }
     if (window.PaPicks) return fromPicks();
@@ -60,7 +74,8 @@
   var here = ALIAS[page] || page;
   if (page === 'home.html' && /view=swap/.test(location.search)) here = 'home.html?view=swap';
   if (page === 'block-tracker.html' && /view=all/.test(location.search)) here = 'block-tracker.html?view=all';
-  if (page === 'index.html' && /pick=older/.test(location.search)) here = 'index.html?pick=older';
+  var pickQ = page === 'index.html' && (location.search.match(/[?&]pick=([^&#]+)/) || [])[1];
+  if (pickQ) here = 'index.html?pick=' + decodeURIComponent(pickQ).toLowerCase();
 
   // pa-account-ui.js sets <html data-pa-acct="in|out"> once it knows; before
   // that, go by the "was signed in last visit" flag.
@@ -79,6 +94,7 @@
       '<button class="pam-x" type="button" aria-label="Close menu" data-pam="close">&times;</button></div>' +
       '';
     APP.forEach(function (it) {
+      if (it[1] === 'index.html?pick=older') html += '<div id="pam-upcoming" style="display:contents"></div>';
       html += '<a href="' + esc(it[1]) + '"' + (it[1] === here ? ' class="on" aria-current="page"' : '') + '>' + esc(it[0]) + '</a>';
     });
     SITE.forEach(function (it) {
@@ -99,6 +115,7 @@
 
   function init() {
     var root = build();
+    showUpcoming();
     var drawer = root.querySelector('.pam-drawer');
 
     var btn = document.createElement('button');

@@ -1200,12 +1200,20 @@ const DAY_ORDER = ['Sunday', 'Weekday', 'Saturday'];
 // range holds today - with no pick dropdown, so nobody lands on another pick
 // by accident. Its name shows under "Paddle App" in the top bar.
 //
-// Every other pick in the sheet, past and future, is on index.html?pick=older
-// (menu: "Older Picks"): a pick dropdown, newest first, plus a yellow banner
-// so it is obvious this is not the current pick.
+// The picks before it are on index.html?pick=older (menu: "Older Picks"): a
+// pick dropdown, newest first, plus a yellow banner so it is obvious this is
+// not the current pick.
+//
+// Each pick AFTER it has its own menu link with its name ("Spring 2027"),
+// index.html?pick=<id>: that pick alone, with the same banner saying
+// UPCOMING PICK. Once it becomes the current pick, the link goes to Paddles.
+//
+// OLDER_PICKS is true on both: any page that is not the current pick.
 // ==========================================================================
 let SEASONS = [];          // newest first, filled in by initSeasons()
-const OLDER_PICKS = new URLSearchParams(location.search).get('pick') === 'older';
+const PICK_PARAM = (new URLSearchParams(location.search).get('pick') || '').toLowerCase();
+const OLDER_PICKS = !!PICK_PARAM;
+const ONE_PICK = PICK_PARAM && PICK_PARAM !== 'older' ? PICK_PARAM : '';
 let CURRENT_SEASON = null;
 let PAGE_SEASONS = [];
 
@@ -1377,9 +1385,17 @@ async function initSeasons() {
   }
   SEASONS = picks.slice().reverse();
   CURRENT_SEASON = PaPicks.current(picks);
-  PAGE_SEASONS = OLDER_PICKS ? SEASONS.filter(s => s.id !== CURRENT_SEASON.id) : [CURRENT_SEASON];
+  if (ONE_PICK) {
+    // An upcoming pick's own page. Gone from the sheet, or now the current
+    // pick: Paddles shows it.
+    const one = SEASONS.find(s => s.id === ONE_PICK);
+    if (!one || one.id === CURRENT_SEASON.id) { location.replace('index.html'); return; }
+    PAGE_SEASONS = [one];
+  } else {
+    PAGE_SEASONS = OLDER_PICKS ? SEASONS.filter(s => s.startDate < CURRENT_SEASON.startDate) : [CURRENT_SEASON];
+  }
   if (!PAGE_SEASONS.length) {
-    document.getElementById('grid').innerHTML = `<div class="error">The pick sheet has no other picks yet.</div>`;
+    document.getElementById('grid').innerHTML = `<div class="error">The pick sheet has no older picks yet.</div>`;
     return;
   }
 
@@ -1387,8 +1403,8 @@ async function initSeasons() {
     .map(s => `<option value="${PaTags.esc(s.id)}">${PaTags.esc(s.label)}</option>`)
     .join('');
 
-  // Paddles page: current pick only, no dropdown. Older Picks: dropdown.
-  select.style.display = OLDER_PICKS ? '' : 'none';
+  // Paddles page / an upcoming pick: that pick only, no dropdown. Older Picks: dropdown.
+  select.style.display = OLDER_PICKS && !ONE_PICK ? '' : 'none';
   if (OLDER_PICKS) {
     document.body.classList.add('older-pick');
     document.getElementById('older-banner').hidden = false;
@@ -1399,11 +1415,8 @@ async function initSeasons() {
   // Trip Sheets, account sync - all read paddleSeason) stays on the current pick.
   let saved = null;
   try { saved = localStorage.getItem(OLDER_PICKS ? 'paddleOldSeason' : 'paddleSeason'); } catch (_) {}
-  const validSaved = PAGE_SEASONS.find(s => s.id === saved);
-  // Older Picks opens on the newest pick before the current one, as before
-  // upcoming picks were listed too.
-  const first = PAGE_SEASONS.find(s => s.startDate < CURRENT_SEASON.startDate) || PAGE_SEASONS[0];
-  select.value = validSaved ? saved : first.id;
+  const validSaved = !ONE_PICK && PAGE_SEASONS.find(s => s.id === saved);
+  select.value = validSaved ? saved : PAGE_SEASONS[0].id;
   changeSeason();
 }
 
@@ -1411,7 +1424,7 @@ async function changeSeason() {
   const select = document.getElementById('season-select');
   const season = PAGE_SEASONS.find(s => s.id === select.value) || PAGE_SEASONS[0];
   STATE.currentSeason = season.id;
-  try {
+  if (!ONE_PICK) try {
     const key = OLDER_PICKS ? 'paddleOldSeason' : 'paddleSeason';
     if (localStorage.getItem(key) !== season.id) localStorage.setItem(key, season.id);
   } catch (_) {}
@@ -1427,7 +1440,12 @@ async function changeSeason() {
 
   try {
     const response = await fetch('data/' + season.manifest);
-    if (response.status === 404) throw new Error('no paddles for ' + season.label + ' yet');
+    if (response.status === 404) {
+      // An upcoming pick before SEPTA's paddles for it are in the app.
+      document.getElementById('district-select').innerHTML = '<option>No paddles yet</option>';
+      document.getElementById('grid').innerHTML = `<div class="error">No paddles for ${PaTags.esc(season.label)} yet. They show here once SEPTA posts them.</div>`;
+      return;
+    }
     if (!response.ok) throw new Error('Manifest not found');
     STATE.manifest = await response.json();
     initializeDistricts();
@@ -1448,7 +1466,8 @@ function initializeDistricts() {
   if (STATE.manifest.districts.length > 0) {
     // Current pick: the app-wide depot (bt_depot, shared with Live and Trip
     // Sheets) wins; older picks keep their own per-pick choice.
-    const shared = OLDER_PICKS ? null : districtByLabel(sharedDepot());
+    // An upcoming pick opens on the app-wide depot too, without changing it.
+    const shared = OLDER_PICKS && !ONE_PICK ? null : districtByLabel(sharedDepot());
     const saved = localStorage.getItem('paddleDepot_' + STATE.currentSeason);
     const validSaved = STATE.manifest.districts.find(d => d.name === saved);
     select.value = shared ? shared.name : validSaved ? saved : STATE.manifest.districts[0].name;

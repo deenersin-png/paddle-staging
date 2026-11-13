@@ -11,7 +11,8 @@
 // - Start and end are the first and LAST day of the pick (both included).
 //   An empty end means the pick runs until further notice.
 // - The current pick is the one whose range holds today.
-// - Every pick in the sheet, past and future, stays on Older Picks.
+// - The picks before it are on Older Picks; each pick after it gets its
+//   own menu link (assets/pa-menu.js).
 //
 // If the sheet does not answer, the last copy this device loaded is used.
 // With no copy at all, a red bar says so at the top of the page.
@@ -47,6 +48,8 @@
   function pad2(n) { return (n < 10 ? '0' : '') + n; }
   function isoOf(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
   function day(y, m, d) {
+    // A year like 0202 or 20277 is a typo in the sheet, not a date.
+    if (y < 2000 || y > 2100) return null;
     var x = new Date(y, m - 1, d);
     return x.getFullYear() === y && x.getMonth() === m - 1 && x.getDate() === d ? x : null;
   }
@@ -160,6 +163,11 @@
     if (hit) return hit;
     var started = picks.filter(function (p) { return p.startDate <= d; });
     return started.length ? started[started.length - 1] : picks[0];
+  }
+  /** The picks after the current one, soonest first. */
+  function upcoming(picks, today) {
+    var c = current(picks, today);
+    return c ? picks.filter(function (p) { return p.startDate > c.startDate; }) : [];
   }
   /** 'past' | 'current' | 'future' for one pick, relative to the current pick. */
   function whenOf(picks, p, today) {
@@ -279,7 +287,7 @@
 
   root.PaPicks = {
     load: load, cached: cached, reset: reset,
-    current: current, forDate: forDate, whenOf: whenOf,
+    current: current, forDate: forDate, whenOf: whenOf, upcoming: upcoming,
     parseDate: parseDate, isoOf: isoOf,
     info: function () { return info; },
     // For the tests.
