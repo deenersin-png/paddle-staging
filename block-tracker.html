@@ -1104,6 +1104,43 @@ function isNightRunStart(min) { return min != null && isFinite(min) && (min >= N
 // Tomorrow's / yesterday's calendar date.
 function nightRunsDate() { const d = new Date(); d.setDate(d.getDate() + 1); return d; }
 function yesterdayDate() { const d = new Date(); d.setDate(d.getDate() - 1); return d; }
+
+// Some runs are listed twice in a paddle CSV with DIFFERENT times: one
+// version for some weekdays, one for the others (Comly 965: Mon–Thu pull out
+// 2:12 PM, Fri 1:07 PM). data/run-variants.json (tools/run-variants.py, from
+// SEPTA's GTFS) says which days each works. rowsForDate keeps, per run, the
+// version worked on `date` (else the first listed) and drops exact copies, so
+// a block's PO / PI line and "goes out at" never mix two days' times.
+let runVariantsP = null;
+function loadRunVariants() {
+  if (!runVariantsP) runVariantsP = fetch(PADDLE_BASE + '/run-variants.json')
+    .then(r => r.ok ? r.json() : {}).catch(() => { runVariantsP = null; return {}; });
+  return runVariantsP;
+}
+function rowsForDate(rows, variants, slug, dayType, date) {
+  const label = String(dayType || '').charAt(0).toUpperCase() + String(dayType || '').slice(1).toLowerCase();
+  const byRun = (((variants || {}).districts || {})[slug] || {})[label] || {};
+  const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][date.getDay()];
+  const keyOf = r => [r.start, r.finish].map(s => String(s || '').split(' ').slice(1, 3).join(' ')).join('|') + '|' + (r.pay || '');
+  const groups = new Map();
+  for (const r of rows) {
+    const k = String(r.runno || '').trim();
+    if (!k) continue;
+    if (!groups.has(k)) groups.set(k, { sigs: [], list: [] });
+    const g = groups.get(k), sig = JSON.stringify(r);
+    if (!g.sigs.includes(sig)) { g.sigs.push(sig); g.list.push(r); }
+  }
+  const keep = new Set();
+  for (const [k, { list }] of groups) {
+    let pick = list[0];
+    if (list.length > 1) {
+      const entries = byRun[k] || [];
+      pick = list.find(r => { const e = entries.find(x => x.key === keyOf(r)); return e && (e.days || []).includes(dow); }) || pick;
+    }
+    keep.add(pick);
+  }
+  return rows.filter(r => keep.has(r));
+}
 // What the pick below was built for; it is rebuilt when this changes
 // (midnight, 4 AM, 11 PM).
 function paddleLoadKey() {
@@ -1180,7 +1217,7 @@ async function loadPaddleData() {
   if (paddle.loaded || paddle.loading) return;
   paddle.loading = true;
   try {
-    const manifest = await fetch(PADDLE_BASE + '/manifest.json').then(r => r.json());
+    const [manifest, variants] = await Promise.all([fetch(PADDLE_BASE + '/manifest.json').then(r => r.json()), loadRunVariants()]);
     const now = new Date();
     const day = getDayType();                                        // today
     const late = isLateEvening(now);                                 // 11 PM-midnight
@@ -1219,8 +1256,13 @@ async function loadPaddleData() {
         types.forEach((d, i) => { text[d] = got[i]; });
         pdfsText = await fetch(PADDLE_BASE + '/' + slug + '/pdfs.csv').then(r => r.ok ? r.text() : '');
       } catch(e) { return; }
+      // One row per run: the version worked on that date (today, tomorrow's
+      // night liners, last night's leftovers - same day type, maybe not same version).
       const rowsOf = {};
-      const rows = d => (rowsOf[d] = rowsOf[d] || (text[d] ? parseCSV(text[d]) : []));
+      const rows = (d, date) => {
+        const k = d + '|' + date.toDateString();
+        return (rowsOf[k] = rowsOf[k] || (text[d] ? rowsForDate(parseCSV(text[d]), variants, slug, d, date) : []));
+      };
 
       // runno → paddle-PDF link, for one day type
       const pdfRows = parseCSV(pdfsText);
@@ -1241,15 +1283,15 @@ async function loadPaddleData() {
       };
 
       const use = [];
-      if (runsOn(day)) rows(day).forEach(row => {
+      if (runsOn(day)) rows(day, serviceDate()).forEach(row => {
         const night = isNightRunStart(runStartMin(row));
         if (night && late) return;                      // tomorrow's report tonight instead
         use.push({ row, pm: night ? morningMin : dayMin, links: links(day), night });
       });
-      if (late && runsOn(tDay)) rows(tDay).forEach(row => {
+      if (late && runsOn(tDay)) rows(tDay, nightRunsDate()).forEach(row => {
         if (isNightRunStart(runStartMin(row))) use.push({ row, pm: tonightMin, links: links(tDay), night: true, tonight: true });
       });
-      if (owl && runsOn(yDay)) rows(yDay).forEach(row => {
+      if (owl && runsOn(yDay)) rows(yDay, yesterdayDate()).forEach(row => {
         if (!isNightRunStart(runStartMin(row)) && runCrossesMidnight(row)) use.push({ row, pm: lastNightMin, links: links(yDay), lastNight: true });
       });
 
@@ -3441,6 +3483,10 @@ function renderTsDayRow() {
 async function loadPickDay(label) {
   if (tsPickCache.has(label)) return tsPickCache.get(label);
   const m = paddle.manifest || await fetch(PADDLE_BASE + '/manifest.json').then(r => r.json());
+  const variants = await loadRunVariants();
+  // A run listed in two versions: the one worked on this day's next date.
+  let on = new Date();
+  for (let i = 1; i <= 8; i++) { on = new Date(); on.setDate(on.getDate() + i); if (dayTypeOfDate(on) === label.toLowerCase()) break; }
   const byBlock = new Map(), routesByDepot = new Map(), nightBlocks = new Map();
   const clock = t => { const v = clockToMin(String(t || '').trim()); return isFinite(v) ? v : null; };
   const morningMin = t => { const v = clock(t); return v == null ? null : v >= NIGHT_FROM_HR * 60 ? v - 1440 : v; };
@@ -3460,7 +3506,7 @@ async function loadPickDay(label) {
       const link = ((phone ? row.moblink || row.pclink : row.pclink || row.moblink) || '').trim();
       if (link) links.set(String(row.runno), link);
     }
-    for (const row of parseCSV(csv)) {
+    for (const row of rowsForDate(parseCSV(csv), variants, district.name, label, on)) {
       const night = isNightRunStart(runStartMin(row));
       pickAddRun(byBlock, { row, pm: night ? morningMin : pickPieceMin, links, night }, depot, depotRoutes, nightBlocks);
     }
