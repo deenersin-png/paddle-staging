@@ -430,6 +430,7 @@ setInterval(() => {
   const nextIdx = list.findIndex(e => e.min >= now - 2);
   // The last one just passed (or the banner shows but one is ahead): redraw.
   if ((nextIdx < 0) !== doneShown) { render(nextIdx < 0); return; }
+  if (doneShown) return;           // all done: every card stays grayed, no "ago"
   document.querySelectorAll('#poList .po-ev').forEach((el, i) => {
     el.classList.toggle('past', nextIdx >= 0 && i < nextIdx);
     el.classList.toggle('next', i === nextIdx);
