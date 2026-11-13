@@ -55,6 +55,15 @@ body{background:#eef2f8;color:#08122b;font-family:'IBM Plex Sans Condensed',syst
 .po-ev.in .po-time .po-due{color:#6a3fc1}
 .po-ev.next .po-time .po-due{background:#ffd400;color:#2b2200}
 .po-ev.past{opacity:.5;filter:grayscale(1)}
+/* All of today's done: banner on top, then the next one with a countdown. */
+.po-done{grid-column:1/-1;border-radius:10px;overflow:hidden;border:1px solid #c9d3e3;background:#fff;box-shadow:0 2px 6px rgba(8,18,43,.08)}
+.po-done-t{display:flex;align-items:center;justify-content:center;gap:8px;padding:12px 14px;background:#12753a;color:#fff;font-size:17px;font-weight:800;text-align:center}
+.po-done.in .po-done-t{background:#6a3fc1}
+.po-done-next{padding:12px 14px;text-align:center;font-size:16px;font-weight:600;color:#08122b;line-height:1.45}
+.po-done-next b{font-weight:800;color:#0b4ea2}
+.po-done.in .po-done-next b{color:#6a3fc1}
+.po-done-next .po-cd{display:inline-block;font-family:'IBM Plex Mono',monospace;font-weight:800;color:#c8102e;white-space:nowrap}
+.po-done-sub{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;margin-top:6px;font-size:13px;color:#56627a}
 .po-ev .prc-seg.po-hit{background:rgba(255,212,0,.22)}
 .po-ev .prc-stack{border-radius:8px;overflow:hidden}
 
@@ -118,7 +127,7 @@ body{background:#eef2f8;color:#08122b;font-family:'IBM Plex Sans Condensed',syst
 // ==========================================================================
 import {
   loadSeasons, seasonFor, loadManifest, loadCalendarOverrides, dayTypeFor, dayLabel,
-  loadPaddle, normalizeRun, loadPaddleLinks, todayIso, addDays, fmtClock
+  loadPaddle, normalizeRun, loadPaddleLinks, todayIso, addDays, fmtClock, minToMs
 } from './assets/pa-schedule.js';
 import { modelFromRun, card, stack } from './assets/pa-run-card.js';
 
@@ -134,6 +143,7 @@ let events = { out: [], in: [] }, loadSeq = 0, dayKey = '';
 // Day tags: today's day (live: next / past, "in 5 min") or another day of the
 // depot's schedule (that day's list, plain). Search: run or block number.
 let selDay = '';                    // '' = today
+let doneShown = false;              // the "all of today's ... are complete" banner is up
 // Route dropdown: '' = all routes. An event's route (e.rt) is the one its
 // block runs at that pull-out / pull-in (a "21-42" piece: the trip then, else the next).
 let routeSel = lsGet('po_route');
@@ -250,6 +260,96 @@ function fillRoutes() {
   sel.value = routeSel;
 }
 
+// ---- After the last one of today: the next one ------------------------------
+// The first pull out (pull in) of the next day this depot runs, from that
+// day's own schedule - its day type by the calendar (a Friday night looks at
+// Saturday's, a holiday at its override) - and the Route dropdown's route.
+// { ms, min, iso, run, block, rt } or null; cached per depot / day / route.
+const nextCache = new Map();
+async function nextEvent(kind) {
+  const dist = curDist();
+  if (!dist) return null;
+  const today = todayIso();
+  const key = [dist.name, today, kind, routeSel].join('|');
+  if (nextCache.has(key)) return nextCache.get(key);
+  const job = (async () => {
+    const has = t => (dist.days || []).includes(dayLabel(t));
+    for (let k = 1; k <= 8; k++) {
+      const iso = addDays(today, k), dt = dayTypeFor(iso, overrides);
+      if (!has(dt)) continue;
+      const list = await runsOf(dist.name, dt).catch(() => []);
+      const cand = [];
+      for (const x of list) {
+        if (!x.run) continue;
+        x.run.pieces.forEach(pc => {
+          const isOut = kind === 'out';
+          const type = String(isOut ? pc.startType : pc.endType).toUpperCase();
+          const min = isOut ? pc.startMin : pc.endMin;
+          if (type !== (isOut ? 'O' : 'I') || min == null) return;
+          const ms = minToMs(iso, min);
+          // Already on today's list (a night liner pulling out after 11 PM).
+          if (ms <= Date.now()) return;
+          cand.push({ ms, min, iso, dt, run: x.run.runNo, block: pc.block, route: pc.routeLabel, pc });
+        });
+      }
+      cand.sort((a, b) => a.ms - b.ms || Number(a.run) - Number(b.run));
+      for (const c of cand) {
+        c.rt = await PaTags.resolveRoute(c.route, c.block, c.dt, c.min, c.pc.startMin, c.pc.endMin);
+        if (!routeSel || c.rt === routeSel) return c;
+      }
+    }
+    return null;
+  })();
+  nextCache.set(key, job);
+  return job;
+}
+// "tonight" / "today" / "tomorrow" / "Monday" for a moment ahead.
+function dayWord(ms) {
+  const t = new Date(ms), n = new Date();
+  const days = Math.round((new Date(t.getFullYear(), t.getMonth(), t.getDate()) - new Date(n.getFullYear(), n.getMonth(), n.getDate())) / 86400000);
+  if (days <= 0) return t.getHours() >= 18 ? 'tonight' : 'today';
+  if (days === 1) return 'tomorrow';
+  return t.toLocaleDateString('en-US', { weekday: 'long' });
+}
+// "in 2 hours 31 minutes" / "in 12 minutes" / "in 40 seconds", ticking.
+function countdown(ms) {
+  const sec = Math.max(0, Math.round((ms - Date.now()) / 1000));
+  if (sec <= 0) return 'now';
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60);
+  const pl = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+  if (h) return 'in ' + pl(h, 'hour') + (m ? ' ' + pl(m, 'minute') : '');
+  if (m) return 'in ' + pl(m, 'minute');
+  return 'in ' + pl(sec, 'second');
+}
+// The banner (all of today's done, or none today) and, once found, the next one.
+function doneBannerHtml(none) {
+  const word = view === 'out' ? 'pull outs' : 'pull ins';
+  const head = none ? 'No ' + word + (routeSel ? ' on Route ' + esc(routeSel) : '') + ' today.'
+                    : 'All of today’s ' + word + (routeSel ? ' on Route ' + esc(routeSel) : '') + ' are complete.';
+  return '<div class="po-done' + (view === 'in' ? ' in' : '') + '"><div class="po-done-t">' + (none ? '' : '✓ ') + head + '</div>' +
+         '<div class="po-done-next" id="poNext">Finding the next ' + (view === 'out' ? 'pull out' : 'pull in') + '…</div></div>';
+}
+async function fillNext() {
+  const kind = view, seq = loadSeq;
+  const nx = await nextEvent(kind);
+  const box = $('poNext');
+  if (!box || kind !== view || seq !== loadSeq) return;
+  const what = kind === 'out' ? 'Next pull out' : 'Next pull in';
+  if (!nx) { box.textContent = 'No ' + (kind === 'out' ? 'pull out' : 'pull in') + (routeSel ? ' on Route ' + routeSel : '') + ' in the next week.'; return; }
+  box.innerHTML = what + ': <b>' + esc(dayWord(nx.ms)) + ' at ' + esc(fmtClock(nx.min)) + '</b>, ' +
+    '<span class="po-cd" data-ms="' + nx.ms + '">' + esc(countdown(nx.ms)) + '</span>.' +
+    '<div class="po-done-sub">Run ' + esc(nx.run) + ' · ' + PaTags.blockTag(nx.rt, nx.block) + ' · ' + esc(dayLabel(nx.dt)) + ' schedule</div>';
+  PaTags.resolveBlockTags(box);
+}
+// Every second: the countdown; at 0, the next day's list takes over.
+setInterval(() => {
+  const cd = document.querySelector('#poNext .po-cd');
+  if (!cd) return;
+  const ms = +cd.dataset.ms;
+  cd.textContent = countdown(ms);
+  if (ms <= Date.now()) { nextCache.clear(); build(); }
+}, 1000);
+
 function dueText(min, now) {
   const d = min - now;
   if (d === 0) return 'now';
@@ -278,12 +378,18 @@ function render(scroll) {
   $('poLabel').innerHTML = esc(word) + ' · ' + list.length + '<span class="po-sub">' + esc(label) + (routeSel ? ' · Route ' + esc(routeSel) : '') + ' · ' + esc(dayName) + ' · earliest to latest</span>';
   const box = $('poList');
   if (!list.length) {
-    box.innerHTML = '<div class="po-msg">No ' + esc(word.toLowerCase()) + (routeSel ? ' on Route ' + esc(routeSel) : '') + (other ? ' on ' + esc(selDay) : ' today') + '</div>';
+    // Today, nothing at all (the depot doesn't run today): the next one.
+    if (!other) { box.innerHTML = doneBannerHtml(true); doneShown = true; fillNext(); return; }
+    box.innerHTML = '<div class="po-msg">No ' + esc(word.toLowerCase()) + (routeSel ? ' on Route ' + esc(routeSel) : '') + ' on ' + esc(selDay) + '</div>';
     return;
   }
   box.innerHTML = '';
   // Current / next: the first one not more than 2 minutes past (today only).
   const nextIdx = other ? -1 : list.findIndex(e => e.min >= now - 2);
+  // Today's all done: the banner + the next one on top, no "ago" labels below.
+  const allDone = !other && nextIdx < 0;
+  doneShown = allDone;
+  if (allDone) { box.innerHTML = doneBannerHtml(false); fillNext(); }
   list.forEach((e, i) => {
     const r = e.x.run;
     const top = document.createElement('div');
@@ -293,7 +399,7 @@ function render(scroll) {
       // Block tag: the route the block runs at that moment ("21/9140").
       '<span class="po-where">' + PaTags.blockTag(e.rt, e.block) +
       (other ? '' : e.lastNight ? ' last night' : e.tonight || e.min >= 1440 ? ' tonight' : '') + '</span>' +
-      (other ? '' : '<span class="po-due" data-min="' + e.min + '">' + esc(dueText(e.min, now)) + '</span>');
+      (other || allDone ? '' : '<span class="po-due" data-min="' + e.min + '">' + esc(dueText(e.min, now)) + '</span>');
     const c = card(modelFromRun(r), { paddleUrl: e.url });
     const seg = c.querySelectorAll('.prc-seg')[e.piece];
     if (seg) seg.classList.add('po-hit');
@@ -301,12 +407,12 @@ function render(scroll) {
     const rts = c.querySelector('.prc-routes');
     if (rts) rts.innerHTML = PaTags.routeList([...new Set(r.pieces.map(p => p.routeLabel))], e.route, false, (a, b) => a === b);
     const wrap = document.createElement('div');
-    wrap.className = 'po-ev' + (view === 'in' ? ' in' : '') + (nextIdx >= 0 && i < nextIdx ? ' past' : '') + (i === nextIdx ? ' next' : '');
+    wrap.className = 'po-ev' + (view === 'in' ? ' in' : '') + ((nextIdx >= 0 && i < nextIdx) || allDone ? ' past' : '') + (i === nextIdx ? ' next' : '');
     wrap.appendChild(stack(top, c, r.dayType));
     box.appendChild(wrap);
   });
   PaTags.resolveBlockTags(box);
-  if (scroll && other) window.scrollTo(0, 0);
+  if (scroll && (other || allDone)) window.scrollTo(0, 0);
   else if (scroll) {
     const target = box.querySelector('.po-ev.next') || box.lastElementChild;
     if (target && nextIdx !== 0) requestAnimationFrame(() => target.scrollIntoView({ block: 'start' }));
@@ -322,6 +428,8 @@ setInterval(() => {
   if (otherDay()) return;
   const list = inView();
   const nextIdx = list.findIndex(e => e.min >= now - 2);
+  // The last one just passed (or the banner shows but one is ahead): redraw.
+  if ((nextIdx < 0) !== doneShown) { render(nextIdx < 0); return; }
   document.querySelectorAll('#poList .po-ev').forEach((el, i) => {
     el.classList.toggle('past', nextIdx >= 0 && i < nextIdx);
     el.classList.toggle('next', i === nextIdx);
