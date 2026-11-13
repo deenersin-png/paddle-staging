@@ -45,8 +45,6 @@ body{background:#eef2f8;color:#08122b;font-family:'IBM Plex Sans Condensed',syst
 .ot-routes .fchip{font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:700;padding:7px 12px;border-radius:4px;border:1px solid #c9d3e3;background:#f2f5fa;color:#0b4ea2;cursor:pointer;white-space:nowrap}
 .ot-routes .fchip .cnt{font-size:11px;font-weight:600;opacity:.65;margin-left:5px}
 .ot-routes .fchip.all{font-family:inherit;letter-spacing:.03em}
-.ot-open{font:inherit;font-size:14px;font-weight:800;padding:8px 12px;border-radius:20px;border:1.5px solid #12753a;background:#fff;color:#12753a;cursor:pointer;white-space:nowrap}
-.ot-open.on{background:#12753a;color:#fff}
 .ot-count{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;color:#56627a;white-space:nowrap}
 
 /* One holiday date: its header, then the runs. */
@@ -133,7 +131,6 @@ body{background:#eef2f8;color:#08122b;font-family:'IBM Plex Sans Condensed',syst
     <option value="swing-desc">Swing (Longest)</option>
     <option value="swing-asc">No Swing First</option>
   </select>
-  <button type="button" id="otOpen" class="ot-open" aria-pressed="false">Open sign-ups only</button>
   <span id="otCount" class="ot-count"></span>
 </div>
 
@@ -320,7 +317,6 @@ function depotMatches(sheetDepot, label) {
 let seasons = [], curDistricts = [], hdata = { days: {}, ov: {} }, entries = [];
 // Route chips: the routes picked (none = all), remembered.
 const routeSel = new Set(lsGet('ot_routes').split(',').filter(Boolean));
-let openOnly = lsGet('ot_open') === '1';
 let showPast = false;
 let loadSeq = 0;
 let items = [];                        // [{ e, run, row, url, dayType, info }] for the depot
@@ -394,8 +390,8 @@ async function build() {
 }
 
 const routesOf = x => x.run ? [...new Set(x.run.pieces.flatMap(p => PaTags.labelRoutes(p.routeLabel).map(PaTags.shortRoute)))] : [];
-// The cards that can show (upcoming, unless past dates are open; open sign-ups only).
-const shownItems = () => items.filter(x => (showPast || x.e.iso >= today()) && !(openOnly && isClosed(x.e)));
+// The cards that can show (upcoming, unless past dates are open).
+const shownItems = () => items.filter(x => showPast || x.e.iso >= today());
 function fillRoutes() {
   const rank = r => { const n = parseInt(r, 10); return isNaN(n) ? [1, 0, r] : [0, n, r]; };
   const list = shownItems();
@@ -416,7 +412,6 @@ function fillRoutes() {
 const swingMin = x => { const s = parseInt(x.row && x.row.swingdursec, 10); return x.run && x.run.swing && s > 0 ? s / 60 : 0; };
 function matches(x) {
   if (routeSel.size && !routesOf(x).some(r => routeSel.has(r))) return false;
-  if (openOnly && isClosed(x.e)) return false;
   return true;
 }
 function sorter() {
@@ -511,7 +506,6 @@ function render() {
   if (!list.length) {
     let why = 'No runs match your filters.';
     if (!base.length) why = 'No upcoming holiday overtime for ' + esc(label) + '.';
-    else if (openOnly && base.every(x => isClosed(x.e))) why = 'Sign-up is closed for every run shown. Turn off "Open sign-ups only" to see them.';
     box.innerHTML = '<div class="ot-msg">' + why + '</div>' + pastBtn;
     return;
   }
@@ -545,11 +539,6 @@ $('otRoutes').addEventListener('click', e => {
   render();
 });
 $('otSort').addEventListener('change', () => { lsSet('ot_sort', $('otSort').value); render(); });
-$('otOpen').addEventListener('click', () => {
-  openOnly = !openOnly; lsSet('ot_open', openOnly ? '1' : '');
-  $('otOpen').classList.toggle('on', openOnly); $('otOpen').setAttribute('aria-pressed', openOnly);
-  render();
-});
 // The depot is app-wide: bt_depot (label), like Paddles / Live / Pull Outs.
 $('otDepot').addEventListener('change', () => { lsSet('bt_depot', $('otDepot').value); build(); });
 window.addEventListener('storage', e => {
@@ -588,7 +577,6 @@ function fillDepots() {
 (async function init() {
   const s = lsGet('ot_sort');
   if (s && [...$('otSort').options].some(o => o.value === s)) $('otSort').value = s;
-  $('otOpen').classList.toggle('on', openOnly); $('otOpen').setAttribute('aria-pressed', openOnly);
   try {
     let tabs;
     [seasons, hdata, tabs] = await Promise.all([loadSeasons(), H.load(), loadSheet()]);
