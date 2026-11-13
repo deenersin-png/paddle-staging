@@ -162,8 +162,9 @@ const startClock = row => { const m = String(row.start || '').match(/(\d{1,2}):(
 const isNight = row => { const s = startClock(row); return s != null && (s >= NIGHT_FROM || s < OWL_END); };
 
 // One day's runs of a depot: [{ run, row, day }] with times on that day's clock.
-async function runsOf(slug, dayType) {
-  const rows = await loadPaddle(slug, dayType);
+// `iso` picks the version worked that date of a run listed twice (Mon–Thu / Fri).
+async function runsOf(slug, dayType, iso) {
+  const rows = await loadPaddle(slug, dayType, iso);
   return [...rows.values()].map(row => ({ row, run: normalizeRun(row, dayType), dayType }));
 }
 
@@ -179,7 +180,10 @@ async function build() {
     // Another day: its runs on its own clock, no "now".
     const dt = PaTags.dayKey(selDay);
     const links = await loadPaddleLinks(dist.name).catch(() => new Map());
-    const rows = await loadPaddle(dist.name, encodeURIComponent(selDay.toLowerCase())).catch(() => new Map());
+    // A run listed in two versions: the one worked on this day's next date.
+    let on = addDays(today, 1);
+    for (let i = 1; i <= 7 && dayLabel(dayTypeFor(on, overrides)) !== selDay; i++) on = addDays(today, i + 1);
+    const rows = await loadPaddle(dist.name, encodeURIComponent(selDay.toLowerCase()), on).catch(() => new Map());
     if (my !== loadSeq) return;
     const out = [], inn = [];
     for (const row of rows.values()) {
@@ -209,14 +213,14 @@ async function build() {
   const has = t => (dist.days || []).includes(dayLabel(t));
   const sets = [];
   // Today's runs, on today's clock.
-  if (has(tType)) sets.push({ list: await runsOf(dist.name, tType).catch(() => []), shift: 0, keep: () => true });
+  if (has(tType)) sets.push({ list: await runsOf(dist.name, tType, today).catch(() => []), shift: 0, keep: () => true });
   // After midnight: last night's runs that pull in after midnight - until 4 AM,
   // or later while one of them still has to pull in (then +2 min).
   leftoverEnd = OWL_END;
   if (now < LEFTOVER_LOOK) {
     const yType = dayTypeFor(addDays(today, -1), overrides);
     if (has(yType)) {
-      const list = await runsOf(dist.name, yType).catch(() => []);
+      const list = await runsOf(dist.name, yType, addDays(today, -1)).catch(() => []);
       let last = -1;
       for (const x of list) if (x.run && !isNight(x.row)) for (const p of x.run.pieces)
         if (String(p.endType).toUpperCase() === 'I' && p.endMin != null && p.endMin - 1440 >= 0) last = Math.max(last, p.endMin - 1440);
@@ -227,7 +231,7 @@ async function build() {
   // From 11 PM: tomorrow's night liners pull out after midnight.
   if (now >= NIGHT_FROM) {
     const nType = dayTypeFor(addDays(today, 1), overrides);
-    if (has(nType)) sets.push({ list: await runsOf(dist.name, nType).catch(() => []), shift: 1440, keep: x => isNight(x.row), tonight: true });
+    if (has(nType)) sets.push({ list: await runsOf(dist.name, nType, addDays(today, 1)).catch(() => []), shift: 1440, keep: x => isNight(x.row), tonight: true });
   }
   if (my !== loadSeq) return;
   const out = [], inn = [];
@@ -291,7 +295,7 @@ async function nextEvent(kind) {
     for (let k = 1; k <= 8; k++) {
       const iso = addDays(today, k), dt = dayTypeFor(iso, overrides);
       if (!has(dt)) continue;
-      const list = await runsOf(dist.name, dt).catch(() => []);
+      const list = await runsOf(dist.name, dt, iso).catch(() => []);
       const cand = [];
       for (const x of list) {
         if (!x.run) continue;

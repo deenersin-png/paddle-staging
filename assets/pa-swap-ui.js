@@ -53,7 +53,7 @@ function paddleRun(offer) {
   if (!runCache.has(k)) {
     const p = slugFor(offer.depotKey, g.date).then(async ({ slug }) => {
       if (!slug) return null;
-      const [run, url] = await Promise.all([getRun(slug, g.dayType, g.runNo), paddleLinkFor(slug, g.dayType, g.runNo).catch(() => '')]);
+      const [run, url] = await Promise.all([getRun(slug, g.dayType, g.runNo, g.date), paddleLinkFor(slug, g.dayType, g.runNo).catch(() => '')]);
       return run ? { run, url } : null;
     });
     p.catch(() => runCache.delete(k));

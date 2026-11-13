@@ -231,23 +231,55 @@ export function isHoliday(iso, overrides) { return !!(overrides && overrides[iso
  * ("2023-10-11 05:35 AM"), except night liners, which report the evening
  * BEFORE ("2023-10-10 11:54 PM"): they belong to the next day's schedule.
  * The schedule day is the date most starts carry.
+ *
+ * Some runs are listed twice with DIFFERENT times / pay / pieces: one
+ * version for some weekdays, one for the others (Comly 965: Mon–Thu 1:58 PM,
+ * Fri 12:53 PM). data/run-variants.json (tools/run-variants.py, from SEPTA's
+ * GTFS) says which days each works. Pass `iso` (the date worked) to get that
+ * day's version; without it the first one listed is used, as on Paddles.
+ * Such rows carry `_version` ("Fri") and `_versions` (how many there are).
  */
-export async function loadPaddle(slug, dayType) {
-  const rows = parseCSV(await fetchText(PADDLE_BASE + slug + '/' + dayType + '.csv'));
+export async function loadPaddle(slug, dayType, iso) {
+  const [text, variants] = await Promise.all([
+    fetchText(PADDLE_BASE + slug + '/' + dayType + '.csv'), loadRunVariants()]);
+  const rows = parseCSV(text);
   const m = new Map();
   const dateOf = r => { const x = String(r.start || '').match(/^(\d{4}-\d{2}-\d{2})/); return x ? x[1] : null; };
   const counts = new Map();
   rows.forEach(r => { const d = dateOf(r); if (d) counts.set(d, (counts.get(d) || 0) + 1); });
   let base = null;
   for (const [d, n] of counts) if (!base || n > counts.get(base)) base = d;
+  const groups = new Map();
   rows.forEach(r => {
     if (!r.runno) return;
+    const sig = JSON.stringify(r);
     const d = dateOf(r);
     r._dayOffset = base && d ? daysBetween(base, d) : 0;
-    m.set(String(r.runno), r);
+    const k = String(r.runno);
+    if (!groups.has(k)) groups.set(k, { sigs: [], list: [] });
+    const g = groups.get(k);
+    if (!g.sigs.includes(sig)) { g.sigs.push(sig); g.list.push(r); }   // exact copies count once
   });
+  const byRun = ((((variants || {}).districts || {})[decodeURIComponent(slug)] || {})[dayLabel(decodeURIComponent(dayType))]) || {};
+  const dow = iso ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dowOf(iso)] : null;
+  for (const [k, { list }] of groups) {
+    let pick = list[0];
+    if (list.length > 1) {
+      const entries = byRun[k] || [];
+      const entryOf = r => entries.find(e => e.key === variantKey(r)) || null;
+      list.forEach(r => { const e = entryOf(r); r._version = e ? e.label : ''; r._versions = list.length; });
+      if (dow) pick = list.find(r => { const e = entryOf(r); return e && (e.days || []).includes(dow); }) || pick;
+    }
+    m.set(k, pick);
+  }
   return m;
 }
+
+/** data/run-variants.json: { districts: { slug: { Weekday: { runNo: [{ key, days, label, why }] } } } }. */
+export async function loadRunVariants() {
+  return (await fetchJson(PADDLE_BASE + 'run-variants.json')) || {};
+}
+const variantKey = r => [r.start, r.finish].map(s => String(s || '').split(' ').slice(1, 3).join(' ')).join('|') + '|' + (r.pay || '');
 
 const timePart = s => { const m = String(s || '').match(/\d{1,2}:\d{2}\s*[AP]M/i); return m ? m[0] : ''; };
 
@@ -309,6 +341,8 @@ export function normalizeRun(row, dayType) {
     // As the paddle prints them, for the Paddle App's run scorecard.
     startText: timePart(row.start), finishText: timePart(row.finish),
     payText: row.pay || '', swingDur: row.pullout2 ? (row.swingdur || '') : '',
+    // Runs listed in two versions (see loadPaddle): this one's days, e.g. "Fri".
+    versionLabel: row._version || '', versions: row._versions || 1,
     swing: pieces.length > 1,
     pieces,
     routes: [...new Set(pieces.flatMap(p => p.routes))],
@@ -316,9 +350,11 @@ export function normalizeRun(row, dayType) {
   };
 }
 
-export async function getRun(slug, dayType, runNo) {
+/** `iso` = the date the run is worked: picks that day's version of a run
+ *  listed twice (see loadPaddle). */
+export async function getRun(slug, dayType, runNo, iso) {
   if (!slug || !runNo) return null;
-  const m = await loadPaddle(slug, dayType);
+  const m = await loadPaddle(slug, dayType, iso);
   return normalizeRun(m.get(String(runNo)), dayType);
 }
 
@@ -353,13 +389,14 @@ export async function paddleLinkFor(slug, dayType, runNo) {
  * for a day type - the same table block-tracker.html builds for its cards
  * (PO / PI line and RUN chips). block -> { poTime, piTime, runs:[{runno, link}] }.
  */
-export async function loadBlockPaddles(districts, dayType) {
+export async function loadBlockPaddles(districts, dayType, iso) {
   const label = dayLabel(dayType);
   const byBlock = new Map();
   await Promise.all((districts || []).map(async d => {
     if (!d.days || !d.days.includes(label)) return;
-    const [schedText, pdfsText] = await Promise.all([
-      fetchText(PADDLE_BASE + d.name + '/' + dayType + '.csv'),
+    // One row per run: the version worked on `iso` (see loadPaddle).
+    const [sched, pdfsText] = await Promise.all([
+      loadPaddle(d.name, dayType, iso),
       fetchText(PADDLE_BASE + d.name + '/pdfs.csv')
     ]);
     const runLink = new Map();
@@ -368,7 +405,7 @@ export async function loadBlockPaddles(districts, dayType) {
       const link = (row.moblink || row.pclink || '').trim();
       if (link) runLink.set(String(row.runno), link);
     }
-    for (const row of parseCSV(schedText)) {
+    for (const row of sched.values()) {
       const runno = String(row.runno || '').trim();
       if (!runno) continue;
       for (let i = 1; i <= 10; i++) {

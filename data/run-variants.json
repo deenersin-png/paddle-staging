@@ -1,0 +1,639 @@
+{
+ "generated": "2026-11-12",
+ "gtfs_version": "v202611010",
+ "districts": {
+  "victory-fall-2026": {
+   "Weekday": {
+    "152": [
+     {
+      "key": "02:24 AM|12:50 PM|9.8",
+      "days": [
+       "Tue",
+       "Wed",
+       "Thu",
+       "Fri"
+      ],
+      "label": "Tue–Fri",
+      "why": "Has the trip Rt 108 Block 4356 3:15 AM–3:52 AM, which runs Tue–Fri only (SEPTA timetable)."
+     },
+     {
+      "key": "03:58 AM|12:50 PM|8.2",
+      "days": [
+       "Mon"
+      ],
+      "label": "Mon",
+      "why": "No trip Rt 108 Block 4356 3:15 AM–3:52 AM here: that trip runs Tue–Fri only (SEPTA timetable)."
+     }
+    ]
+   }
+  },
+  "midvale-fall-2026": {
+   "Weekday": {
+    "3": [
+     {
+      "key": "03:40 AM|12:22 PM|8.8",
+      "days": [
+       "Mon",
+       "Tue",
+       "Thu",
+       "Fri"
+      ],
+      "label": "Mon, Tue, Thu, Fri",
+      "why": "No trip Rt 51 Block 3003 12:44 PM–12:54 PM here: that trip runs Wed only (SEPTA timetable)."
+     },
+     {
+      "key": "03:40 AM|1:12 PM|10.1",
+      "days": [
+       "Wed"
+      ],
+      "label": "Wed",
+      "why": "Has the trip Rt 51 Block 3003 12:44 PM–12:54 PM, which runs Wed only (SEPTA timetable)."
+     }
+    ],
+    "916": [
+     {
+      "key": "06:11 AM|7:04 PM|10.4",
+      "days": [
+       "Mon",
+       "Tue",
+       "Wed",
+       "Thu"
+      ],
+      "label": "Mon–Thu",
+      "why": "No trip Rt 448 Block 3211 1:40 PM–2:04 PM here: that trip runs Fri only (SEPTA timetable)."
+     },
+     {
+      "key": "06:11 AM|7:04 PM|11.7",
+      "days": [
+       "Fri"
+      ],
+      "label": "Fri",
+      "why": "Has the trip Rt 448 Block 3211 1:40 PM–2:04 PM, which runs Fri only (SEPTA timetable)."
+     }
+    ],
+    "761": [
+     {
+      "key": "02:40 PM|12:18 AM|10.2",
+      "days": [
+       "Mon",
+       "Tue",
+       "Wed",
+       "Thu"
+      ],
+      "label": "Mon–Thu",
+      "why": "Has the trip Rt 448 Block 3220 3:18 PM–3:42 PM, which runs Mon–Thu only (SEPTA timetable)."
+     },
+     {
+      "key": "03:29 PM|12:18 AM|9.0",
+      "days": [
+       "Fri"
+      ],
+      "label": "Fri",
+      "why": "No trip Rt 448 Block 3220 3:18 PM–3:42 PM here: that trip runs Mon–Thu only (SEPTA timetable)."
+     }
+    ],
+    "81": [
+     {
+      "key": "11:00 AM|9:43 PM|8.7",
+      "days": [
+       "Mon",
+       "Tue",
+       "Thu",
+       "Fri"
+      ],
+      "label": "Mon, Tue, Thu, Fri",
+      "why": "Has the trip Rt 51 Block 3402 3:40 PM–3:50 PM, which runs Mon, Tue, Thu, Fri only (SEPTA timetable)."
+     },
+     {
+      "key": "11:00 AM|9:43 PM|8.0",
+      "days": [
+       "Wed"
+      ],
+      "label": "Wed",
+      "why": "No trip Rt 51 Block 3402 3:40 PM–3:50 PM here: that trip runs Mon, Tue, Thu, Fri only (SEPTA timetable)."
+     }
+    ]
+   }
+  },
+  "allegheny-fall-2026": {
+   "Weekday": {
+    "953": [
+     {
+      "key": "05:47 AM|1:52 PM|8.0",
+      "days": [
+       "Mon",
+       "Wed",
+       "Thu",
+       "Fri"
+      ],
+      "label": "Mon, Wed–Fri",
+      "why": "No trip Rt 441 Block 5058 2:11 PM–2:45 PM here: that trip runs Tue only (SEPTA timetable)."
+     },
+     {
+      "key": "05:47 AM|3:09 PM|9.8",
+      "days": [
+       "Tue"
+      ],
+      "label": "Tue",
+      "why": "Has the trip Rt 441 Block 5058 2:11 PM–2:45 PM, which runs Tue only (SEPTA timetable)."
+     }
+    ],
+    "659": [
+     {
+      "key": "04:19 AM|4:18 PM|8.5",
+      "days": [
+       "Mon",
+       "Wed",
+       "Thu",
+       "Fri"
+      ],
+      "label": "Mon, Wed–Fri",
+      "why": "Has the trip Rt 448 Block 5554 2:55 PM–3:49 PM, which runs Mon, Wed–Fri only (SEPTA timetable)."
+     },
+     {
+      "key": "04:19 AM|3:27 PM|8.0",
+      "days": [
+       "Tue"
+      ],
+      "label": "Tue",
+      "why": "Has the trip Rt 448 Block 5554 2:09 PM–3:03 PM, which runs Tue only (SEPTA timetable)."
+     }
+    ],
+    "402": [
+     {
+      "key": "05:57 AM|1:28 PM|8.0",
+      "days": [
+       "Mon",
+       "Tue",
+       "Wed",
+       "Thu"
+      ],
+      "label": "Mon–Thu",
+      "why": "No trip Rt 48 Block 5429 12:54 PM–1:37 PM here: that trip runs  only (SEPTA timetable)."
+     },
+     {
+      "key": "05:57 AM|3:07 PM|9.5",
+      "days": [
+       "Fri"
+      ],
+      "label": "Fri",
+      "why": "Has the trip Rt 48 Block 5429 12:54 PM–1:37 PM, which runs  only (SEPTA timetable)."
+     }
+    ],
+    "257": [
+     {
+      "key": "07:23 AM|8:01 PM|12.4",
+      "days": [
+       "Mon",
+       "Wed",
+       "Thu",
+       "Fri"
+      ],
+      "label": "Mon, Wed–Fri",
+      "why": "Has the trip Rt 441 Block 5074 2:57 PM–3:31 PM, which runs Mon, Wed–Fri only (SEPTA timetable)."
+     },
+     {
+      "key": "07:23 AM|8:01 PM|10.9",
+      "days": [
+       "Tue"
+      ],
+      "label": "Tue",
+      "why": "No trip Rt 441 Block 5074 2:57 PM–3:31 PM here: that trip runs Mon, Wed–Fri only (SEPTA timetable)."
+     }
+    ],
+    "519": [
+     {
+      "key": "02:49 PM|1:34 AM|11.9",
+      "days": [
+       "Mon",
+       "Tue",
+       "Wed",
+       "Thu"
+      ],
+      "label": "Mon–Thu",
+      "why": "Has the trip Rt 60 Block 5397 3:22 PM–3:59 PM, which runs Mon–Thu only (SEPTA timetable)."
+     },
+     {
+      "key": "03:46 PM|1:34 AM|10.5",
+      "days": [
+       "Fri"
+      ],
+      "label": "Fri",
+      "why": "No trip Rt 60 Block 5397 3:22 PM–3:59 PM here: that trip runs Mon–Thu only (SEPTA timetable)."
+     }
+    ]
+   }
+  },
+  "southern-fall-2026": {
+   "Weekday": {
+    "106": [
+     {
+      "key": "06:57 AM|6:47 PM|10.9",
+      "days": [
+       "Mon",
+       "Tue",
+       "Thu",
+       "Fri"
+      ],
+      "label": "Mon, Tue, Thu, Fri",
+      "why": "No trip Rt 79 Block 7506 12:23 PM–12:44 PM here: that trip runs Wed only (SEPTA timetable)."
+     },
+     {
+      "key": "06:57 AM|6:47 PM|12.2",
+      "days": [
+       "Wed"
+      ],
+      "label": "Wed",
+      "why": "Has the trip Rt 79 Block 7506 12:23 PM–12:44 PM, which runs Wed only (SEPTA timetable)."
+     }
+    ],
+    "807": [
+     {
+      "key": "06:18 AM|6:20 PM|10.0",
+      "days": [
+       "Mon",
+       "Tue",
+       "Thu",
+       "Fri"
+      ],
+      "label": "Mon, Tue, Thu, Fri",
+      "why": "No trip Rt 63 Block 7358 12:55 PM–1:27 PM here: that trip runs Wed only (SEPTA timetable)."
+     },
+     {
+      "key": "06:18 AM|6:20 PM|12.1",
+      "days": [
+       "Wed"
+      ],
+      "label": "Wed",
+      "why": "Has the trip Rt 63 Block 7358 12:55 PM–1:27 PM, which runs Wed only (SEPTA timetable)."
+     }
+    ],
+    "609": [
+     {
+      "key": "05:32 AM|4:56 PM|11.0",
+      "days": [
+       "Mon",
+       "Tue",
+       "Thu",
+       "Fri"
+      ],
+      "label": "Mon, Tue, Thu, Fri",
+      "why": "Has the trip Rt 63 Block 7682 3:45 PM–4:44 PM, which runs Mon, Tue, Thu, Fri only (SEPTA timetable)."
+     },
+     {
+      "key": "05:32 AM|4:26 PM|10.6",
+      "days": [
+       "Wed"
+      ],
+      "label": "Wed",
+      "why": "No trip Rt 63 Block 7682 3:45 PM–4:44 PM here: that trip runs Mon, Tue, Thu, Fri only (SEPTA timetable)."
+     }
+    ],
+    "620": [
+     {
+      "key": "11:40 AM|9:07 PM|8.9",
+      "days": [
+       "Mon",
+       "Tue",
+       "Thu",
+       "Fri"
+      ],
+      "label": "Mon, Tue, Thu, Fri",
+      "why": "Has the trip Rt 63 Block 7684 3:55 PM–4:28 PM, which runs Mon, Tue, Thu, Fri only (SEPTA timetable)."
+     },
+     {
+      "key": "11:40 AM|9:07 PM|8.0",
+      "days": [
+       "Wed"
+      ],
+      "label": "Wed",
+      "why": "No trip Rt 63 Block 7684 3:55 PM–4:28 PM here: that trip runs Mon, Tue, Thu, Fri only (SEPTA timetable)."
+     }
+    ],
+    "501": [
+     {
+      "key": "02:03 AM|12:21 PM|11.2",
+      "days": [
+       "Tue",
+       "Wed",
+       "Thu",
+       "Fri"
+      ],
+      "label": "Tue–Fri",
+      "why": "Has the trip Rt 68 Block 7851 2:35 AM–2:51 AM, which runs Tue–Fri only (SEPTA timetable)."
+     },
+     {
+      "key": "03:47 AM|12:21 PM|8.6",
+      "days": [
+       "Mon"
+      ],
+      "label": "Mon",
+      "why": "No trip Rt 68 Block 7851 2:35 AM–2:51 AM here: that trip runs Tue–Fri only (SEPTA timetable)."
+     }
+    ],
+    "502": [
+     {
+      "key": "02:23 AM|12:03 PM|10.3",
+      "days": [
+       "Tue",
+       "Wed",
+       "Thu",
+       "Fri"
+      ],
+      "label": "Tue–Fri",
+      "why": "Has the trip Rt 68 Block 7852 2:55 AM–3:11 AM, which runs Tue–Fri only (SEPTA timetable)."
+     },
+     {
+      "key": "03:58 AM|12:03 PM|8.0",
+      "days": [
+       "Mon"
+      ],
+      "label": "Mon",
+      "why": "No trip Rt 68 Block 7852 2:55 AM–3:11 AM here: that trip runs Tue–Fri only (SEPTA timetable)."
+     }
+    ],
+    "503": [
+     {
+      "key": "02:28 AM|12:44 PM|11.2",
+      "days": [
+       "Tue",
+       "Wed",
+       "Thu",
+       "Fri"
+      ],
+      "label": "Tue–Fri",
+      "why": "Has the trip Rt 68 Block 7853 3:00 AM–3:16 AM, which runs Tue–Fri only (SEPTA timetable)."
+     },
+     {
+      "key": "04:09 AM|12:44 PM|8.6",
+      "days": [
+       "Mon"
+      ],
+      "label": "Mon",
+      "why": "No trip Rt 68 Block 7853 3:00 AM–3:16 AM here: that trip runs Tue–Fri only (SEPTA timetable)."
+     }
+    ],
+    "956": [
+     {
+      "key": "05:28 AM|5:31 PM|10.3",
+      "days": [
+       "Mon",
+       "Tue",
+       "Thu",
+       "Fri"
+      ],
+      "label": "Mon, Tue, Thu, Fri",
+      "why": "Has the trip Rt 79 Block 7620 2:54 PM–3:17 PM, which runs Mon, Tue, Thu, Fri only (SEPTA timetable)."
+     },
+     {
+      "key": "05:28 AM|5:31 PM|9.5",
+      "days": [
+       "Wed"
+      ],
+      "label": "Wed",
+      "why": "No trip Rt 79 Block 7620 2:54 PM–3:17 PM here: that trip runs Mon, Tue, Thu, Fri only (SEPTA timetable)."
+     }
+    ],
+    "959": [
+     {
+      "key": "06:54 AM|7:00 PM|10.6",
+      "days": [
+       "Mon",
+       "Tue",
+       "Thu",
+       "Fri"
+      ],
+      "label": "Mon, Tue, Thu, Fri",
+      "why": "No trip Rt 79 Block 7615 12:26 PM–12:47 PM here: that trip runs Wed only (SEPTA timetable)."
+     },
+     {
+      "key": "06:54 AM|7:00 PM|11.6",
+      "days": [
+       "Wed"
+      ],
+      "label": "Wed",
+      "why": "Has the trip Rt 79 Block 7615 12:26 PM–12:47 PM, which runs Wed only (SEPTA timetable)."
+     }
+    ],
+    "964": [
+     {
+      "key": "02:30 PM|12:30 AM|10.8",
+      "days": [
+       "Mon",
+       "Tue",
+       "Thu",
+       "Fri"
+      ],
+      "label": "Mon, Tue, Thu, Fri",
+      "why": "Has the trip Rt 79 Block 7621 2:56 PM–3:19 PM, which runs Mon, Tue, Thu, Fri only (SEPTA timetable)."
+     },
+     {
+      "key": "03:11 PM|12:30 AM|9.7",
+      "days": [
+       "Wed"
+      ],
+      "label": "Wed",
+      "why": "No trip Rt 79 Block 7621 2:56 PM–3:19 PM here: that trip runs Mon, Tue, Thu, Fri only (SEPTA timetable)."
+     }
+    ]
+   }
+  },
+  "comly-fall-2026": {
+   "Weekday": {
+    "12": [
+     {
+      "key": "08:45 AM|6:34 PM|10.5",
+      "days": [
+       "Mon",
+       "Tue",
+       "Wed",
+       "Thu"
+      ],
+      "label": "Mon–Thu",
+      "why": "No trip Rt 14 Block 1061 6:11 PM–7:16 PM here: that trip runs  only (SEPTA timetable)."
+     },
+     {
+      "key": "08:45 AM|7:43 PM|12.2",
+      "days": [
+       "Fri"
+      ],
+      "label": "Fri",
+      "why": "Has the trip Rt 14 Block 1061 6:11 PM–7:16 PM, which runs  only (SEPTA timetable)."
+     }
+    ],
+    "965": [
+     {
+      "key": "01:58 PM|4:00 PM|2.8",
+      "days": [
+       "Mon",
+       "Tue",
+       "Wed",
+       "Thu"
+      ],
+      "label": "Mon–Thu",
+      "why": "Has the trip Rt 84 Block 1513 2:47 PM–3:26 PM, which runs Mon–Thu only (SEPTA timetable)."
+     },
+     {
+      "key": "12:53 PM|2:55 PM|2.8",
+      "days": [
+       "Fri"
+      ],
+      "label": "Fri",
+      "why": "Has the trip Rt 84 Block 1513 1:42 PM–2:21 PM, which runs Fri only (SEPTA timetable)."
+     }
+    ],
+    "966": [
+     {
+      "key": "02:01 PM|4:03 PM|2.8",
+      "days": [
+       "Mon",
+       "Tue",
+       "Wed",
+       "Thu"
+      ],
+      "label": "Mon–Thu",
+      "why": "Has the trip Rt 84 Block 1514 2:50 PM–3:29 PM, which runs Mon–Thu only (SEPTA timetable)."
+     },
+     {
+      "key": "12:54 PM|2:56 PM|2.8",
+      "days": [
+       "Fri"
+      ],
+      "label": "Fri",
+      "why": "Has the trip Rt 84 Block 1514 1:43 PM–2:22 PM, which runs Fri only (SEPTA timetable)."
+     }
+    ]
+   }
+  },
+  "frankfordb-fall-2026": {
+   "Weekday": {
+    "805": [
+     {
+      "key": "06:16 AM|4:03 PM|8.0",
+      "days": [
+       "Mon",
+       "Tue",
+       "Wed",
+       "Thu"
+      ],
+      "label": "Mon–Thu",
+      "why": "No trip Rt 82 Block 2716 1:43 PM–2:15 PM here: that trip runs Fri only (SEPTA timetable)."
+     },
+     {
+      "key": "06:16 AM|4:03 PM|9.4",
+      "days": [
+       "Fri"
+      ],
+      "label": "Fri",
+      "why": "Has the trip Rt 82 Block 2716 1:43 PM–2:15 PM, which runs Fri only (SEPTA timetable)."
+     }
+    ],
+    "932": [
+     {
+      "key": "05:28 AM|5:50 PM|8.4",
+      "days": [
+       "Mon",
+       "Tue",
+       "Wed",
+       "Thu"
+      ],
+      "label": "Mon–Thu",
+      "why": "No trip Rt 73 Block 2454 1:30 PM–1:50 PM here: that trip runs  only (SEPTA timetable)."
+     },
+     {
+      "key": "05:28 AM|5:50 PM|9.7",
+      "days": [
+       "Fri"
+      ],
+      "label": "Fri",
+      "why": "Has the trip Rt 73 Block 2454 1:30 PM–1:50 PM, which runs  only (SEPTA timetable)."
+     }
+    ],
+    "3": [
+     {
+      "key": "01:51 PM|9:22 PM|8.0",
+      "days": [
+       "Mon",
+       "Tue",
+       "Wed",
+       "Thu"
+      ],
+      "label": "Mon–Thu",
+      "why": "No trip Rt 5 Block 2453 1:10 PM–1:48 PM here: that trip runs  only (SEPTA timetable)."
+     },
+     {
+      "key": "12:50 PM|9:22 PM|8.6",
+      "days": [
+       "Fri"
+      ],
+      "label": "Fri",
+      "why": "Has the trip Rt 5 Block 2453 1:10 PM–1:48 PM, which runs  only (SEPTA timetable)."
+     }
+    ],
+    "4": [
+     {
+      "key": "01:53 PM|10:53 PM|9.3",
+      "days": [
+       "Mon",
+       "Tue",
+       "Wed",
+       "Thu"
+      ],
+      "label": "Mon–Thu",
+      "why": "Has the trip Rt 73 Block 2457 2:43 PM–2:57 PM, which runs Mon–Thu only (SEPTA timetable)."
+     },
+     {
+      "key": "03:11 PM|10:53 PM|8.0",
+      "days": [
+       "Fri"
+      ],
+      "label": "Fri",
+      "why": "No trip Rt 73 Block 2457 2:43 PM–2:57 PM here: that trip runs Mon–Thu only (SEPTA timetable)."
+     }
+    ],
+    "316": [
+     {
+      "key": "02:19 PM|12:25 AM|10.9",
+      "days": [
+       "Mon",
+       "Tue",
+       "Wed",
+       "Thu"
+      ],
+      "label": "Mon–Thu",
+      "why": "Has the trip Rt 82 Block 2722 3:18 PM–3:52 PM, which runs Mon–Thu only (SEPTA timetable)."
+     },
+     {
+      "key": "03:45 PM|12:25 AM|8.8",
+      "days": [
+       "Fri"
+      ],
+      "label": "Fri",
+      "why": "No trip Rt 82 Block 2722 3:18 PM–3:52 PM here: that trip runs Mon–Thu only (SEPTA timetable)."
+     }
+    ],
+    "154": [
+     {
+      "key": "04:43 AM|3:02 PM|9.8",
+      "days": [
+       "Mon",
+       "Tue",
+       "Wed",
+       "Thu"
+      ],
+      "label": "Mon–Thu",
+      "why": "Has the trip Rt 5 Block 2451 1:58 PM–2:37 PM, which runs  only (SEPTA timetable)."
+     },
+     {
+      "key": "04:43 AM|2:01 PM|8.3",
+      "days": [
+       "Fri"
+      ],
+      "label": "Fri",
+      "why": "No trip Rt 5 Block 2451 1:58 PM–2:37 PM here: that trip runs  only (SEPTA timetable)."
+     }
+    ]
+   }
+  }
+ }
+}

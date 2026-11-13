@@ -1066,6 +1066,32 @@ header { flex-wrap: wrap !important; }
 .seg-top .pa-blk { margin-left: 2px; }
 @container (max-width: 360px) { .card-head-top .pa-run { padding: 2px 5px; gap: 4px; } .card-head-top .pa-run .pa-run-n { font-size: 15px; } }
 @container (max-width: 300px) { .card-head-top .pa-run .pa-run-d { display: none; } }
+/* ===== Two versions of one run (e.g. Mon–Thu and Fri): both cards show,
+   each with its days, and a red "!" beside every value that differs.
+   Hover (or tap) a "!" for a small info window. ===== */
+.card-head-bottom .vdays {
+  margin-right: auto; display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--red); background: var(--red-dim);
+  border: 1px solid var(--red); border-radius: 3px; padding: 1px 4px 1px 6px; white-space: nowrap;
+}
+.card-head-bottom .vdays.today { color: #fff; background: var(--red); }
+.card-head-bottom .vdays.today .vdiff { background: #fff; color: var(--red); }
+.vdiff {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 15px; height: 15px; margin-left: 4px; padding: 0; vertical-align: 2px;
+  border: 0; border-radius: 50%; background: var(--red); color: #fff;
+  font: 800 11px/1 system-ui, sans-serif; cursor: help;
+}
+.vdiff:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+.stat-val .vdiff { vertical-align: 3px; }
+#vtip {
+  position: fixed; z-index: 1000; max-width: min(300px, calc(100vw - 24px));
+  background: #08122b; color: #fff; border-radius: 6px; padding: 8px 10px;
+  font: 500 12px/1.4 system-ui, sans-serif; white-space: pre-line;
+  box-shadow: 0 4px 14px rgba(8,18,43,.35); pointer-events: none;
+}
+#vtip[hidden] { display: none; }
 </style>
 <script src="assets/pa-menu.js" defer></script>
 <script src="assets/pa-tags.js"></script>
@@ -1207,7 +1233,8 @@ let STATE = {
   goneRunsEnabled: false,
   goneRunsUpdated: '',
   goneRuns: new Map(),
-  showOpenOnly: false
+  showOpenOnly: false,
+  variants: {}      // this depot's entry in data/run-variants.json
 };
 
 function parseCSV(csvText) {
@@ -1486,7 +1513,10 @@ async function changeDistrict() {
       }
     } catch (e) { console.log('pdfs.csv not found'); }
 
+    const variants = ((await loadRunVariants()).districts || {})[district] || {};
     if (myToken !== loadToken) return;               // superseded
+    markVersions(runs, variants);
+    STATE.variants = variants;
     STATE.runs = runs;
     STATE.availableDays = availableDays;
     STATE.pdfLinks = pdfLinks;
@@ -1765,14 +1795,161 @@ function filterRuns(mode) {
   const type = st ? st.sel : '';
   const matched = STATE.runs.filter(r => passesOtherFilters(r, mode) && runMatchesSearch(r, q, searchFinal, type));
 
+  // An exact copy of a run is dropped; a run with two DIFFERENT versions
+  // (markVersions) keeps both.
   const seenRuns = new Set();
   return matched.filter(r => {
-    const runno = r.runno || '';
-    if (seenRuns.has(runno)) return false;
-    seenRuns.add(runno);
+    const key = (r.runno || '') + '|' + (r._vers ? r._vi : 0);
+    if (seenRuns.has(key)) return false;
+    seenRuns.add(key);
     return true;
   });
 }
+
+// ===== Two versions of one run =====
+// Some paddle CSVs list a run twice with different times / pay / pieces
+// (Comly 965: Mon–Thu 1:58 PM, Fri 12:53 PM). data/run-variants.json
+// (tools/run-variants.py, from SEPTA's GTFS) says which days each one works.
+let runVariantsPromise = null;
+function loadRunVariants() {
+  if (!runVariantsPromise) {
+    runVariantsPromise = fetch('data/run-variants.json')
+      .then(r => r.ok ? r.json() : {})
+      .catch(() => ({}));
+  }
+  return runVariantsPromise;
+}
+
+const PIECE_FIELDS = ['r', 'b', 'potype', 'pot', 'pitype', 'pit', 'stime'];
+function runSig(run) {
+  const f = ['start', 'finish', 'pay', 'worktime', 'pullout2', 'swingdur'];
+  for (let i = 1; i <= 10; i++) PIECE_FIELDS.forEach(k => f.push(k + i));
+  return f.map(k => run[k] || '').join('|');
+}
+function hhmm(dt) { return String(dt || '').split(' ').slice(1, 3).join(' '); }
+function variantKey(run) { return hhmm(run.start) + '|' + hhmm(run.finish) + '|' + (run.pay || ''); }
+
+// Gives every run that has another, different version on the same day:
+// _vers (all versions, CSV order), _vi (its index), _var (its days entry or null).
+function markVersions(runs, variants) {
+  const groups = new Map();
+  runs.forEach(r => {
+    const k = r.day + '|' + (r.runno || '');
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(r);
+  });
+  groups.forEach(list => {
+    const vers = [];
+    const sigs = [];
+    list.forEach(r => {
+      const s = runSig(r);
+      let i = sigs.indexOf(s);
+      if (i < 0) { i = sigs.length; sigs.push(s); vers.push(r); }
+      r._vi = i;
+    });
+    if (vers.length < 2) { list.forEach(r => { delete r._vi; }); return; }
+    const entries = ((variants[list[0].day] || {})[list[0].runno]) || [];
+    vers.forEach(v => { v._var = entries.find(e => e.key === variantKey(v)) || null; });
+    list.forEach(r => { r._vers = vers; r._var = vers[r._vi]._var; });
+  });
+}
+
+function versionName(v) {
+  return v._var && v._var.label ? v._var.label : 'Version ' + (v._vi + 1);
+}
+function pieceText(run, i) {
+  return `${PaTags.shortRoute(run['r' + i])}/${run['b' + i]}  ` +
+    `${run['potype' + i] || ''} ${run['pot' + i] || ''} → ${run['pitype' + i] || ''} ${run['pit' + i] || ''}`;
+}
+function pieceKey(run, i) { return PIECE_FIELDS.map(k => run[k + i] || '').join('|'); }
+function pieceCount(run) { let n = 0; while (n < 10 && run['r' + (n + 1)] && run['b' + (n + 1)]) n++; return n; }
+
+// The red "!" with its info window text.
+function vMark(tip) {
+  const t = PaTags.esc(tip);
+  return `<button type="button" class="vdiff" aria-label="${t}" data-tip="${t}">!</button>`;
+}
+// "!" for one value, when another version has a different one.
+function vMarkField(run, label, get) {
+  if (!run._vers) return '';
+  const mine = get(run);
+  const others = run._vers.filter(v => v !== run && get(v) !== mine);
+  if (!others.length) return '';
+  return vMark(`${label} is different on other days.\n` +
+    `${versionName(run)} (this card): ${mine || 'none'}\n` +
+    others.map(v => `${versionName(v)}: ${get(v) || 'none'}`).join('\n'));
+}
+// "!" for piece i, when no other version has the same piece.
+function vMarkPiece(run, i) {
+  if (!run._vers) return '';
+  const k = pieceKey(run, i);
+  const lines = [];
+  run._vers.forEach(v => {
+    if (v === run) return;
+    const n = pieceCount(v);
+    let same = false, like = 0;
+    for (let j = 1; j <= n; j++) {
+      if (pieceKey(v, j) === k) same = true;
+      else if (!like && v['b' + j] === run['b' + i] && v['r' + j] === run['r' + i]) like = j;
+    }
+    if (same) return;
+    lines.push(like ? `${versionName(v)}: ${pieceText(v, like)}` : `${versionName(v)}: no such piece (this piece is not there)`);
+  });
+  if (!lines.length) return '';
+  return vMark(`This piece is different on other days.\n${versionName(run)} (this card): ${pieceText(run, i)}\n` + lines.join('\n'));
+}
+// Day badge for the card head: "MON–THU !" (filled red when it is today's).
+function vDaysBadge(run) {
+  if (!run._vers) return '';
+  const others = run._vers.filter(v => v !== run);
+  const days = run._var ? run._var.days : null;
+  const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date().getDay()];
+  const today = !!days && run.day === 'Weekday' && TODAY_LABEL === 'Weekday' && days.includes(dow);
+  const tip = `Run ${run.runno} has ${run._vers.length} ${run.day.toLowerCase()} versions.\n` +
+    `This card: ${versionName(run)}${today ? ' (today)' : ''}\n` +
+    others.map(v => `Other card: ${versionName(v)}`).join('\n') +
+    (run._var && run._var.why ? `\n\n${run._var.why}` : '') +
+    `\n\nThe red ! marks what is different.`;
+  return `<span class="vdays${today ? ' today' : ''}">${PaTags.esc(versionName(run))}${today ? ' · Today' : ''}${vMark(tip)}</span>`;
+}
+
+// One shared info window for every "!": hover on a mouse, tap on a phone.
+(function () {
+  let tipEl = null, pinned = null;
+  function show(btn) {
+    if (!tipEl) { tipEl = document.createElement('div'); tipEl.id = 'vtip'; tipEl.setAttribute('role', 'tooltip'); document.body.appendChild(tipEl); }
+    tipEl.textContent = btn.dataset.tip || '';
+    tipEl.hidden = false;
+    const r = btn.getBoundingClientRect();
+    const w = tipEl.offsetWidth, h = tipEl.offsetHeight;
+    const left = Math.min(Math.max(12, r.left + r.width / 2 - w / 2), window.innerWidth - w - 12);
+    let top = r.bottom + 6;
+    if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
+    tipEl.style.left = left + 'px';
+    tipEl.style.top = top + 'px';
+  }
+  function hide() { if (tipEl) tipEl.hidden = true; pinned = null; }
+  document.addEventListener('pointerover', e => {
+    if (e.pointerType !== 'mouse' || pinned) return;
+    const b = e.target.closest && e.target.closest('.vdiff');
+    if (b) show(b);
+  });
+  document.addEventListener('pointerout', e => {
+    if (e.pointerType !== 'mouse' || pinned) return;
+    const b = e.target.closest && e.target.closest('.vdiff');
+    if (b && !b.contains(e.relatedTarget)) hide();
+  });
+  document.addEventListener('click', e => {
+    const b = e.target.closest && e.target.closest('.vdiff');
+    if (!b) { if (pinned) hide(); return; }
+    e.preventDefault(); e.stopPropagation();
+    if (pinned === b) { hide(); return; }
+    show(b); pinned = b;
+  }, true);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') hide(); });
+  window.addEventListener('scroll', () => { if (tipEl && !tipEl.hidden) hide(); }, true);
+  window.addEventListener('resize', hide);
+})();
 
 // A run matching 'only' always matches 'any' too, so the only way the route
 // filter can strand you on an empty screen is with SELECTED ONLY switched on.
@@ -1853,7 +2030,7 @@ function render() {
           <div class="seg-body">
             <div class="seg-top">
               ${blkTag}
-              <span class="seg-sched">${run['stime' + i] || ''}</span>
+              <span class="seg-sched">${run['stime' + i] || ''}</span>${vMarkPiece(run, i)}
             </div>
             <div class="seg-times">
               <span class="seg-time-tag">${run['potype' + i] || ''}</span>
@@ -1871,8 +2048,11 @@ function render() {
 
     let swingHtml = '';
     if (run.pullout2) {
-      swingHtml = `<div class="swing-section"><div class="swing-label">Swing:</div><div class="swing-value">${run.swingdur || '&mdash;'}</div></div>`;
+      swingHtml = `<div class="swing-section"><div class="swing-label">Swing:</div><div class="swing-value">${run.swingdur || '&mdash;'}</div>${vMarkField(run, 'Swing', v => v.pullout2 ? v.swingdur : '')}</div>`;
+    } else if (run._vers && run._vers.some(v => v.pullout2)) {
+      swingHtml = `<div class="swing-section"><div class="swing-label">Swing:</div><div class="swing-value">none</div>${vMarkField(run, 'Swing', v => v.pullout2 ? v.swingdur : '')}</div>`;
     }
+    const routesOf = v => [...new Set(getRunRoutes(v))].join(' | ');
 
     const goneInfo = STATE.goneRuns.get(String(run.runno || '').trim());
     const pickedBadge = goneInfo
@@ -1887,13 +2067,14 @@ function render() {
             <div class="run-actions">${pickedBadge}${paddleBtn}</div>
           </div>
           <div class="card-head-bottom">
-            <div class="run-routes">${routesDisplay || '&mdash;'}</div>
+            ${vDaysBadge(run)}
+            <div class="run-routes">${routesDisplay || '&mdash;'}</div>${vMarkField(run, 'Routes', routesOf)}
           </div>
         </div>
         <div class="stats-row">
-          <div class="stat"><div class="stat-label">Start</div><div class="stat-val">${startTime || '&mdash;'}</div></div>
-          <div class="stat"><div class="stat-label">Finish</div><div class="stat-val">${finishTime || '&mdash;'}</div></div>
-          <div class="stat"><div class="stat-label">Pay hrs</div><div class="stat-val pay">${run.pay || '&mdash;'}</div></div>
+          <div class="stat"><div class="stat-label">Start</div><div class="stat-val">${startTime || '&mdash;'}${vMarkField(run, 'Start', v => hhmm(v.start))}</div></div>
+          <div class="stat"><div class="stat-label">Finish</div><div class="stat-val">${finishTime || '&mdash;'}${vMarkField(run, 'Finish', v => hhmm(v.finish))}</div></div>
+          <div class="stat"><div class="stat-label">Pay hrs</div><div class="stat-val pay">${run.pay || '&mdash;'}${vMarkField(run, 'Pay hours', v => v.pay)}</div></div>
         </div>
         ${swingHtml}
         ${segsHtml ? `<div class="timeline">${segsHtml}</div>` : ''}

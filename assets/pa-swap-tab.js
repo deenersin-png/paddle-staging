@@ -74,7 +74,7 @@ export function mount(root, deps) {
   async function lookupCard(date, runNo) {
     const { slug } = await E.slugForDate(profile().depotKey, date);
     if (!slug) return null;
-    const run = await S.getRun(slug, S.dayTypeFor(date, overrides()), String(runNo).trim());
+    const run = await S.getRun(slug, S.dayTypeFor(date, overrides()), String(runNo).trim(), date);
     return run ? W.runCard(run, date) : null;
   }
 

@@ -1067,14 +1067,14 @@ async function blockPaddle(block, c) {
   const { season, district } = await slugForDate(ctx.profile.depotKey, c.date);
   if (!season) return null;
   const entry = paddleEntry(season, c);
-  if (!entry.own && district) entry.own = await S.loadBlockPaddles([district], c.run.dayType);
+  if (!entry.own && district) entry.own = await S.loadBlockPaddles([district], c.run.dayType, c.date);
   if (entry.own && entry.own.has(String(block))) return entry.own.get(String(block));
   const all = await allBlockPaddles(c);
   return (all && all.get(String(block))) || null;
 }
 
 function paddleEntry(season, c) {
-  const key = season.id + '|' + c.run.dayType;
+  const key = season.id + '|' + c.run.dayType + '|' + c.date;   // per date: a run's version can differ by weekday
   ctx.blockPaddles = ctx.blockPaddles || new Map();
   let entry = ctx.blockPaddles.get(key);
   if (!entry) { entry = {}; ctx.blockPaddles.set(key, entry); }
@@ -1088,7 +1088,7 @@ async function allBlockPaddles(c) {
   if (!season) return null;
   const entry = paddleEntry(season, c);
   if (!entry.allP) {
-    entry.allP = S.loadManifest(season).then(ds => S.loadBlockPaddles(ds, c.run.dayType));
+    entry.allP = S.loadManifest(season).then(ds => S.loadBlockPaddles(ds, c.run.dayType, c.date));
     entry.allP.catch(() => { entry.allP = null; });   // retry next time instead of caching a failure
   }
   return entry.allP;

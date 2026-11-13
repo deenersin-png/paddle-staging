@@ -55,7 +55,7 @@ export async function runFor(r, iso, depotKey) {
   const depot = r.depotKey || depotKey || (cfg.profile && cfg.profile.depotKey);
   const { slug } = await slugForDate(depot, iso);
   const dt = r.runDayType || r.dayType;
-  let run = slug ? await S.getRun(slug, dt, r.runNo) : null;
+  let run = slug ? await S.getRun(slug, dt, r.runNo, iso) : null;
   // Keep the paddle's start: the Slate report time is paid against it.
   // A night liner starts the evening before its date (a negative minute), so
   // an evening report time typed in for it belongs to that evening too.
@@ -76,7 +76,7 @@ export function lookupLine(node, dayType, runNo, iso, depotKey) {
   const depot = depotKey || (cfg.profile && cfg.profile.depotKey);
   return slugForDate(depot, iso || S.todayIso()).then(({ slug, district }) => {
     if (!slug) { node.textContent = 'No paddle data for your depot this season.'; node.className = 'lookup warn'; return null; }
-    return S.getRun(slug, dayType, runNo).then(run => {
+    return S.getRun(slug, dayType, runNo, iso || S.todayIso()).then(run => {
       if (!run) {
         node.textContent = 'Run ' + runNo + ' is not in the ' + ((district && district.label) || slug) + ' ' + dayType + ' paddle.';
         node.className = 'lookup warn';
