@@ -107,6 +107,7 @@ body{background:#eef2f8;color:#08122b;font-family:'IBM Plex Sans Condensed',syst
 <script src="assets/pa-menu.js" defer></script>
 <script src="assets/pa-tags.js"></script>
 <script src="assets/pa-holiday.js"></script>
+<script src="assets/pa-overtime.js"></script>
 </head>
 <body>
 
@@ -142,176 +143,34 @@ body{background:#eef2f8;color:#08122b;font-family:'IBM Plex Sans Condensed',syst
 <script type="module">
 // ==========================================================================
 // Holiday Overtime: the runs posted for overtime sign-up on a holiday, from
-// a Google Sheet the app owner fills in. ONE TAB PER DEPOT, named like the
-// app's depot ("Callowhill Bus", "Allegheny"):
+// the app owner's Google Sheet (assets/pa-overtime.js reads it: a "Dates"
+// tab for every depot + one tab of run numbers per depot).
 //
-//   Run Number | Pick Date by | Holiday Date | Day
-//   201        | 12/18/2026   | 12/25/2026   | Sunday
-//   209        |              |              |          <- blank = same as above
+// Only PUBLISHED holidays show: Online = YES and before the pick date / time.
+// ?preview=1 shows the others too (marked), to check a list while typing it.
 //
-// Pick Date by = when the sign-up ends. Day = the schedule worked that day
-// (a Friday holiday on the Sunday schedule says "Sunday"): its paddles are
-// shown. Blank Day = the schedule SEPTA's calendar says (PaHoliday).
-// Pick Date / Holiday Date / Day only need to be typed on the first row:
-// blank cells take the row above's. "Run Number" may hold several runs
-// ("52, 53, 60"). Dates as Google Sheets shows them (12/25/2026,
-// 2026-12-25, Dec 25 2026; no year = the next one).
-//
-// Google answers a tab name it doesn't have with the FIRST tab, so the tab
-// list is read first (the sheet's htmlview page) and each tab is fetched by
-// its gid. Each run is drawn as the Paddles scorecard; the pick is the one
-// in force on the holiday. Scheduled times only.
+// Each run is drawn as the Paddles scorecard from the paddle of the schedule
+// worked that day (the Dates tab's Day; blank = SEPTA's calendar, PaHoliday).
+// The pick is the one in force on the holiday. Scheduled times only.
 // ==========================================================================
 import {
-  loadSeasons, seasonFor, loadManifest, loadPaddle, normalizeRun, loadPaddleLinks, parseCSV, dayLabel, fmtClock
+  loadSeasons, seasonFor, loadManifest, loadPaddle, normalizeRun, loadPaddleLinks, dayLabel, fmtClock
 } from './assets/pa-schedule.js';
 import { modelFromRun, card, stack } from './assets/pa-run-card.js';
 
-const SHEET_ID = '1C8fuIoS_YOIRdtxBQgQ2o-BbyE1x_wF6DKppZKHEIPQ';
-const SHEET_BASE = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID;
-const H = window.PaHoliday;
+const H = window.PaHoliday, OT = window.PaOvertime;
+const PREVIEW = OT.preview();
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const lsGet = k => { try { return localStorage.getItem(k) || ''; } catch (_) { return ''; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} };
 const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
 const DOW = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 const DOWL = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const pad = n => String(n).padStart(2, '0');
-
-// ---- the sheet ----------------------------------------------------------------
-
-/** A date cell -> { iso, min } (min = time of day when the cell has one, else null). */
-function parseDate(s, today) {
-  s = String(s || '').trim();
-  if (!s) return null;
-  let y, m, d, x;
-  if ((x = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) { y = +x[1]; m = +x[2]; d = +x[3]; }
-  else if ((x = s.match(/^(\d{1,2})[\/.-](\d{1,2})(?:[\/.-](\d{2,4}))?/))) { m = +x[1]; d = +x[2]; y = x[3] ? +x[3] : null; }
-  else if ((x = s.match(/([A-Za-z]{3,})\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?/))) {
-    const mi = MONTHS.findIndex(n => n.startsWith(x[1].toLowerCase().slice(0, 3)));
-    if (mi < 0) return null;
-    m = mi + 1; d = +x[2]; y = x[3] ? +x[3] : null;
-  } else return null;
-  if (y != null && y < 100) y += 2000;
-  if (y == null) {
-    // No year: this year's, unless that was more than two months ago.
-    y = +today.slice(0, 4);
-    if (y + '-' + pad(m) + '-' + pad(d) < H.addDays(today, -60)) y++;
-  }
-  if (!(m >= 1 && m <= 12 && d >= 1 && d <= 31)) return null;
-  const iso = y + '-' + pad(m) + '-' + pad(d);
-  let min = null;
-  const t = s.slice(x.index + x[0].length).match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*([AP]M)?/i) || s.slice(x.index + x[0].length).match(/\b(\d{1,2})\s*([AP]M)\b/i);
-  if (t) {
-    const ap = (t[3] || (t.length === 3 ? t[2] : '') || '').toUpperCase();
-    let h = +t[1]; const mm = t.length === 4 ? +t[2] : 0;
-    if (ap === 'PM' && h !== 12) h += 12;
-    if (ap === 'AM' && h === 12) h = 0;
-    min = h * 60 + mm;
-    if (min === 0 && !ap) min = null;          // "12/18/2026 0:00:00" = no time given
-  }
-  return { iso, min };
-}
-
-/** "Sunday" / "SUN" / "Sat" / "Weekday" -> 'sunday' | 'saturday' | 'weekday', else ''. */
-function parseDay(s) {
-  const l = String(s || '').trim().toLowerCase();
-  if (!l) return '';
-  if (l.startsWith('sun')) return 'sunday';
-  if (l.startsWith('sat')) return 'saturday';
-  if (/^(wk|week|mon|tue|wed|thu|fri)/.test(l)) return 'weekday';
-  return '';
-}
-
-// Header names, loosely ("Run #", "Holiday", "Pick by"...).
-// The first name that matches wins ("Holiday Date" before "Pick Date by" for 'date').
-function col(row, ...names) {
-  const keys = Object.keys(row);
-  for (const n of names) {
-    const k = keys.find(k => k.replace(/[^a-z]/g, '').includes(n));
-    if (k) return row[k];
-  }
-  return '';
-}
-
-/** One tab's rows -> [{ iso, runNo, pickIso, pickMin, day, depot }]. Blank
- *  Pick Date / Holiday Date / Day cells take the row above's. */
-function entriesOf(text, depotName, today) {
-  const out = [];
-  let hol = null, pick = null, day = '';
-  parseCSV(text).forEach((r, i) => {
-    const h = parseDate(col(r, 'holiday', 'workdate'), today);
-    const p = parseDate(col(r, 'pick', 'signup', 'deadline'), today);
-    // "Day" but not "Holiday Date".
-    const dk = Object.keys(r).find(k => /^(day|schedule|scheduleday|dayschedule|servingday)$/.test(k.replace(/[^a-z]/g, '')));
-    const dy = parseDay(dk ? r[dk] : '');
-    if (h) hol = h;
-    if (p) pick = p;
-    if (dy) day = dy;
-    if (!hol) return;
-    const depot = (col(r, 'depot', 'district', 'garage') || '').trim() || depotName;   // a Depot column (test list) wins
-    const runs = String(col(r, 'run') || '').match(/\d{1,4}/g) || [];
-    runs.forEach(n => out.push({ iso: hol.iso, runNo: String(+n), pickIso: pick ? pick.iso : '', pickMin: pick ? pick.min : null, day, depot, row: i + 2 }));
-  });
-  // The same run twice on one date (listed again): once.
-  const seen = new Set();
-  return out.filter(e => { const k = e.iso + '|' + e.runNo + '|' + e.depot.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
-}
-
-// The sheet's tabs [{ name, gid }], from its htmlview page.
-async function sheetTabs() {
-  const r = await fetch(SHEET_BASE + '/htmlview?t=' + Date.now(), { cache: 'no-store' });
-  if (!r.ok) throw new Error(r.status);
-  const html = await r.text();
-  const unq = s => s.replace(/\\x([0-9a-f]{2})/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
-                    .replace(/\\u([0-9a-f]{4})/gi, (_, h) => String.fromCharCode(parseInt(h, 16))).replace(/\\(.)/g, '$1');
-  const tabs = [], re = /items\.push\(\{name: "((?:[^"\\]|\\.)*)",[^}]*?gid: "(\d+)"/g;
-  let m;
-  while ((m = re.exec(html))) tabs.push({ name: unq(m[1]).trim(), gid: m[2] });
-  if (!tabs.length) throw new Error('no tabs');
-  return tabs;
-}
-
-// Every tab: [{ name, text }]. Saved for no connection.
+const depotMatches = OT.depotMatches;
 let sheetSavedAt = 0, sheetStale = false;
-async function loadSheet() {
-  const test = new URLSearchParams(location.search).get('sheet');           // staging test: a CSV next to the page
-  if (test && /^[\w\/.-]+\.csv$/.test(test)) {
-    const r = await fetch(test, { cache: 'no-store' });
-    sheetSavedAt = Date.now(); sheetStale = false;
-    return [{ name: '', text: await r.text() }];
-  }
-  try {
-    const tabs = await sheetTabs();
-    const out = await Promise.all(tabs.map(async t => {
-      const r = await fetch(SHEET_BASE + '/gviz/tq?tqx=out:csv&gid=' + t.gid + '&t=' + Date.now(), { cache: 'no-store' });
-      if (!r.ok) throw new Error(r.status);
-      return { name: t.name, text: await r.text() };
-    }));
-    lsSet('ot_sheet2', JSON.stringify(out)); lsSet('ot_sheet_at', String(Date.now()));
-    sheetSavedAt = Date.now(); sheetStale = false;
-    return out;
-  } catch (e) {
-    let saved = null;
-    try { saved = JSON.parse(lsGet('ot_sheet2') || 'null'); } catch (_) {}
-    if (!saved) throw e;
-    sheetSavedAt = +lsGet('ot_sheet_at') || 0; sheetStale = true;
-    return saved;
-  }
-}
-const entriesOfAll = (tabs, today) => tabs.flatMap(t => entriesOf(t.text, t.name, today));
-
-// ---- depots ---------------------------------------------------------------------
-const letters = s => String(s || '').toLowerCase().replace(/[^a-z]/g, '');
-const normDepot = s => String(s || '').toLowerCase().replace(/\b(bus|depot|district|garage)\b/g, '').replace(/[^a-z]/g, '');
-/** Does a tab / Depot name ("Callowhill Bus", "Callowhill") name the depot `label`?
- *  ("Frankford" = Frankford Bus, never Frankford Rail.) A row with no depot fits any. */
-function depotMatches(sheetDepot, label) {
-  if (!sheetDepot) return true;
-  return letters(sheetDepot) === letters(label) || normDepot(sheetDepot) === normDepot(label);
-}
+// The runs that show: published ones (all of them in preview).
+const visible = data => data.entries.filter(e => PREVIEW || OT.published(e.holiday));
 
 // ---- state ------------------------------------------------------------------------
 let seasons = [], curDistricts = [], hdata = { days: {}, ov: {} }, entries = [];
@@ -323,12 +182,7 @@ let items = [];                        // [{ e, run, row, url, dayType, info }] 
 const today = () => H.todayIso();
 
 /** Sign-up closes at the end of the "Pick Date by" day (or at its time). */
-function closesMs(e) {
-  if (!e.pickIso) return null;
-  const d = H.dateOf(e.pickIso);
-  if (e.pickMin != null) d.setMinutes(e.pickMin); else d.setHours(23, 59, 59);
-  return d.getTime();
-}
+const closesMs = e => OT.closesMs(e);
 const isClosed = e => { const c = closesMs(e); return (c != null && c < Date.now()) || e.iso < today(); };
 function leftText(e) {
   const c = closesMs(e);
@@ -452,15 +306,17 @@ function dayHeader(iso, list) {
     return pi ? '<span>Sign up by <b>' + esc(shortDate(pi)) + (pm ? ' ' + esc(fmtClock(+pm)) : '') + '</b></span><span class="ot-left ' + l.cls + '">' + esc(l.t) + '</span>'
       : '<span class="ot-left">No pick date given</span>';
   }).join('');
-  const name = i.name || (i.changed ? i.dayLabel + ' schedule' : 'Overtime');
+  const name = list[0].e.name || i.name || (i.changed ? i.dayLabel + ' schedule' : 'Overtime');
+  const unpub = PREVIEW && !OT.published(list[0].e.holiday)
+    ? '<div class="ot-warn"><b>Not published</b> (preview only): ' + (list[0].e.online ? 'the pick time has passed.' : 'Online is NO on the sheet.') + '</div>' : '';
   let warn = '';
   if (i.alt) warn = '<div class="ot-warn"><b>Alternate schedule, no paddles:</b> SEPTA runs '
     + (i.changed ? 'a special timetable on ' + esc(i.altRoutes.join(', ')) : 'an alternate ' + esc(i.dayLabel) + ' timetable')
     + '. The times below are from the regular ' + esc(i.dayLabel) + ' paddles and may not match.</div>';
   else if (i.changed) warn = '<div class="ot-n">Worked on the <b>' + esc(i.dayLabel) + ' schedule</b>: these are the ' + esc(i.dayLabel) + ' paddles.</div>';
-  return '<div class="ot-dh ' + k + '"><div class="ot-cal" aria-label="' + esc(shortDate(iso)) + '"><div class="dw">' + DOW[d.getDay()] + '</div><div class="dn">' + d.getDate() + '</div><div class="mo">' + MON[d.getMonth()] + '</div></div>'
+  return '<div class="ot-dh ' + k + '" id="d-' + iso + '"><div class="ot-cal" aria-label="' + esc(shortDate(iso)) + '"><div class="dw">' + DOW[d.getDay()] + '</div><div class="dn">' + d.getDate() + '</div><div class="mo">' + MON[d.getMonth()] + '</div></div>'
     + '<div class="ot-dh-body"><div class="ot-dh-top"><span class="ot-name">' + esc(name) + '</span>' + when + '</div>'
-    + '<div class="ot-badges">' + badges + '</div><div class="ot-pick">' + pickLine + '</div>' + warn + '</div></div>';
+    + '<div class="ot-badges">' + badges + '</div><div class="ot-pick">' + pickLine + '</div>' + warn + unpub + '</div></div>';
 }
 
 function runCard(x) {
@@ -487,11 +343,11 @@ function runCard(x) {
 function render() {
   fillRoutes();
   const t = today(), label = $('otDepot').value;
-  const note = sheetStale ? '<div class="ot-note">No connection: showing the list saved ' + esc(new Date(sheetSavedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })) + '.</div>' : '';
+  const note = (PREVIEW ? '<div class="ot-note"><b>PREVIEW:</b> unpublished holidays show too. Workers only see a holiday while Online is YES and the pick time has not passed.</div>' : '') + (sheetStale ? '<div class="ot-note">No connection: showing the list saved ' + esc(new Date(sheetSavedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })) + '.</div>' : '');
   $('otNote').innerHTML = note;
   const box = $('otList');
   if (!entries.length) {
-    box.innerHTML = '<div class="ot-msg"><b>No holiday overtime runs posted yet.</b><br>When the runs for a holiday are posted, they show up here.</div>';
+    box.innerHTML = '<div class="ot-msg"><b>No holiday overtime open right now.</b><br>When the runs for a holiday are posted, they show up here until the pick date.</div>';
     $('otCount').textContent = ''; return;
   }
   const base = items.filter(x => showPast || x.e.iso >= t);
@@ -550,10 +406,12 @@ window.addEventListener('storage', e => {
 let lastText = '';
 async function refresh() {
   try {
-    const tabs = await loadSheet(), text = JSON.stringify(tabs);
-    if (text === lastText) { render(); return; }
+    const data = await OT.load({ force: true }), text = data.raw;
+    sheetStale = data.stale; sheetSavedAt = data.savedAt;
+    const vis = visible(data);
+    if (text === lastText && vis.length === entries.length) { render(); return; }
     lastText = text;
-    entries = entriesOfAll(tabs, today());
+    entries = vis;
     fillDepots();
     await build();
   } catch (_) {}
@@ -561,7 +419,10 @@ async function refresh() {
 setInterval(refresh, 5 * 60000);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh(); });
 // "3 days left" / closed: once a minute.
-setInterval(() => { if (items.length) render(); }, 60000);
+setInterval(() => {
+  if (!items.length) return;
+  if (!PREVIEW && items.some(x => !OT.published(x.e.holiday))) refresh(); else render();
+}, 60000);
 
 // Depot dropdown: every depot of the pick; the ones with upcoming overtime say how many runs.
 function fillDepots() {
@@ -578,10 +439,10 @@ function fillDepots() {
   const s = lsGet('ot_sort');
   if (s && [...$('otSort').options].some(o => o.value === s)) $('otSort').value = s;
   try {
-    let tabs;
-    [seasons, hdata, tabs] = await Promise.all([loadSeasons(), H.load(), loadSheet()]);
-    lastText = JSON.stringify(tabs);
-    entries = entriesOfAll(tabs, today());
+    let data;
+    [seasons, hdata, data] = await Promise.all([loadSeasons(), H.load(), OT.load()]);
+    lastText = data.raw; sheetStale = data.stale; sheetSavedAt = data.savedAt;
+    entries = visible(data);
     // Depots of today's pick (the list's dates use their own pick's paddles).
     const season = seasonFor(seasons, today());
     curDistricts = season ? await loadManifest(season) : [];
@@ -589,6 +450,7 @@ function fillDepots() {
     const saved = lsGet('bt_depot');
     if (curDistricts.some(d => (d.label || d.name) === saved)) $('otDepot').value = saved;
     await build();
+    if (location.hash) { const t = document.querySelector(location.hash); if (t) t.scrollIntoView(); }
   } catch (e) {
     $('otList').innerHTML = '<div class="ot-msg">Could not load the overtime list. Check your connection and try again.</div>';
   }

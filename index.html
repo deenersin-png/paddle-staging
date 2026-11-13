@@ -1048,6 +1048,16 @@ body.older-pick .hd-dot { display: none; }
    field is drawn like Trip Sheets' (white, red bottom line). ===== */
 header { flex-wrap: wrap !important; }
 .hd-tools { flex: 1 1 100%; min-width: 0; }
+/* Holiday overtime open for sign-up (assets/pa-overtime.js): one long button
+   per holiday under the day tags, while it is published. */
+.pa-ot:empty { display: none; }
+.pa-ot { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.pa-ot-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; min-height: 44px;
+  padding: 8px 12px; border-radius: 8px; background: #c8102e; color: #fff !important; text-decoration: none !important;
+  box-shadow: 0 2px 6px rgba(8,18,43,.25); font-family: 'IBM Plex Sans Condensed', system-ui, sans-serif; text-align: center; line-height: 1.2; }
+.pa-ot-btn b { font-size: 16px; font-weight: 800; letter-spacing: .02em; text-transform: uppercase; }
+.pa-ot-btn small { font-size: 12px; font-weight: 600; opacity: .92; margin-top: 2px; }
+.pa-ot-btn:active { filter: brightness(.92); }
 .hd-tools .search-wrap { width: 100%; }
 .hd-tools .search-wrap > svg { display: none !important; }
 .seg-top .seg-route { min-width: 6ch; }
@@ -1096,6 +1106,7 @@ header { flex-wrap: wrap !important; }
 <script src="assets/pa-menu.js" defer></script>
 <script src="assets/pa-tags.js"></script>
 <script src="assets/pa-holiday.js"></script>
+<script src="assets/pa-overtime.js"></script>
 </head>
 <body>
 
@@ -1131,6 +1142,8 @@ header { flex-wrap: wrap !important; }
     <div id="type-row" class="pa-types" role="group" aria-label="Result type" hidden></div>
     <!-- Day tags (PaTags.dayTags), the same as Trip Sheets. -->
     <div class="pa-days" id="day-selector" role="group" aria-label="Day"></div>
+    <!-- Holiday overtime open for sign-up: a long button per holiday (renderOvertime). -->
+    <div class="pa-ot" id="pa-ot"></div>
   </div>
 </header>
 
@@ -1583,7 +1596,48 @@ function renderDayTags() {
   const html = PaTags.dayTags(STATE.availableDays, STATE.currentDay, TODAY_LABEL, 'data-day');
   if (el.innerHTML !== html) el.innerHTML = html;
   renderHoliday();
+  renderOvertime();
 }
+
+// HOLIDAY OVERTIME (assets/pa-overtime.js, the app owner's Google Sheet): while
+// a holiday's list is published (Online YES, before its pick date + time) and
+// has runs for this depot, a long button under the day tags opens them:
+// "Open Runs for Overtime on Thanksgiving". index.html?preview=1 shows
+// unpublished ones too. The sheet is read again every 5 minutes; the pick
+// time is checked every minute.
+let OT_DATA = null;
+function loadOvertime(force) {
+  if (OLDER_PICKS || !window.PaOvertime) return;
+  PaOvertime.load({ force }).then(d => { OT_DATA = d; renderOvertime(); }).catch(() => {});
+}
+function renderOvertime() {
+  const el = document.getElementById('pa-ot');
+  if (!el) return;
+  let html = '';
+  const d = OT_DATA && !OLDER_PICKS && STATE.manifest && (STATE.manifest.districts || []).find(x => x.name === STATE.currentDistrict);
+  if (d) {
+    const label = d.label || d.name, prev = PaOvertime.preview();
+    const mine = OT_DATA.entries.filter(e => PaOvertime.depotMatches(e.depot, label) && (prev || PaOvertime.published(e.holiday)));
+    const byIso = new Map();
+    mine.forEach(e => { if (!byIso.has(e.iso)) byIso.set(e.iso, []); byIso.get(e.iso).push(e); });
+    const esc = PaTags.esc;
+    const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], DW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const when = iso => { const x = PaHoliday.dateOf(iso); return DW[x.getDay()] + ' ' + MON[x.getMonth()] + ' ' + x.getDate(); };
+    const clock = m => { const h = Math.floor(m / 60) % 24; return (h % 12 || 12) + ':' + String(m % 60).padStart(2, '0') + (h < 12 ? ' AM' : ' PM'); };
+    html = [...byIso.keys()].sort().map(iso => {
+      const list = byIso.get(iso), e = list[0];
+      const name = e.name || PaHoliday.holidayName(iso) || when(iso);
+      const by = e.pickIso ? 'Sign up by ' + when(e.pickIso) + (e.pickMin != null ? ' ' + clock(e.pickMin) : '') + ' · ' : '';
+      return '<a class="pa-ot-btn" href="overtime.html' + (prev ? '?preview=1' : '') + '#d-' + iso + '"><b>Open Runs for Overtime on ' + esc(name) + '</b>'
+        + '<small>' + esc(by + list.length + (list.length === 1 ? ' run' : ' runs') + ' · ' + when(iso)) + '</small></a>';
+    }).join('');
+  }
+  if (el.innerHTML !== html) el.innerHTML = html;
+}
+loadOvertime(false);
+setInterval(() => loadOvertime(true), 5 * 60000);
+setInterval(renderOvertime, 60000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') loadOvertime(true); });
 document.getElementById('day-selector').addEventListener('click', e => {
   const b = e.target.closest('[data-day]');
   if (b && b.dataset.day !== STATE.currentDay) changeDay(b.dataset.day);
