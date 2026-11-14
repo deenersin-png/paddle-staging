@@ -57,3 +57,12 @@
   .hv-totals{grid-template-columns:1fr 1fr 1fr}
   .hv-tot-v{font-size:16px}
 }
+/* My Run: Sched / Actual (real time worked) / Paid. */
+.hv-wp .hv-hrow,.hv-wp .hv-row{grid-template-columns:88px 1fr 60px 60px 60px}
+.hv-wp .hv-row .n.paid{color:var(--amber);font-weight:600}
+.hv-totals.hv-four{grid-template-columns:repeat(4,1fr)}
+@media (max-width:560px){
+  .hv-wp .hv-hrow,.hv-wp .hv-row{grid-template-columns:58px 1fr 46px 46px 48px;gap:5px}
+  .hv-wp .hv-row{font-size:10.5px}
+  .hv-totals.hv-four{grid-template-columns:1fr 1fr}
+}

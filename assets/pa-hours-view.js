@@ -43,6 +43,10 @@ function extrasText(r, hours) {
  *   dayInfo    (iso, routes) => { alt } from the holiday calendar: a working
  *              day on an alternate schedule gets a "check" tag
  *   hint       text under the totals (replaces the read-only hint)
+ *   workPaid   true: Actual is the REAL time worked (finish minus start,
+ *              plus minutes held late) and a Paid column / box shows the pay
+ *              (extras, holiday hours, vacation's 44 h). My Run only; Weekly
+ *              Hours keeps Actual = pay.
  * Returns { render, setReadOnly, setOverrides, state }.
  */
 export function mount(root, opts = {}) {
@@ -63,7 +67,9 @@ export function mount(root, opts = {}) {
 
   const sheet = el('div', 'hv-sheet');
   const head = el('div', 'hv-hrow');
+  const wp = !!opts.workPaid;
   head.append(el('span', null, 'Day'), el('span', null, 'Run'), el('span', 'n', 'Sched'), el('span', 'n', 'Actual'));
+  if (wp) { head.appendChild(el('span', 'n', 'Paid')); root.classList.add('hv-wp'); }
   const rows = el('div');
   sheet.append(head, rows);
 
@@ -77,8 +83,10 @@ export function mount(root, opts = {}) {
     return { v, s };
   };
   const tSch = tot('Scheduled', '', 'full week');
-  const tAct = tot('Actual', 'amber', 'through today');
+  const tAct = tot(wp ? 'Actual worked' : 'Actual', 'amber', 'through today');
+  const tPaid = wp ? tot('Paid', '', 'through today') : null;
   const tDays = tot('Days worked', '', 'through today');
+  if (wp) totals.classList.add('hv-four');
   const hintRead = opts.hint || HINT_READ;
   const hint = el('div', 'hv-hint', st.readOnly ? hintRead : HINT_EDIT);
 
@@ -95,7 +103,7 @@ export function mount(root, opts = {}) {
   // Year to date: the same three boxes for the work year so far.
   let ytd = null;
   if (opts.ytd) {
-    ytd = { head: el('div', 'hv-ytd-h', 'Year to date'), grid: el('div', 'hv-totals hv-ytd'), key: '', busy: null };
+    ytd = { head: el('div', 'hv-ytd-h', 'Year to date'), grid: el('div', 'hv-totals hv-ytd' + (wp ? ' hv-four' : '')), key: '', busy: null };
     const ytot = (k, cls, sub) => {
       const t = el('div', 'hv-tot');
       const v = el('div', 'hv-tot-v' + (cls ? ' ' + cls : ''), '…');
@@ -104,7 +112,8 @@ export function mount(root, opts = {}) {
       return v;
     };
     ytd.sch = ytot('YTD scheduled', '', 'through today');
-    ytd.act = ytot('YTD actual', 'amber', 'through today');
+    ytd.act = ytot(wp ? 'YTD actual worked' : 'YTD actual', 'amber', 'through today');
+    ytd.paid = wp ? ytot('YTD paid', '', 'through today') : null;
     ytd.days = ytot('YTD days worked', '', 'through today');
   }
   root.append(nav, sheet);
@@ -174,8 +183,16 @@ export function mount(root, opts = {}) {
       // Future days and plain days off show a dash; a day that was worked, or
       // that carries extras (holiday pay, sick pay logged as "other"), shows hours.
       const blank = hours.actualMin == null || (!hours.working && !(r.extras && r.extras.length));
-      const ac = el('div', 'n' + (blank ? ' dim' : ''), blank ? '—' : A.fmtHours(hours.actualMin));
-      row.append(dc, rc, sc, ac);
+      if (wp) {
+        // Actual = real time worked; Paid = what the day pays.
+        const wBlank = hours.workMin == null || !hours.working;
+        row.append(dc, rc, sc,
+          el('div', 'n' + (wBlank ? ' dim' : ''), wBlank ? '—' : A.fmtHours(hours.workMin)),
+          el('div', 'n paid' + (blank ? ' dim' : ''), blank ? '—' : A.fmtHours(hours.paidMin)));
+      } else {
+        const ac = el('div', 'n' + (blank ? ' dim' : ''), blank ? '—' : A.fmtHours(hours.actualMin));
+        row.append(dc, rc, sc, ac);
+      }
       if (!r.unregistered || r.date >= (st.seasons[0] ? st.seasons[0].start : '0000')) {
         // Checked at tap time, so switching modes needs no redraw.
         row.addEventListener('click', () => { if (!st.readOnly) onEditDay(r); });
@@ -194,17 +211,27 @@ export function mount(root, opts = {}) {
       vc.appendChild(document.createTextNode('VACATION WEEK'));
       vc.appendChild(el('span', 'ex', 'Paid by the week, whatever the pick says.'));
       const started = ws <= today;
-      vr.append(vd, vc,
-        el('div', 'n', A.fmtHours(t.vacationMin)),
-        el('div', 'n' + (started ? '' : ' dim'), started ? A.fmtHours(t.vacationMin) : '—'));
+      if (wp) {
+        vc.lastChild.textContent = 'Paid 44 hours by the week; nothing worked.';
+        vr.append(vd, vc,
+          el('div', 'n', A.fmtHours(t.vacationMin)),
+          el('div', 'n' + (started ? '' : ' dim'), started ? '0.00' : '—'),
+          el('div', 'n paid' + (started ? '' : ' dim'), started ? A.fmtHours(t.vacationMin) : '—'));
+      } else {
+        vr.append(vd, vc,
+          el('div', 'n', A.fmtHours(t.vacationMin)),
+          el('div', 'n' + (started ? '' : ' dim'), started ? A.fmtHours(t.vacationMin) : '—'));
+      }
       rows.appendChild(vr);
     }
     tSch.v.textContent = A.fmtHours(t.scheduledMin);
-    tAct.v.textContent = A.fmtHours(t.actualMin);
+    tAct.v.textContent = A.fmtHours(wp ? t.workMin : t.actualMin);
+    if (tPaid) tPaid.v.textContent = A.fmtHours(t.paidMin);
     tDays.v.textContent = String(t.daysWorked);
     const whole = we < today;
     tAct.s.textContent = whole ? 'full week' : (ws > today ? 'not started' : 'through today');
     tDays.s.textContent = tAct.s.textContent;
+    if (tPaid) tPaid.s.textContent = tAct.s.textContent;
     if (ytd) renderYtd(profile, today).catch(() => {});
     const sync = A.getState().sync;
     hint.textContent = anyRegistered
@@ -223,6 +250,7 @@ export function mount(root, opts = {}) {
     if (!y) {
       ytd.head.textContent = 'Year to date · set "New Work Year" in the pick sheet';
       ytd.sch.textContent = ytd.act.textContent = ytd.days.textContent = '—';
+      if (ytd.paid) ytd.paid.textContent = '—';
       return;
     }
     const key = A.getState().version + '|' + today + '|' + y.start + '|' + Object.keys(st.overrides || {}).length;
@@ -240,7 +268,8 @@ export function mount(root, opts = {}) {
     // Scheduled through today: the vacation weeks that have started count
     // their 44 hours (weekTotals adds each week once).
     ytd.sch.textContent = A.fmtHours(t.scheduledMin);
-    ytd.act.textContent = A.fmtHours(t.actualMin);
+    ytd.act.textContent = A.fmtHours(wp ? t.workMin : t.actualMin);
+    if (ytd.paid) ytd.paid.textContent = A.fmtHours(t.paidMin);
     ytd.days.textContent = String(t.daysWorked);
   }
 

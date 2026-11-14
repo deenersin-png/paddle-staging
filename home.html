@@ -379,8 +379,8 @@ document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () =>
 const holidayInfo = (iso, routes) => (ctx.hol && window.PaHoliday ? window.PaHoliday.info(iso, routes, ctx.hol) : null);
 const week = HV.mount($('sch-week'), {
   readOnly: true, getProfile: () => ctx.profile, onEditDay: r => openEdit(r),
-  onEditMenu: ws => SE.openMenu(ws), ytd: true, dayInfo: holidayInfo,
-  hint: 'Tap a day to change just that day, or Edit schedule for this week, a whole picking or your vacation. Hours come from the paddle for the run number. Amber-edged days have something extra on them; red "alt schedule" days need checking.'
+  onEditMenu: ws => SE.openMenu(ws), ytd: true, workPaid: true, dayInfo: holidayInfo,
+  hint: 'Tap a day to change just that day, or Edit schedule for this week, a whole picking or your vacation. Sched is the run’s pay from the paddle. Actual is the time you really worked: start to finish, plus minutes held late. Paid adds the extras: late allowance at time and a half, holiday hours, vacation’s 44 h. Red "alt schedule" days need checking.'
 });
 
 // Notes above a day's fields: vacation week, holiday, alternate schedule.

@@ -180,6 +180,81 @@ function kindOf(r) {
   return 'normal';
 }
 
+// ---- the small window ------------------------------------------------------
+
+/**
+ * A small window over the current one asking ONE thing (a run number, the
+ * minutes held late). Resolves to the typed text, or null on Cancel / ×.
+ * opts: { title, label, hint, placeholder, value, numeric, maxLength, check }
+ * where check(text) returns an error message or ''.
+ */
+export function askSmall(opts = {}) {
+  miniCss();
+  return new Promise(resolve => {
+    const ov = el('div', 'pa-overlay pa-root pa-mini-ov');
+    ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true');
+    const card = el('div', 'pa-card pa-mini');
+    const head = el('div', 'pa-card-head');
+    head.appendChild(el('div', 'pa-card-title', opts.title || ''));
+    const x = el('button', 'pa-close', '×'); x.type = 'button'; x.setAttribute('aria-label', 'Close');
+    head.appendChild(x);
+    const body = el('div', 'pa-card-body');
+    const f = el('div', 'pa-field');
+    if (opts.label) f.appendChild(el('label', 'pa-label pa-mini-q', opts.label));
+    const inp = el('input', 'pa-input pa-mini-in'); inp.type = 'text';
+    if (opts.numeric) { inp.inputMode = 'numeric'; inp.pattern = '[0-9]*'; }
+    if (opts.maxLength) inp.maxLength = opts.maxLength;
+    inp.placeholder = opts.placeholder || '';
+    inp.value = opts.value != null ? String(opts.value) : '';
+    f.appendChild(inp);
+    if (opts.hint) f.appendChild(el('div', 'hint', opts.hint));
+    const err = el('div', 'pa-msg pa-err'); err.hidden = true;
+    const row = el('div', 'pa-mini-row');
+    const cancel = el('button', 'pa-ghost', 'Cancel'); cancel.type = 'button';
+    const ok = el('button', 'pa-submit', 'OK'); ok.type = 'button';
+    row.append(cancel, ok);
+    body.append(f, err, row);
+    card.append(head, body); ov.appendChild(card);
+    document.body.appendChild(ov);
+    const done = v => { ov.remove(); resolve(v); };
+    const submit = () => {
+      const v = inp.value.trim();
+      const e = !v ? 'Enter a value, or tap Cancel.' : (opts.check ? opts.check(v) : '');
+      if (e) { err.textContent = e; err.hidden = false; return; }
+      done(v);
+    };
+    x.addEventListener('click', () => done(null));
+    cancel.addEventListener('click', () => done(null));
+    ok.addEventListener('click', submit);
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') { e.stopPropagation(); done(null); } });
+    setTimeout(() => { try { inp.focus(); inp.select(); } catch (_) {} }, 30);
+  });
+}
+let miniCssDone = false;
+function miniCss() {
+  if (miniCssDone) return; miniCssDone = true;
+  const st = document.createElement('style');
+  st.textContent = '.pa-mini-ov{z-index:10050}'
+    + '.pa-card.pa-mini{max-width:300px}'
+    + '.pa-mini-q{font-size:13px!important;letter-spacing:.02em!important;text-transform:none!important}'
+    + '.pa-mini-in{font-size:22px!important;text-align:center;letter-spacing:.06em}'
+    + '.pa-mini-row{display:flex;gap:8px;margin-top:14px}'
+    + '.pa-mini-row > *{flex:1 1 0;width:auto!important;margin:0!important}'
+    + '.pa-late-line{display:flex;align-items:center;justify-content:space-between;gap:10px;font-family:var(--pa-mono);font-size:13px;font-weight:600;padding:10px 12px;border:1px solid var(--pa-line2);border-radius:6px;background:var(--pa-amber-dim);color:var(--pa-bright)}'
+    + '@media (max-width:480px){.pa-mini-ov{align-items:center!important;padding:16px!important}.pa-card.pa-mini{border-radius:var(--pa-radius)!important;border:1px solid var(--pa-line2)!important}}';
+  document.head.appendChild(st);
+}
+const LATE_CHECK = v => (/^\d{1,3}$/.test(v) && +v > 0 ? '' : 'Enter the minutes as a number, e.g. 8.');
+const RUN_CHECK = v => (/^[0-9A-Za-z]{1,4}$/.test(v) ? '' : 'Enter the run number, e.g. 209.');
+function askLate(cur) {
+  return askSmall({ title: 'Late allowance', label: 'How many minutes were you held late?', placeholder: 'e.g. 8', numeric: true, maxLength: 3,
+    value: cur || '', hint: 'Paid at time and a half: 8 minutes adds 0.20 h pay and 0.13 h work.', check: LATE_CHECK });
+}
+function askRun(r, cur) {
+  return askSmall({ title: 'Add a run', label: 'Which run number for ' + S.fmtDate(r.date) + '?', placeholder: 'e.g. 209', numeric: true, maxLength: 4,
+    value: cur || '', hint: 'The hours come from the paddle.', check: RUN_CHECK });
+}
+
 const hoursStr = min => (min == null ? '' : (Math.round(min) / 60).toFixed(2).replace(/\.?0+$/, ''));
 const parseHours = v => { const n = parseFloat(v); return Number.isFinite(n) && n >= 0 ? Math.round(n * 60) : null; };
 
@@ -194,6 +269,7 @@ const parseHours = v => { const n = parseFloat(v); return Number.isFinite(n) && 
  *   { remove: true } to drop the explicit day, else { data } for saveAssignment.
  */
 export function dayForm(r, opts = {}) {
+  miniCss();
   const depotKey = opts.depotKey || (cfg.profile && cfg.profile.depotKey);
   const body = el('div', 'pa-dayform');
   let dirty = false;
@@ -230,9 +306,22 @@ export function dayForm(r, opts = {}) {
   const fK = el('div', 'pa-field'); fK.appendChild(el('label', 'pa-label', 'This day'));
   const sK = el('select', 'pa-select');
   kinds.forEach(([v, l]) => { const oo = el('option', null, l); oo.value = v; if (v === st.kind) oo.selected = true; sK.appendChild(oo); });
-  sK.addEventListener('change', () => {
-    const was = st.kind;
-    st.kind = sK.value;
+  sK.addEventListener('change', async () => {
+    const was = st.kind, want = sK.value;
+    // A working day needs a run, and a late allowance its minutes: ask for
+    // each in a small window. Cancel leaves the day as it was.
+    if (WORKING.has(want) && !st.runNo) {
+      const v = await askRun(r, '');
+      if (v == null) { sK.value = was; return; }
+      st.runNo = v;
+    }
+    if (want === 'late') {
+      const v = await askLate(st.lateMin);
+      if (v == null) { sK.value = was; return; }
+      st.lateMin = parseInt(v, 10);
+    }
+    dirty = true;
+    st.kind = want;
     // Worked hours and paid-day-off hours mean different things; don't carry
     // one into the other when switching between a working and a day-off kind.
     if (WORKING.has(was) !== WORKING.has(st.kind)) st.hoursMin = null;
@@ -273,22 +362,28 @@ export function dayForm(r, opts = {}) {
       const lk = el('div', 'lookup'); lkEl = lk; fields.appendChild(lk);
 
       const fH = el('div', 'pa-field'); fH.style.marginTop = '10px';
-      fH.appendChild(el('label', 'pa-label', st.kind === 'holiday-worked' ? 'Hours actually worked' : 'Hours'));
+      fH.appendChild(el('label', 'pa-label', 'Paid hours for the run'));
       const iH = el('input', 'pa-input'); iH.type = 'number'; iH.step = '0.05'; iH.min = '0'; iH.inputMode = 'decimal'; iHEl = iH;
       iH.placeholder = 'from the paddle';
       if (st.hoursMin != null) iH.value = hoursStr(st.hoursMin);
       iH.addEventListener('input', () => { st.hoursMin = parseHours(iH.value); drawPay(); });
       fH.appendChild(iH);
-      fH.appendChild(el('div', 'hint', 'Pre-filled from the run. Change it only if you worked a different amount.'));
+      fH.appendChild(el('div', 'hint', 'Pre-filled with the run’s pay from the paddle. Change it only if you were paid a different amount (e.g. you left early).'));
       fields.appendChild(fH);
 
       if (st.kind === 'late') {
-        const fL = el('div', 'pa-field'); fL.appendChild(el('label', 'pa-label', 'Late allowance (minutes)'));
-        const iL = el('input', 'pa-input'); iL.type = 'number'; iL.step = '5'; iL.min = '0'; iL.inputMode = 'numeric'; iL.placeholder = 'e.g. 30';
-        if (st.lateMin != null) iL.value = st.lateMin;
-        iL.addEventListener('input', () => { const n = parseInt(iL.value, 10); st.lateMin = Number.isFinite(n) && n > 0 ? n : null; drawPay(); });
-        fL.appendChild(iL);
-        fL.appendChild(el('div', 'hint', 'Paid at time and a half and added to the day: 30 min adds 0.75 h.'));
+        const fL = el('div', 'pa-field'); fL.appendChild(el('label', 'pa-label', 'Late allowance'));
+        const line = el('div', 'pa-late-line');
+        const txt = el('span', null, st.lateMin ? st.lateMin + ' min late · +' + (st.lateMin * A.LATE_ALLOWANCE_RATE / 60).toFixed(2) + ' h paid' : 'No minutes yet');
+        const ch = el('button', 'rowbtn', st.lateMin ? 'CHANGE' : 'ADD'); ch.type = 'button';
+        ch.addEventListener('click', async () => {
+          const v = await askLate(st.lateMin);
+          if (v == null) return;
+          st.lateMin = parseInt(v, 10); dirty = true;
+          drawFields(); drawPay();
+        });
+        line.append(txt, ch);
+        fL.appendChild(line);
         fields.appendChild(fL);
       }
 
@@ -360,21 +455,37 @@ export function dayForm(r, opts = {}) {
     h.textContent = 'Run starts ' + S.fmtClock(st.run.reportMin) + ' · reporting ' + S.fmtClock(st.reportMin)
       + (b.earlyMin ? ' adds ' + (b.earlyMin / 60).toFixed(2) + ' h.' : ' adds nothing (not before the start).');
   }
+  /** Real time worked: the run's finish minus its start (earlier when
+   *  reporting early), paid-hours changes and the minutes held late. */
+  function workLine(b) {
+    if (!b.working) return 'Worked <b>0.00 h</b>';
+    const run = st.run;
+    if (!run || run.reportMin == null || run.finishMin == null || !(run.finishMin > run.reportMin)) {
+      return 'Worked <b>' + (b.workedMin / 60).toFixed(2) + ' h</b> (run times not in the paddle)';
+    }
+    const start = run.reportMin - (b.earlyMin || 0);
+    let min = run.finishMin - start;
+    const bits = [S.fmtClock(start) + ' – ' + S.fmtClock(run.finishMin)];
+    if (st.hoursMin != null && st.hoursMin !== b.runMin) { const d = st.hoursMin - b.runMin; min += d; bits.push((d < 0 ? '− ' : '+ ') + (Math.abs(d) / 60).toFixed(2) + ' changed'); }
+    if (st.kind === 'late' && st.lateMin) { min += st.lateMin; bits.push('+ ' + st.lateMin + ' min late'); }
+    if (bits.length > 1) bits[0] += ' (' + ((run.finishMin - start) / 60).toFixed(2) + ')';
+    return 'Worked ' + esc(bits.join(' ')) + ' = <b>' + (Math.max(0, min) / 60).toFixed(2) + ' h</b>';
+  }
   function drawPay() {
     if (st.kind === 'vacation') {
-      pay.innerHTML = 'Vacation week <b>' + (A.VACATION_WEEK_PAY_MIN / 60).toFixed(2) + ' hrs</b> · paid once for the week, not per day';
+      pay.innerHTML = 'Worked <b>0.00 h</b><br>Paid <b>' + (A.VACATION_WEEK_PAY_MIN / 60).toFixed(2) + ' h</b> for the vacation week, not per day';
       return;
     }
     const b = build();
     drawReportHint(b);
     const parts = [];
-    if (b.working) parts.push(['Worked', b.workedMin]);
+    if (b.working) parts.push(['Run', b.workedMin]);
     b.extras.forEach(x => parts.push([A.EXTRA_KINDS[x.kind] || 'Extra', A.extraPayMin(x)]));
     if (b.earlyMin) parts.push(['Early report', b.earlyMin]);
     const total = parts.reduce((s, p) => s + p[1], 0);
-    pay.innerHTML = parts.length
-      ? parts.map(([k, v]) => esc(k) + ' ' + (v / 60).toFixed(2)).join(' + ') + ' = <b>' + (total / 60).toFixed(2) + ' hrs</b>'
-      : '<b>0.00 hrs</b>';
+    pay.innerHTML = workLine(b) + '<br>Paid ' + (parts.length
+      ? parts.map(([k, v]) => esc(k) + ' ' + (v / 60).toFixed(2)).join(' + ') + ' = <b>' + (total / 60).toFixed(2) + ' h</b>'
+      : '<b>0.00 h</b>');
   }
 
   // ---- the answer
@@ -384,6 +495,7 @@ export function dayForm(r, opts = {}) {
     if (st.kind === 'vacation') return r.source === 'assignment' ? { remove: true } : { noop: true };
     const b = build();
     if (b.working && !st.runNo) return { error: 'Enter the run number, or choose a day-off kind.' };
+    if (st.kind === 'late' && !st.lateMin) return { error: 'Enter the minutes you were held late (Late allowance → ADD).' };
     if (b.working && !st.run && st.hoursMin == null) return { error: 'That run is not in the paddle. Enter the hours.' };
     return { data: {
       kind: st.kind,

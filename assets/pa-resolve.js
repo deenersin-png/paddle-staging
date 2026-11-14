@@ -269,9 +269,30 @@ export function dayHours(resolved, run, today) {
   const past = r.date <= t;
   const changedFromPattern = r.source === 'assignment' &&
     (r.extraShift || (!working && !!r.patternRunNo) || (working && r.patternRunNo && r.runNo !== r.patternRunNo));
+  // REAL work time, not pay: the run's finish minus its start (the report
+  // time when one was typed, so an early report is in it). Pay includes
+  // extras the operator does not work. A typed pay that differs from the
+  // paddle (a short day) moves the work by the same amount; late allowance
+  // and overtime add the minutes actually worked. A run the paddle does not
+  // know falls back to the typed hours.
+  let workRunMin = 0;
+  if (working) {
+    const st0 = run ? run.reportMin : null, fin = run ? run.finishMin : null;
+    if (st0 != null && fin != null && fin > st0) workRunMin = fin - st0 + (r.payMin != null && paddleMin ? Math.round(r.payMin) - paddleMin : 0);
+    else workRunMin = workedMin;
+    for (const x of r.extras || []) {
+      if (x.kind === 'late') workRunMin += Math.abs(+x.min || 0);
+      else if (x.kind === 'ot') workRunMin += Math.round(+x.min || 0);
+    }
+    if (workRunMin < 0) workRunMin = 0;
+  }
   return {
     runMin, scheduledMin, extrasMin: ex, workedMin: working ? workedMin : 0, earlyReportMin: early,
     actualMin: past ? (working ? workedMin : 0) + ex : null,
+    // actualMin is what the day PAYS (kept under its old name for Weekly
+    // Hours); paidMin says so, workMin is the real time worked.
+    paidMin: past ? (working ? workedMin : 0) + ex : null,
+    workMin: past ? workRunMin : null,
     working, past,
     flagged: ex > 0 || (r.extras && r.extras.length > 0) || (!r.unregistered && !['scheduled', 'off'].includes(r.status)) || !!changedFromPattern,
     unknownRun: working && !run && r.payMin == null
@@ -286,13 +307,14 @@ export function dayHours(resolved, run, today) {
  */
 export function weekTotals(days, today) {
   const t = today || todayIso();
-  let scheduledMin = 0, actualMin = 0, daysWorked = 0;
+  let scheduledMin = 0, actualMin = 0, daysWorked = 0, workMin = 0;
   const vacWeeks = new Set();
   for (const d of days) {
     scheduledMin += d.hours.scheduledMin;
     if (d.r && d.r.vacationWeek) vacWeeks.add(d.r.vacationWeek);
     if (d.hours.past) {
       actualMin += d.hours.actualMin || 0;
+      workMin += d.hours.workMin || 0;
       if (d.hours.working) daysWorked++;
     }
   }
@@ -302,7 +324,9 @@ export function weekTotals(days, today) {
     vacationMin += VACATION_WEEK_PAY_MIN;
     if (w <= t) actualMin += VACATION_WEEK_PAY_MIN;
   }
-  return { scheduledMin, actualMin, daysWorked, vacationMin, vacationWeeks: vacWeeks.size };
+  // paidMin = actualMin (pay, with vacation's 44 h); workMin = real time
+  // worked, which a vacation week adds nothing to.
+  return { scheduledMin, actualMin, paidMin: actualMin, workMin, daysWorked, vacationMin, vacationWeeks: vacWeeks.size };
 }
 
 export const fmtHours = min => ((+min || 0) / 60).toFixed(2);
