@@ -276,7 +276,7 @@ export async function openSetup(node, { user, profile, overrides, onDone, runsOn
     parent.appendChild(fd);
 
     parent.appendChild(el('label', 'pa-label', 'Which weeks?'));
-    parent.appendChild(el('div', 'hint', 'Tap the Sunday that starts each week you are off.'));
+    parent.appendChild(el('div', 'hint', 'Tap the Sunday that starts each week you are off, anywhere in ' + today.slice(0, 4) + ' or ' + (+today.slice(0, 4) + 1) + ' — your vacation is for the whole year, not one pick.'));
 
     const cal = el('div'); cal.style.marginTop = '8px';
     const list = el('div');
@@ -318,11 +318,7 @@ export async function openSetup(node, { user, profile, overrides, onDone, runsOn
       const weeks = w.vacWeeks;
       const bits = [];
       bits.push(weeks.length ? weeks.length + (weeks.length === 1 ? ' week' : ' weeks') + ' · ' + A.fmtHours(weeks.length * A.VACATION_WEEK_PAY_MIN) + ' h' : 'No weeks picked yet.');
-      if (w.vacAllowance) {
-        const left = w.vacAllowance - weeks.length;
-        bits.push(left > 0 ? left + (left === 1 ? ' week' : ' weeks') + ' still to place'
-          : left < 0 ? (-left) + (left === -1 ? ' week' : ' weeks') + ' more than you said you had' : 'all placed');
-      }
+      if (w.vacAllowance) bits.push(allowanceLine(w.vacAllowance, weeks, today));
       total.textContent = bits.join(' · ');
     }
 
@@ -642,7 +638,8 @@ const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'Ju
  * @param today     ISO date "now"
  * @param selected  () => array of week-start Sundays currently picked
  * @param onToggle  (weekStart) => void, called when a Sunday is tapped
- * @param from/to   optional ISO bounds (default: 2 months back, 13 forward)
+ * @param from/to   optional ISO bounds (default: all of this year and next —
+ *                  vacation is picked for the whole year, not for one pick)
  * @returns { redraw }
  */
 export function weekCalendar(node, { today, selected, onToggle, from, to }) {
@@ -654,8 +651,9 @@ export function weekCalendar(node, { today, selected, onToggle, from, to }) {
     d.setMonth(d.getMonth() + months);
     return S.isoDate(d);
   };
-  const lo = from || shift(today, -2);
-  const hi = to || shift(today, 13);
+  const year = +today.slice(0, 4);
+  const lo = from || year + '-01-01';
+  const hi = to || (year + 1) + '-12-31';
   let cursor = first(today);
 
   function draw() {
@@ -711,6 +709,23 @@ export function weekCalendar(node, { today, selected, onToggle, from, to }) {
 }
 
 // ---- pure helpers ---------------------------------------------------------
+
+/**
+ * The vacation allowance is a YEARLY number: count the weeks of each year
+ * (by the Sunday that starts the week) against it. This year always shows;
+ * a later year shows once it has a week in it.
+ * -> "2026: 1 week still to place · 2027: all placed"
+ */
+export function allowanceLine(allowance, weeks, today) {
+  const thisYear = +today.slice(0, 4);
+  const per = new Map([[thisYear, 0]]);
+  (weeks || []).forEach(ws => { const y = +ws.slice(0, 4); if (y >= thisYear) per.set(y, (per.get(y) || 0) + 1); });
+  return [...per.keys()].sort().map(y => {
+    const left = allowance - per.get(y);
+    return y + ': ' + (left > 0 ? left + (left === 1 ? ' week' : ' weeks') + ' still to place'
+      : left < 0 ? (-left) + (left === -1 ? ' week' : ' weeks') + ' more than you have' : 'all placed');
+  }).join(' · ');
+}
 
 /** The vacation weeks picked, as week-start Sundays, deduped. */
 export function pickedWeeks(w) {
@@ -906,8 +921,8 @@ export function renderVacationCard(node, { onChange } = {}) {
   const msg = el('div', 'msgline');
 
   node.appendChild(el('div', 'hint', weeks.length
-    ? 'Tap a Sunday to add or drop a week. Each one is paid 44 hours and clears your runs for that week.'
-    : 'No vacation weeks yet. Tap the Sunday that starts a week you are off — each one is paid 44 hours and clears your runs for that week.'));
+    ? 'Tap a Sunday to add or drop a week, anywhere in ' + today.slice(0, 4) + ' or ' + (+today.slice(0, 4) + 1) + ' — not just this pick. Each one is paid 44 hours and clears your runs for that week.'
+    : 'No vacation weeks yet. Tap the Sunday that starts a week you are off, anywhere in ' + today.slice(0, 4) + ' or ' + (+today.slice(0, 4) + 1) + ' — each one is paid 44 hours and clears your runs for that week.'));
 
   const cal = el('div'); cal.style.margin = '10px 0';
   node.appendChild(cal);
@@ -964,9 +979,8 @@ export function renderVacationCard(node, { onChange } = {}) {
   }
 
   if (st.vacationAllowance != null) {
-    const left = st.vacationAllowance - weeks.length;
     node.appendChild(el('div', 'hint', st.vacationAllowance + (st.vacationAllowance === 1 ? ' vacation week' : ' vacation weeks')
-      + (left > 0 ? ' · ' + left + ' still to place' : left < 0 ? ' · ' + (-left) + ' more than you said you had' : ' · all placed')));
+      + ' a year · ' + allowanceLine(st.vacationAllowance, weeks, today)));
   }
   node.appendChild(msg);
 }
