@@ -642,7 +642,7 @@ const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'Ju
  *                  vacation is picked for the whole year, not for one pick)
  * @returns { redraw }
  */
-export function weekCalendar(node, { today, selected, onToggle, from, to }) {
+export function weekCalendar(node, { today, selected, onToggle, from, to, start, marks }) {
   css();
   const first = iso => iso.slice(0, 8) + '01';
   const monthOf = iso => iso.slice(0, 7);
@@ -654,7 +654,10 @@ export function weekCalendar(node, { today, selected, onToggle, from, to }) {
   const year = +today.slice(0, 4);
   const lo = from || year + '-01-01';
   const hi = to || (year + 1) + '-12-31';
-  let cursor = first(today);
+  // Opens on `start` (or today), kept inside the bounds.
+  let cursor = first(start || today);
+  if (cursor < first(lo)) cursor = first(lo);
+  if (cursor > first(hi)) cursor = first(hi);
 
   function draw() {
     node.textContent = '';
@@ -682,7 +685,8 @@ export function weekCalendar(node, { today, selected, onToggle, from, to }) {
     const lastOfMonth = S.addDays(shift(cursor, 1), -1);
     for (let ws = S.weekStartOf(cursor); ws <= lastOfMonth; ws = S.addDays(ws, 7)) {
       const on = picked.has(ws);
-      const row = el('div', 'pa-cal-row' + (on ? ' on' : ''));
+      const mk = marks ? marks(ws) : '';           // e.g. 'warn': hand-entered days in it
+      const row = el('div', 'pa-cal-row' + (on ? ' on' : '') + (mk ? ' ' + mk : ''));
       for (let i = 0; i < 7; i++) {
         const date = S.addDays(ws, i);
         const num = String(+date.slice(8, 10));

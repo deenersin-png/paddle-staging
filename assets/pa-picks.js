@@ -125,6 +125,70 @@
     }).filter(function (r) { return r.name && parseDate(r.start); });
   }
 
+  /** The work year, from two more columns of the same tab: "New Work Year"
+   *  (the first day) and "End Year" (the last day), found by their headers.
+   *  The work year does not start on January 1 - usually the last Sunday of
+   *  December. One row per year; any row may hold one. -> [{ start, end }]
+   *  as written (strings). */
+  function yearRowsOf(text) {
+    var rows = csvRows(text).filter(function (r) { return r.some(function (v) { return String(v).trim(); }); });
+    if (!rows.length) return [];
+    var head = rows[0].map(function (h) { return String(h).trim().toLowerCase(); });
+    var cS = -1, cE = -1;
+    head.forEach(function (h, i) {
+      if (cS < 0 && /year/.test(h) && /new|start|begin|first|work/.test(h) && !/end|last|finish/.test(h)) cS = i;
+      else if (cE < 0 && /year/.test(h) && /end|last|finish/.test(h)) cE = i;
+    });
+    if (cS < 0) return [];
+    return rows.slice(1).map(function (r) {
+      return { start: String(r[cS] || '').trim(), end: cE >= 0 ? String(r[cE] || '').trim() : '' };
+    }).filter(function (r) { return parseDate(r.start); });
+  }
+
+  function addDaysIso(iso, n) {
+    var p = iso.split('-');
+    return isoOf(new Date(+p[0], +p[1] - 1, +p[2] + n));
+  }
+  /** [{ start, end }] -> the work years on the sheet, oldest first:
+   *  { start, last, label } in "YYYY-MM-DD". A missing end is the day
+   *  before the next row's start, else 52 weeks on. The label is the year
+   *  the work year mostly falls in (the year of its last day). */
+  function buildYears(rows) {
+    var ys = (rows || []).map(function (r) {
+      var s = parseDate(r.start), e = parseDate(r.end);
+      return { start: isoOf(s), last: e && e >= s ? isoOf(e) : '' };
+    }).sort(function (a, b) { return a.start < b.start ? -1 : 1; });
+    ys.forEach(function (y, i) {
+      if (!y.last) y.last = ys[i + 1] ? addDaysIso(ys[i + 1].start, -1) : addDaysIso(y.start, 363);
+      y.label = y.last.slice(0, 4);
+    });
+    return ys;
+  }
+  /** The work year that holds `iso` ("YYYY-MM-DD"). A date outside the
+   *  sheet's rows gets a year worked out from the nearest row, 52 weeks at a
+   *  time (derived: true). null when the sheet has no year at all. */
+  function workYearFor(years, iso) {
+    if (!years || !years.length || !iso) return null;
+    for (var i = 0; i < years.length; i++) if (years[i].start <= iso && iso <= years[i].last) return years[i];
+    var first = years[0], last = years[years.length - 1];
+    var y;
+    if (iso < first.start) {
+      y = { start: addDaysIso(first.start, -364), last: addDaysIso(first.start, -1) };
+      for (var k = 0; k < 60 && iso < y.start; k++) y = { start: addDaysIso(y.start, -364), last: addDaysIso(y.start, -1) };
+    } else {
+      y = { start: addDaysIso(last.last, 1), last: addDaysIso(last.last, 364) };
+      for (var j = 0; j < 60 && iso > y.last; j++) y = { start: addDaysIso(y.last, 1), last: addDaysIso(y.last, 364) };
+    }
+    y.label = y.last.slice(0, 4);
+    y.derived = true;
+    return y;
+  }
+  /** The work year right after (n = 1) or before (n = -1) the one given. */
+  function workYearNext(years, y, n) {
+    if (!y) return null;
+    return workYearFor(years, n < 0 ? addDaysIso(y.start, -1) : addDaysIso(y.last, 1));
+  }
+
   /** [{ name, start, end }] -> the picks, oldest first:
    *  { id, label, startDate, endDate, start, last, manifest }.
    *  startDate / endDate are Dates (endDate = the last day, null = open);
@@ -203,10 +267,10 @@
       return c && Array.isArray(c.rows) && c.rows.length ? c : null;
     } catch (_) { return null; }
   }
-  function writeCache(rows) {
+  function writeCache(rows, years) {
     var ls = store();
     if (!ls) return;
-    try { ls.setItem(CACHE_KEY, JSON.stringify({ rows: rows, savedAt: Date.now() })); } catch (_) {}
+    try { ls.setItem(CACHE_KEY, JSON.stringify({ rows: rows, years: years || [], savedAt: Date.now() })); } catch (_) {}
   }
 
   function fetchSheet() {
@@ -223,7 +287,7 @@
         if (/^\s*</.test(t)) throw new Error('the pick sheet is not published');
         var rows = rowsOf(t);
         if (!rows.length) throw new Error('the pick sheet has no picks in it');
-        return rows;
+        return { rows: rows, years: yearRowsOf(t) };
       })
       .finally(function () { if (timer) clearTimeout(timer); });
   }
@@ -257,21 +321,24 @@
   }
 
   var memo = null;
+  var yearRows = [];
   var info = { stale: false, savedAt: null, error: null };
   /** All picks, oldest first. Resolves from the sheet, else from this
    *  device's last copy ({ stale: true } in PaPicks.info). Rejects only when
    *  neither is there, after showing the red bar. */
   function load() {
     if (memo) return memo;
-    memo = fetchSheet().then(function (rows) {
-      writeCache(rows);
+    memo = fetchSheet().then(function (got) {
+      writeCache(got.rows, got.years);
+      yearRows = got.years;
       info = { stale: false, savedAt: Date.now(), error: null };
-      return build(rows);
+      return build(got.rows);
     }, function (err) {
       var c = readCache();
       var msg = (err && err.name === 'AbortError') ? 'the pick sheet did not answer' : (err && err.message) || 'unknown error';
       if (c) {
         info = { stale: true, savedAt: c.savedAt || null, error: msg };
+        yearRows = c.years || [];
         return build(c.rows);
       }
       info = { stale: true, savedAt: null, error: msg };
@@ -284,13 +351,16 @@
   /** The last copy this device loaded, at once (no network); null if none. */
   function cached() { var c = readCache(); return c ? build(c.rows) : null; }
   function reset() { memo = null; }
+  /** The work years from the sheet (see buildYears); [] when it has none. */
+  function loadYears() { return load().then(function () { return buildYears(yearRows); }, function () { return buildYears((readCache() || {}).years || []); }); }
 
   root.PaPicks = {
     load: load, cached: cached, reset: reset,
     current: current, forDate: forDate, whenOf: whenOf, upcoming: upcoming,
     parseDate: parseDate, isoOf: isoOf,
+    loadYears: loadYears, workYearFor: workYearFor, workYearNext: workYearNext,
     info: function () { return info; },
     // For the tests.
-    _rowsOf: rowsOf, _build: build, _sheetCsvUrl: sheetCsvUrl
+    _rowsOf: rowsOf, _build: build, _sheetCsvUrl: sheetCsvUrl, _yearRowsOf: yearRowsOf, _buildYears: buildYears
   };
 })(typeof window !== 'undefined' ? window : globalThis);

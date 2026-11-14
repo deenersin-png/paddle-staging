@@ -267,7 +267,9 @@ export async function attach(userId, opts = {}) {
   if (uid && uid !== userId) detach({ keepCopy: true });
   db = fb.db; uid = userId;
   const today = todayIso();
-  listenRange = { from: opts.from || addDays(today, -120), to: opts.to || addDays(today, 60) };
+  // A work year back (year to date on My Run) and one ahead (next year's
+  // vacation weeks check for days entered by hand). Explicit days are few.
+  listenRange = { from: opts.from || addDays(today, -400), to: opts.to || addDays(today, 430) };
   const hadCopy = loadCopy(userId);
   markVersion();
   updateStatus();
@@ -310,12 +312,7 @@ export async function savePattern(p) {
   if (!from) throw new Error('effectiveFrom required');
   if (to && to < from) throw new Error('end before start');
   const batch = writeBatch(db);
-  for (const o of windowOps(state.patterns, from, to)) {
-    if (o.op === 'delete') batch.delete(patRef(o.id));
-    else batch.set(patRef(o.id), { ...(o.effectiveTo ? { effectiveTo: o.effectiveTo } : {}),
-                                   ...(o.effectiveFrom ? { effectiveFrom: o.effectiveFrom } : {}),
-                                   updatedAt: serverTimestamp() }, { merge: true });
-  }
+  clearOps(batch, from, to);
   const id = 'p' + from.replace(/-/g, '') + '_' + Math.random().toString(36).slice(2, 6);
   batch.set(patRef(id), {
     periodDays: p.periodDays || 7,
@@ -358,6 +355,61 @@ function rollbackUnconfirmed(key) {
 async function confirmed(promise, key) {
   try { return await promise; }
   catch (e) { rollbackUnconfirmed(key); throw e; }
+}
+
+/**
+ * Put into `batch` what frees [from, to] of saved blocks (windowOps), and
+ * keep the part AFTER `to` of a block that runs past both ends: windowOps
+ * alone would cut it at `from` and lose the rest.
+ */
+function clearOps(batch, from, to) {
+  for (const o of windowOps(state.patterns, from, to)) {
+    if (o.op === 'delete') batch.delete(patRef(o.id));
+    else batch.set(patRef(o.id), { ...(o.effectiveTo ? { effectiveTo: o.effectiveTo } : {}),
+                                   ...(o.effectiveFrom ? { effectiveFrom: o.effectiveFrom } : {}),
+                                   updatedAt: serverTimestamp() }, { merge: true });
+  }
+  if (!to) return;
+  for (const ex of state.patterns) {
+    if (!(ex.effectiveFrom < from && (!ex.effectiveTo || ex.effectiveTo > to))) continue;
+    const { id: _id, createdAt: _c, updatedAt: _u, ...rest } = ex;
+    const tailFrom = addDays(to, 1);
+    batch.set(patRef('p' + tailFrom.replace(/-/g, '') + '_' + Math.random().toString(36).slice(2, 6)), {
+      ...rest, anchor: ex.anchor || ex.effectiveFrom, effectiveFrom: tailFrom, effectiveTo: ex.effectiveTo || null,
+      createdAt: serverTimestamp(), updatedAt: serverTimestamp(), schemaVersion: 1
+    });
+  }
+}
+
+/** Remove every saved block from [from, to] (to null = open-ended). Blocks
+ *  running over an edge are trimmed, not lost; explicit days are kept. */
+export async function clearWindow(from, to) {
+  if (!db) throw new Error('not signed in');
+  const batch = writeBatch(db);
+  clearOps(batch, from, to || null);
+  await confirmed(batch.commit(), 'patterns');
+}
+
+/**
+ * Replace everything saved in [from, to] with the blocks in `list` (each
+ * like savePattern's argument, inside [from, to]), in ONE write: a split
+ * picking's two schedules never exist half-saved or overlapping.
+ */
+export async function replaceWindow(from, to, list) {
+  if (!db) throw new Error('not signed in');
+  const batch = writeBatch(db);
+  clearOps(batch, from, to || null);
+  for (const p of list) {
+    const id = 'p' + p.effectiveFrom.replace(/-/g, '') + '_' + Math.random().toString(36).slice(2, 6);
+    batch.set(patRef(id), {
+      periodDays: p.periodDays || 7, anchor: p.anchor || p.effectiveFrom, days: p.days || {},
+      runByDayType: p.runByDayType || {}, depotKey: p.depotKey || '',
+      effectiveFrom: p.effectiveFrom, effectiveTo: p.effectiveTo || null,
+      preset: p.preset || '', label: p.label || '',
+      createdAt: serverTimestamp(), updatedAt: serverTimestamp(), schemaVersion: 1
+    });
+  }
+  await confirmed(batch.commit(), 'patterns');
 }
 
 /** Close the current pattern so nothing is registered after `lastDate`. */
@@ -432,6 +484,32 @@ export async function saveVacation(weeks, allowance) {
   }
   if (n) await confirmed(batch.commit(), 'vacations');
   return n;
+}
+
+/**
+ * Replace the vacation weeks (like saveVacation) and, in the same write,
+ * delete the explicit days listed in `clearDates` - the days entered by hand
+ * in a week that is now vacation, so the week is just the 44 hours.
+ */
+export async function saveVacationWeeks(weeks, clearDates) {
+  if (!db) throw new Error('not signed in');
+  const want = new Set((weeks || []).map(w => addDays(w, -dowOf(w))));
+  const batch = writeBatch(db);
+  let n = 0;
+  for (const w of want) {
+    if (state.vacations.has(w)) continue;
+    batch.set(vacRef(w), { weekStart: w, createdAt: serverTimestamp(), updatedAt: serverTimestamp(), schemaVersion: 1 });
+    n++;
+  }
+  for (const w of state.vacations.keys()) {
+    if (w === VACATION_ALLOWANCE_ID || want.has(w)) continue;
+    batch.delete(vacRef(w)); n++;
+  }
+  let m = 0;
+  for (const d of clearDates || []) { batch.delete(asgRef(d)); m++; }
+  if (n) await confirmed(batch.commit(), 'vacations');
+  else if (m) await confirmed(batch.commit(), 'assignments');
+  return n + m;
 }
 
 /** Add or remove one vacation week. */

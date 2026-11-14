@@ -36,6 +36,13 @@ function extrasText(r, hours) {
  *   readOnly   rows do nothing when tapped (default false)
  *   getProfile () => the operator's profile (depotKey is needed)
  *   onEditDay  (r) => open the edit sheet for a day (default E.openEdit)
+ *   onEditMenu (weekStart) => when set, an Edit button sits under the
+ *              Saturday row, above the totals (My Run's Schedule tab)
+ *   ytd        true: three more boxes under the totals, year to date (the
+ *              work year from the pick sheet, through today)
+ *   dayInfo    (iso, routes) => { alt } from the holiday calendar: a working
+ *              day on an alternate schedule gets a "check" tag
+ *   hint       text under the totals (replaces the read-only hint)
  * Returns { render, setReadOnly, setOverrides, state }.
  */
 export function mount(root, opts = {}) {
@@ -72,8 +79,39 @@ export function mount(root, opts = {}) {
   const tSch = tot('Scheduled', '', 'full week');
   const tAct = tot('Actual', 'amber', 'through today');
   const tDays = tot('Days worked', '', 'through today');
-  const hint = el('div', 'hv-hint', st.readOnly ? HINT_READ : HINT_EDIT);
-  root.append(nav, sheet, totals, hint);
+  const hintRead = opts.hint || HINT_READ;
+  const hint = el('div', 'hv-hint', st.readOnly ? hintRead : HINT_EDIT);
+
+  // Edit: under the Saturday row, above the totals.
+  let editBar = null;
+  if (opts.onEditMenu) {
+    editBar = el('div', 'hv-editbar');
+    const eb = el('button', 'hv-edit'); eb.type = 'button';
+    eb.innerHTML = '<span aria-hidden="true">&#9998;</span> Edit schedule';
+    eb.addEventListener('click', () => opts.onEditMenu(st.weekStart));
+    editBar.appendChild(eb);
+  }
+
+  // Year to date: the same three boxes for the work year so far.
+  let ytd = null;
+  if (opts.ytd) {
+    ytd = { head: el('div', 'hv-ytd-h', 'Year to date'), grid: el('div', 'hv-totals hv-ytd'), key: '', busy: null };
+    const ytot = (k, cls, sub) => {
+      const t = el('div', 'hv-tot');
+      const v = el('div', 'hv-tot-v' + (cls ? ' ' + cls : ''), '…');
+      t.append(el('div', 'hv-tot-k', k), v, el('div', 'hv-tot-s', sub));
+      ytd.grid.appendChild(t);
+      return v;
+    };
+    ytd.sch = ytot('YTD scheduled', '', 'through today');
+    ytd.act = ytot('YTD actual', 'amber', 'through today');
+    ytd.days = ytot('YTD days worked', '', 'through today');
+  }
+  root.append(nav, sheet);
+  if (editBar) root.appendChild(editBar);
+  root.appendChild(totals);
+  if (ytd) root.append(ytd.head, ytd.grid);
+  root.appendChild(hint);
 
   prev.addEventListener('click', () => { st.weekStart = S.addDays(st.weekStart, -7); render(); });
   next.addEventListener('click', () => { st.weekStart = S.addDays(st.weekStart, 7); render(); });
@@ -122,6 +160,11 @@ export function mount(root, opts = {}) {
       else if (r.source === 'assignment' && r.off && r.patternRunNo) rc.appendChild(el('span', 'tag red', 'override'));
       if (r.holidayDate && !r.unregistered) rc.appendChild(el('span', 'tag amber', 'holiday'));
       if (hours.unknownRun) rc.appendChild(el('span', 'tag amber', 'not in paddle'));
+      if (r.vacationWeek && r.source === 'assignment') rc.appendChild(el('span', 'tag amber', 'in vacation week'));
+      if (opts.dayInfo && hours.working) {
+        const inf = opts.dayInfo(r.date, run && run.pieces ? run.pieces.map(p => p.routeLabel) : null);
+        if (inf && inf.alt) rc.appendChild(el('span', 'tag red', 'alt schedule · check'));
+      }
       const rowSeason = S.seasonFor(st.seasons, r.date);
       if (rowSeason && season && rowSeason.id !== season.id) rc.appendChild(el('span', 'tag', rowSeason.label));
       const ex = extrasText(r, hours);
@@ -162,12 +205,43 @@ export function mount(root, opts = {}) {
     const whole = we < today;
     tAct.s.textContent = whole ? 'full week' : (ws > today ? 'not started' : 'through today');
     tDays.s.textContent = tAct.s.textContent;
+    if (ytd) renderYtd(profile, today).catch(() => {});
     const sync = A.getState().sync;
     hint.textContent = anyRegistered
-      ? (st.readOnly ? HINT_READ : HINT_EDIT)
+      ? (st.readOnly ? hintRead : HINT_EDIT)
       : sync.status === 'connecting' ? 'Loading your schedule…'
       : sync.status === 'error' && !A.getState().patterns.length ? 'Can’t load your schedule right now (' + sync.error + '). It will retry by itself.'
       : 'Nothing is registered for this week. Set up your pick on My run and every week from its start date fills in by itself.';
+  }
+
+  /** Year to date, from the work year's first day through today. Worked
+   *  out again only when the schedule or the day changes. */
+  async function renderYtd(profile, today) {
+    let years = [];
+    try { await S.loadSeasons(); years = window.PaPicks && window.PaPicks.loadYears ? await window.PaPicks.loadYears() : []; } catch (_) {}
+    const y = years.length ? window.PaPicks.workYearFor(years, today) : null;
+    if (!y) {
+      ytd.head.textContent = 'Year to date · set "New Work Year" in the pick sheet';
+      ytd.sch.textContent = ytd.act.textContent = ytd.days.textContent = '—';
+      return;
+    }
+    const key = A.getState().version + '|' + today + '|' + y.start + '|' + Object.keys(st.overrides || {}).length;
+    ytd.head.textContent = 'Year to date · since ' + S.fmtDate(y.start) + ', ' + S.fromIso(y.start).getFullYear();
+    if (ytd.key === key) return;
+    ytd.key = key;
+    const from = y.start, to = today < y.last ? today : y.last;
+    const resolved = from <= to ? A.resolveRange(from, to, st.overrides) : [];
+    const days = await Promise.all(resolved.map(async r => {
+      const run = r.off ? null : await E.runFor(r, r.date, profile.depotKey).catch(() => null);
+      return { r, run, hours: A.dayHours(r, run, today) };
+    }));
+    if (ytd.key !== key) return;            // a newer one started meanwhile
+    const t = A.weekTotals(days, today);
+    // Scheduled through today: the vacation weeks that have started count
+    // their 44 hours (weekTotals adds each week once).
+    ytd.sch.textContent = A.fmtHours(t.scheduledMin);
+    ytd.act.textContent = A.fmtHours(t.actualMin);
+    ytd.days.textContent = String(t.daysWorked);
   }
 
   return {

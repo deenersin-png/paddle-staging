@@ -41,6 +41,15 @@
 .hv-tot-v.amber{color:var(--amber)}
 .hv-tot-s{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:2px}
 .hv-hint{font-family:var(--sans);font-size:12px;color:var(--dim);line-height:1.5;margin-top:10px}
+/* My Run → Schedule: the Edit button under the Saturday row, and the year-to-date boxes. */
+.hv-editbar{display:flex;justify-content:flex-end;margin-top:10px}
+.hv-edit{display:inline-flex;align-items:center;gap:8px;font-family:var(--sans);font-size:15px;font-weight:700;letter-spacing:.01em;
+  padding:10px 18px;border-radius:8px;border:2px solid var(--amber);background:var(--amber-dim);color:var(--amber);cursor:pointer;min-height:44px}
+.hv-edit span{font-size:17px;line-height:1}
+.hv-edit:hover,.hv-edit:focus-visible{background:var(--amber);color:#fff;outline:none}
+.hv-ytd-h{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin:14px 0 0 2px}
+.hv-totals.hv-ytd{margin-top:6px}
+.hv-ytd .hv-tot-k{letter-spacing:.06em}
 
 @media (max-width:560px){
   .hv-hrow{grid-template-columns:78px 1fr 60px 60px;gap:6px;padding:8px}

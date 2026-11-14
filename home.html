@@ -201,6 +201,7 @@ h2.k{margin-bottom:10px}
 <link rel="stylesheet" href="assets/pa-tags.css">
 <script src="assets/pa-menu.js" defer></script>
 <script src="assets/pa-tags.js"></script>
+<script src="assets/pa-holiday.js"></script>
 </head>
 <body>
 
@@ -252,8 +253,9 @@ h2.k{margin-bottom:10px}
     <div id="sch-week"></div>
   </section>
 
-  <!-- Bulk Edit: the full schedule editor (picks, vacation, next 4 weeks).
-       Reached only from the Bulk Edit button on the Schedule tab. -->
+  <!-- Bulk Edit page for holddown / slate operators (week by week, next 4
+       weeks). Regular operators get the Bulk edit window instead
+       (assets/pa-sched-edit.js). Reached from Edit -> Bulk edit. -->
   <section id="view-bulk" hidden>
     <button class="pa-ghost bulk-back" id="bulk-back" type="button">&larr; Back to schedule</button>
     <div class="card sect" id="sch-form"></div>
@@ -306,6 +308,7 @@ import * as E from './assets/pa-edit-sheet.js';
 import * as SU from './assets/pa-setup.js';
 import * as HV from './assets/pa-hours-view.js';
 import * as SW from './assets/pa-swap-tab.js';
+import * as SE from './assets/pa-sched-edit.js';
 import * as P from './assets/pa-push.js';
 import * as RA from './assets/pa-run-alerts.js';
 import { initFirebase } from './assets/pa-firebase.js';
@@ -368,34 +371,46 @@ function setView(v, params) {
 }
 document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => setView(t.dataset.view)));
 
-// SCHEDULE tab: the Weekly Hours week stays read-only (as on the live app).
-// Tapping a day asks: edit this day, or bulk edit. Done from a click on the
-// week's rows, so the week's own render never changes mode.
-const week = HV.mount($('sch-week'), { readOnly: true, getProfile: () => ctx.profile, onEditDay: r => openEdit(r) });
+// SCHEDULE tab: the Weekly Hours week, read-only, with an Edit button under
+// the Saturday row (Edit this week / Bulk edit / Vacation edit) and the year
+// to date under the totals. Tapping a day opens Edit this day straight away.
+// Done from a click on the week's rows, so the week's own render never
+// changes mode.
+const holidayInfo = (iso, routes) => (ctx.hol && window.PaHoliday ? window.PaHoliday.info(iso, routes, ctx.hol) : null);
+const week = HV.mount($('sch-week'), {
+  readOnly: true, getProfile: () => ctx.profile, onEditDay: r => openEdit(r),
+  onEditMenu: ws => SE.openMenu(ws), ytd: true, dayInfo: holidayInfo,
+  hint: 'Tap a day to change just that day, or Edit schedule for this week, a whole picking or your vacation. Hours come from the paddle for the run number. Amber-edged days have something extra on them; red "alt schedule" days need checking.'
+});
 
-function askDay(r) {
-  const oldPop = document.getElementById('day-pop'); if (oldPop) oldPop.remove();
-  const bg = el('div', 'day-pop-bg'); bg.id = 'day-pop';
-  const box = el('div', 'day-pop');
-  const close = () => bg.remove();
-  const one = el('button', 'pa-submit', 'Edit this day'); one.type = 'button';
-  one.addEventListener('click', () => { close(); openEdit(r); });
-  const bulk = el('button', 'pa-ghost', 'Bulk edit'); bulk.type = 'button';
-  bulk.addEventListener('click', () => { close(); setView('bulk'); });
-  const cancel = el('button', 'pa-ghost', 'Cancel'); cancel.type = 'button';
-  cancel.addEventListener('click', close);
-  box.append(el('div', 'day-pop-title', 'Change your schedule'), el('div', 'day-pop-sub', S.fmtDate(r.date)), one, bulk, cancel);
-  bg.appendChild(box);
-  bg.addEventListener('click', e => { if (e.target === bg) close(); });
-  document.body.appendChild(bg);
+// Notes above a day's fields: vacation week, holiday, alternate schedule.
+function dayNotes(r) {
+  const out = [];
+  const inf = holidayInfo(r.date, null);
+  if (r.holidayDate || (inf && inf.changed)) {
+    out.push(SE.note((inf && inf.name ? inf.name + ': ' : 'Holiday: ') + (inf ? inf.dayLabel : 'Sunday') + ' schedule. Check the run and the holiday pay.'));
+  }
+  if (inf && inf.alt) {
+    const n = inf.altRoutes.length;
+    out.push(SE.note((inf.name ? inf.name + ': ' : '') + 'SEPTA runs an alternate ' + inf.dayLabel.toLowerCase() + ' schedule on '
+      + (n > 6 ? n + ' routes' : 'route' + (n === 1 ? ' ' : 's ') + inf.altRoutes.join(', '))
+      + '. There is no paddle for it, so check the run and the hours.', 'alt'));
+  }
+  return out;
 }
+SE.configure({
+  getProfile: () => ctx.profile, getOverrides: () => ctx.overrides,
+  onSaved: () => { refreshToday(); redrawScheduleViews(); },
+  dayNotes, openBulkPage: () => setView('bulk')
+});
+if (window.PaHoliday) window.PaHoliday.load().then(d => { ctx.hol = d; if (ctx.view === 'schedule') week.render(); }).catch(() => {});
 
 $('sch-week').addEventListener('click', e => {
   const row = e.target.closest ? e.target.closest('.hv-row') : null;
   if (!row || !row.parentElement) return;
   const idx = [...row.parentElement.children].indexOf(row);
   if (idx < 0 || idx > 6 || !week.state.weekStart) return;
-  askDay(A.resolve(S.addDays(week.state.weekStart, idx), ctx.overrides));
+  openEdit(A.resolve(S.addDays(week.state.weekStart, idx), ctx.overrides));
 });
 
 // SWAP tab. Opens to the operator's own district.
@@ -1711,12 +1726,12 @@ async function renderUpcoming() {
 // ---- edit sheet (shared module) ------------------------------------------
 
 function openEdit(r) {
-  E.configure({ profile: ctx.profile, onSaved: () => { refreshToday(); redrawScheduleViews(); } });
+  E.configure({ profile: ctx.profile, onSaved: () => { refreshToday(); redrawScheduleViews(); }, dayNotes });
   E.openEdit(r);
 }
 
 // Expose the pure pieces for in-browser checks (no side effects).
-window.PA_HOME = { S, A, N, E, computeState, ctx, week, renderSchedule, renderToday, renderAlerts, openEdit, refreshToday, swap, setView };
+window.PA_HOME = { S, A, N, E, SE, computeState, ctx, week, renderSchedule, renderToday, renderAlerts, openEdit, refreshToday, swap, setView };
 // Modules linked fine: allow a future update to trigger one reload again.
 try { sessionStorage.removeItem('pa_update_reload'); } catch (_) {}
 </script>
