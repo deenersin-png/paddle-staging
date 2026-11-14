@@ -185,6 +185,15 @@ h2.k{margin-bottom:10px}
 .prc-cur-k{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
 .prc-cur-sep{margin:0 6px;color:var(--dim)}
 </style>
+<style>
+/* My pick(s): Fill a whole pick */
+.pick-chips{display:flex;flex-wrap:wrap;gap:8px}
+.dchip.pick-chip{flex:0 1 auto;display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:auto;min-width:0;height:auto;padding:8px 12px;text-align:left;line-height:1.2}
+.dchip.pick-chip small{font-size:11px;font-weight:500;opacity:.8;letter-spacing:0;text-transform:none}
+.whole-pick{display:flex;flex-direction:column;gap:2px;margin:12px 0 6px;padding:10px 12px;border:1px solid #c9d6ea;border-left:4px solid #0b4ea2;border-radius:8px;background:#f2f6fc}
+.whole-pick b{font-size:15px}
+.whole-pick span{font-size:14px}
+</style>
 <link rel="stylesheet" href="assets/pa-scorecard.css">
 <link rel="stylesheet" href="assets/pa-lf.css">
 <link rel="stylesheet" href="assets/pa-theme.css">
@@ -1334,11 +1343,11 @@ function renderRegularForm(form) {
     form.appendChild(list);
     form.appendChild(listMsg);
   } else {
-    form.appendChild(el('div', 'hint', 'Enter your pick one four-week block at a time. Every day in the block fills in by itself, and the app already knows each run\u2019s hours.'));
+    form.appendChild(el('div', 'hint', 'Fill your whole pick at once, or one four-week block at a time. Every day fills in by itself, and the app already knows each run\u2019s hours.'));
   }
 
   // ---- form state
-  const w = { start: null, end: null, days: new Set([1, 2, 3, 4, 5]), runs: {}, copySource: null, editing: null, pickStart: null, pickLabel: '' };
+  const w = { start: null, end: null, days: new Set([1, 2, 3, 4, 5]), runs: {}, copySource: null, editing: null, pickStart: null, pickLabel: '', whole: null };
   const last = wins[wins.length - 1] || null;
   let s0 = last && last.effectiveTo ? S.addDays(last.effectiveTo, 1) : S.weekStartOf(today);
   for (let _i = 0; _i < 520 && coveredBy(s0); _i++) s0 = S.addDays(s0, 7);
@@ -1346,9 +1355,45 @@ function renderRegularForm(form) {
   if (last) { w.days = new Set(Object.keys(last.days || {}).map(Number)); w.copySource = last; }
 
   function loadWindow(p) {
-    w.editing = p; w.copySource = null;
+    w.editing = p; w.copySource = null; w.whole = null;
     w.start = p.effectiveFrom; w.end = p.effectiveTo || S.addDays(p.effectiveFrom, 27);
     w.days = new Set(Object.keys(p.days || {}).map(Number)); w.runs = runsOf(p);
+    drawAll();
+  }
+
+  // ---- a whole pick at once: the current pick or one already over, with
+  // the first and last day from the pick sheet (assets/pa-picks.js).
+  const pkWrap = el('div', 'pa-field'); pkWrap.style.marginTop = '12px';
+  form.appendChild(pkWrap);
+  let wholePicks = [];
+  const overlapsSaved = (from, to) => wins.some(p => !(w.editing && p === w.editing)
+    && p.effectiveFrom <= (to || '9999-12-31') && (!p.effectiveTo || p.effectiveTo >= from));
+  function drawPicks() {
+    pkWrap.textContent = '';
+    if (!wholePicks.length) return;
+    pkWrap.appendChild(el('label', 'pa-label', 'Fill a whole pick'));
+    const row = el('div', 'pick-chips');
+    wholePicks.forEach((pk, n) => {
+      const b = el('button', 'dchip pick-chip' + (w.whole && w.whole.id === pk.id ? ' on' : ''));
+      b.type = 'button';
+      b.appendChild(document.createTextNode(pk.label + (n === 0 && pk.isCurrent ? ' · now' : '')));
+      b.appendChild(el('small', null, S.fmtDate(pk.start) + ' – ' + (pk.last ? S.fmtDate(pk.last) : 'open')));
+      b.addEventListener('click', () => {
+        if (w.whole && w.whole.id === pk.id) { chooseDates(); return; }
+        w.whole = pk; w.editing = null;
+        w.start = pk.start; w.end = pk.last || null;
+        if (!w.copySource) w.copySource = last;
+        drawAll();
+      });
+      row.appendChild(b);
+    });
+    pkWrap.appendChild(row);
+  }
+  function chooseDates() {
+    w.whole = null;
+    let s = S.weekStartOf(w.start);
+    for (let _i = 0; _i < 520 && coveredBy(s); _i++) s = S.addDays(s, 7);
+    w.start = s; w.end = S.addDays(s, 27);
     drawAll();
   }
 
@@ -1400,6 +1445,27 @@ function renderRegularForm(form) {
   }
   function drawWindow() {
     winWrap.textContent = '';
+    if (w.whole) {
+      // Whole pick: the dates are the pick's own, no Sunday / Saturday lists.
+      const box = el('div', 'whole-pick');
+      box.appendChild(el('b', null, 'Whole ' + w.whole.label + ' pick'));
+      box.appendChild(el('span', null, S.fmtDate(w.start) + ', ' + S.fromIso(w.start).getFullYear() + ' – '
+        + (w.end ? S.fmtDate(w.end) + ', ' + S.fromIso(w.end).getFullYear() : 'until your next pick')));
+      winWrap.appendChild(box);
+      const other = el('button', 'pa-ghost', 'Choose dates instead (4 weeks at a time)'); other.type = 'button';
+      other.addEventListener('click', chooseDates);
+      winWrap.appendChild(other);
+      const st = el('div', 'hint');
+      st.textContent = 'Every day of the pick fills in with these runs.'
+        + (overlapsSaved(w.start, w.end) ? ' It overlaps saved blocks — saving replaces them for these dates.' : '');
+      winWrap.appendChild(st);
+      if (w.copySource) {
+        const cp = el('button', 'pa-ghost', 'Copy runs from ' + range(w.copySource.effectiveFrom, w.copySource.effectiveTo)); cp.type = 'button'; cp.style.marginTop = '8px';
+        cp.addEventListener('click', () => { w.days = new Set(Object.keys(w.copySource.days || {}).map(Number)); w.runs = runsOf(w.copySource); drawDays(); drawRuns(); });
+        winWrap.appendChild(cp);
+      }
+      return;
+    }
     const row = el('div', 'form-row');
     const fs = el('div', 'pa-field'); fs.appendChild(el('label', 'pa-label', 'Starts on (Sunday)'));
     const ss = el('select', 'pa-select');
@@ -1462,7 +1528,7 @@ function renderRegularForm(form) {
     if (!w.days.size) { msg.textContent = 'Pick at least one work day.'; msg.className = 'msgline err'; return; }
     const missing = [...w.days].sort().filter(i => !w.runs[i]).map(i => S.DAY_SHORT[i]);
     if (missing.length) { msg.textContent = 'Enter the run number for: ' + missing.join(', '); msg.className = 'msgline err'; return; }
-    if (w.end < S.addDays(w.start, 6)) { msg.textContent = 'The block must cover at least one week.'; msg.className = 'msgline err'; return; }
+    if (!w.whole && w.end < S.addDays(w.start, 6)) { msg.textContent = 'The block must cover at least one week.'; msg.className = 'msgline err'; return; }
     save.disabled = true; msg.textContent = 'Saving\u2026'; msg.className = 'msgline';
     try {
       const d = {}; [...w.days].forEach(i => { d[String(i)] = { runNo: w.runs[i] }; });
@@ -1474,15 +1540,24 @@ function renderRegularForm(form) {
       await E.confirmWrite(A.savePattern({ periodDays: 7, days: d, runByDayType: rbt, depotKey: ctx.profile.depotKey,
                             effectiveFrom: w.start, effectiveTo: w.end, preset: 'pick', label: range(w.start, w.end) }),
                            () => { msg.textContent = E.WAITING_FOR_SIGNAL; msg.className = 'msgline'; });
-      msg.textContent = 'Saved. ' + range(w.start, w.end) + ' is filled in.'; msg.className = 'msgline ok';
+      msg.textContent = 'Saved. ' + (w.whole ? 'Your whole ' + w.whole.label + ' pick (' + range(w.start, w.end) + ')' : range(w.start, w.end)) + ' is filled in.'; msg.className = 'msgline ok';
       setTimeout(() => renderSchedule(), 600);
     } catch (err) { msg.textContent = 'Could not save: ' + (err.code || err.message); msg.className = 'msgline err'; }
     save.disabled = false;
   });
   form.appendChild(save); form.appendChild(msg);
 
-  function drawAll() { drawDays(); drawRuns(); drawWindow(); save.textContent = w.editing ? 'Save changes' : 'Save block'; }
+  function drawAll() { drawPicks(); drawDays(); drawRuns(); drawWindow(); save.textContent = w.editing ? 'Save changes' : w.whole ? 'Save whole pick' : 'Save block'; }
   drawAll();
+
+  // The picks from the pick sheet: the current one and the ones before it.
+  S.loadSeasons().then(picks => {
+    const cur = window.PaPicks && picks.length ? window.PaPicks.current(picks, today) : null;
+    wholePicks = picks.filter(pk => pk.start <= today && (!cur || pk.startDate <= cur.startDate))
+      .map(pk => ({ ...pk, isCurrent: !!cur && pk.id === cur.id }))
+      .reverse();
+    drawPicks();
+  }).catch(() => {});
 
   // The pick start arrives async; it only affects labels and the very first default.
   slugForDate(ctx.profile.depotKey, today).then(({ season }) => {
