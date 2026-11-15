@@ -816,13 +816,23 @@ async function curBus(p) {
     const c = ctx.current, b = $('cur-bus');
     if (b && v && c === asked && c && c.mode === 'live') b.textContent = v;
   };
+  // Your bus is only known once your run has started. Before the report
+  // time: nothing (the block's bus now, or last night's, isn't yours).
+  // Reported, not pulled out yet: only a bus out on the block right now
+  // (a relief run's bus; a pull-out bus isn't out yet). Under way: live
+  // first, then the block's bus from memory, seen on this run's own day.
+  const phase = asked && asked.st ? asked.st.phase : null;
+  if (!asked || asked.mode !== 'live' || !phase || phase === 'before_report') return;
+  const liveOnly = phase === 'before_pullout';
+  const rep = asked.run && asked.run.reportMin != null ? asked.run.reportMin : 0;
+  const since = S.minToMs(asked.date, Math.min(0, rep));        // the run's day (a night liner's evening before)
   try {
     const routes = p.routes || [];
     const buses = await L.fetchRoutes(routes);
     const live = buses.find(b => String(b.BlockID || '') === String(p.block));
     if (live) show(String(live.VehicleID || live.label || ''));
     await L.learnPairs(routes, buses, p.block);
-    if (!live) show(L.knownBus(p.block, routes[0] || ''));
+    if (!live && !liveOnly) show(L.knownBus(p.block, routes[0] || '', undefined, since));
   } catch (_) {}
 }
 
