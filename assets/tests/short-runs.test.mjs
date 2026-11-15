@@ -150,3 +150,24 @@ test('withShortRun / shortRunOf put the short run on weekday slots only', async 
   assert.equal(shortRunOf({ days: d }), '132');
   assert.equal(shortRunOf({ days: withShortRun(d, '') }), '');
 });
+
+test('a short run may not overlap the regular run; a swing break is free', async () => {
+  const { runsOverlap, busyIntervals } = await import('../pa-resolve.js');
+  // Victory weekday run 1: report 4:42 AM, pieces 4:56-8:35, 9:00-9:00, 9:00-2:21 PM, finish 2:29 PM.
+  const run1 = { reportMin: 282, finishMin: 869, pieces: [{ startMin: 296, endMin: 515 }, { startMin: 540, endMin: 540 }, { startMin: 540, endMin: 861 }] };
+  const s132 = { reportMin: 831, finishMin: 895, pieces: [{ startMin: 845, endMin: 892 }] };   // 1:51-2:55 PM
+  const s134 = { reportMin: 877, finishMin: 927, pieces: [{ startMin: 891, endMin: 924 }] };   // 2:37-3:27 PM
+  assert.deepEqual(busyIntervals(run1), [[282, 515], [540, 540], [540, 869]]);
+  assert.equal(runsOverlap(run1, s132), true);
+  assert.equal(runsOverlap(run1, s134), false);
+  assert.equal(runsOverlap(run1, { reportMin: 869, finishMin: 900, pieces: [{ startMin: 875, endMin: 898 }] }), false); // starts as run 1 finishes
+  // A swing run: free 10:00 AM - 2:00 PM between its pieces.
+  const swing = { reportMin: 300, finishMin: 1140, pieces: [{ startMin: 310, endMin: 600 }, { startMin: 840, endMin: 1135 }] };
+  assert.equal(runsOverlap(swing, { reportMin: 620, finishMin: 760, pieces: [{ startMin: 630, endMin: 755 }] }), false);
+  assert.equal(runsOverlap(swing, { reportMin: 780, finishMin: 900, pieces: [{ startMin: 790, endMin: 895 }] }), true);
+
+  const day = (sr) => ({ runNo: '1', payHours: 9.2, run: run1, shortRun: { runNo: sr.no, payHours: 2, run: sr.run } });
+  assert.match(checkDayRuns(day({ no: '132', run: s132 }), ON), /overlaps run 1 \(4:42 AM – 2:29 PM\)/);
+  assert.equal(checkDayRuns(day({ no: '134', run: s134 }), ON), '');
+  assert.equal(checkDayRuns(day({ no: '132', run: null }), ON), '');      // times unknown: pay rules only
+});

@@ -8,7 +8,7 @@
 // ==========================================================================
 
 import * as S from './pa-schedule.js';
-import { shortRunRules, isShortPay, checkDayRuns } from './pa-resolve.js';
+import { shortRunRules, isShortPay, checkDayRuns, runsOverlap } from './pa-resolve.js';
 
 let settingsP = null;
 
@@ -30,7 +30,7 @@ export async function rulesFor(depotKey) {
 }
 
 /** The paddle run (normalised) for a run number on a date, or null. */
-async function paddleRun(depotKey, dayType, runNo, iso) {
+export async function paddleRun(depotKey, dayType, runNo, iso) {
   if (!depotKey || !runNo) return null;
   const { slug } = await S.slugFor(depotKey, iso);
   return slug ? S.getRun(slug, dayType, runNo, iso) : null;
@@ -38,20 +38,28 @@ async function paddleRun(depotKey, dayType, runNo, iso) {
 
 /**
  * The runs the second-run picker offers: every SHORT run in the paddle for
- * `dayType` on `iso`, except `exceptRunNo`, earliest start first.
+ * `dayType` on `iso`, except `exceptRunNo` and any that overlaps one of the
+ * `avoid` runs (the driver's regular run(s) - nobody works two at once),
+ * earliest start first. The list's `.overlapping` says how many were left
+ * out for overlapping.
  */
-export async function shortRunOptions(depotKey, dayType, iso, exceptRunNo) {
+export async function shortRunOptions(depotKey, dayType, iso, exceptRunNo, avoid) {
   const rules = await rulesFor(depotKey);
   if (!rules.allowsShortRuns) return [];
   const { slug } = await S.slugFor(depotKey, iso);
   if (!slug) return [];
   const m = await S.loadPaddle(slug, dayType, iso);
   const out = [];
+  const regs = (avoid || []).filter(Boolean);
+  let overlapping = 0;
   for (const row of m.values()) {
     const run = S.normalizeRun(row, dayType);
     if (!run || String(run.runNo) === String(exceptRunNo || '')) continue;
-    if (isShortPay(run.payHours, rules)) out.push(run);
+    if (!isShortPay(run.payHours, rules)) continue;
+    if (regs.some(g => runsOverlap(g, run))) { overlapping++; continue; }
+    out.push(run);
   }
+  out.overlapping = overlapping;
   return out.sort((a, b) => (a.reportMin ?? 9e9) - (b.reportMin ?? 9e9) || a.runNo.localeCompare(b.runNo, undefined, { numeric: true }));
 }
 
@@ -90,8 +98,8 @@ export async function assertDayRuns(date, next) {
     sr ? paddleRun(d.depotKey, sr.runDayType || dt, sr.runNo, date).catch(() => null) : null
   ]);
   const msg = checkDayRuns({
-    runNo: d.runNo, payHours: main ? main.payHours : null,
-    shortRun: sr ? { runNo: sr.runNo, payHours: short ? short.payHours : null } : null
+    runNo: d.runNo, payHours: main ? main.payHours : null, run: main,
+    shortRun: sr ? { runNo: sr.runNo, payHours: short ? short.payHours : null, run: short } : null
   }, rules);
   if (msg) throw dayError(msg);
 }
@@ -128,8 +136,8 @@ export async function assertPatternRuns(p) {
       sr ? paddleRun(p.depotKey, sr.runDayType || dt, sr.runNo, date).catch(() => null) : null
     ]);
     const msg = checkDayRuns({
-      runNo: slot.runNo, payHours: main ? main.payHours : null,
-      shortRun: sr ? { runNo: sr.runNo, payHours: short ? short.payHours : null } : null
+      runNo: slot.runNo, payHours: main ? main.payHours : null, run: main,
+      shortRun: sr ? { runNo: sr.runNo, payHours: short ? short.payHours : null, run: short } : null
     }, rules);
     seen.set(key, true);
     if (msg) throw dayError(S.DAY_NAMES[idx] + ': ' + msg);

@@ -490,7 +490,7 @@ export function dayForm(r, opts = {}) {
     const info = el('div', 'lookup'); box.appendChild(info);
     info.textContent = 'Looking up short runs…';
     let list = [];
-    try { list = await SR.shortRunOptions(depotKey, dt, r.date, st.runNo); } catch (_) {}
+    try { list = await SR.shortRunOptions(depotKey, dt, r.date, st.runNo, [st.run]); } catch (_) {}
     if (my !== shortToken) return;
     for (const run of list) {
       const o = el('option', null, shortRunText({ runNo: run.runNo }, run).replace(/^RUN /, 'Run '));
@@ -500,7 +500,7 @@ export function dayForm(r, opts = {}) {
     // A short run saved earlier that the list no longer offers (other
     // schedule, paddle changed) stays selectable so it is not lost silently.
     if (st.shortRun && !list.some(x => x.runNo === String(st.shortRun.runNo))) {
-      const o = el('option', null, 'Run ' + st.shortRun.runNo + ' (not a short run in this paddle)'); o.value = st.shortRun.runNo; sel.appendChild(o);
+      const o = el('option', null, 'Run ' + st.shortRun.runNo + ' (can’t go with run ' + st.runNo + ')'); o.value = st.shortRun.runNo; sel.appendChild(o);
     }
     sel.value = st.shortRun ? String(st.shortRun.runNo) : '';
     sel.disabled = false;
@@ -508,9 +508,10 @@ export function dayForm(r, opts = {}) {
       st.shortObj = st.shortRun ? (list.find(x => x.runNo === String(st.shortRun.runNo)) || null) : null;
       info.className = 'lookup' + (st.shortRun && !st.shortObj ? ' warn' : st.shortObj ? ' ok' : '');
       info.textContent = st.shortObj ? 'Added on top of run ' + st.runNo + ': ' + shortRunText(st.shortRun, st.shortObj).replace(/^RUN \S+ · /, '')
-        : st.shortRun ? 'Run ' + st.shortRun.runNo + ' is not a short run in the ' + dt + ' paddle. Choose another or None.'
-        : list.length ? 'Only short runs are listed. One per day, on top of your regular run.'
-        : 'No short runs in the ' + dt + ' paddle.';
+        : st.shortRun ? 'Run ' + st.shortRun.runNo + ' can’t go with run ' + st.runNo + ': it is not a short run in the ' + dt + ' paddle, or its times overlap your run. Choose another or None.'
+        : (list.length ? 'Only short runs outside your run’s times are listed. One per day, on top of your regular run.'
+                       : 'No short run in the ' + dt + ' paddle fits outside your run’s times.')
+          + (list.overlapping ? ' (' + list.overlapping + ' hidden: they overlap run ' + st.runNo + '.)' : '');
       drawPay();
     };
     sel.addEventListener('change', () => {
@@ -616,8 +617,8 @@ export function dayForm(r, opts = {}) {
     // A short run whose paddle run is not in hand yet is left to that check.
     if (b.working && st.rules && st.rules.loaded && (shortRun ? !!st.shortObj : !!st.run)) {
       const msg = A.checkDayRuns({
-        runNo: st.runNo, payHours: st.run ? st.run.payHours : null,
-        shortRun: shortRun ? { runNo: shortRun.runNo, payHours: st.shortObj ? st.shortObj.payHours : null } : null
+        runNo: st.runNo, payHours: st.run ? st.run.payHours : null, run: st.run,
+        shortRun: shortRun ? { runNo: shortRun.runNo, payHours: st.shortObj ? st.shortObj.payHours : null, run: st.shortObj } : null
       }, st.rules);
       if (msg) return { error: msg };
     }
@@ -702,6 +703,8 @@ export function openEdit(r) {
  * chosen goes with every weekday run of the pick.
  *   opts = { depotKey, iso (a date in the pick), value (run # or ''),
  *            exclude: () => [weekday run #s], onChange(runNo) }
+ * Short runs whose times overlap any of the weekday runs are not offered.
+ * Call refresh() when the weekday runs change.
  * Returns { node, refresh() }.
  */
 export function shortRunChooser(opts) {
@@ -733,25 +736,32 @@ export function shortRunChooser(opts) {
     node.appendChild(sel);
     const info = el('div', 'lookup', 'Looking up short runs…');
     node.appendChild(info);
-    const ex = new Set((opts.exclude ? opts.exclude() : []).map(String));
-    try { list = await SR.shortRunOptions(opts.depotKey, 'weekday', opts.iso || S.todayIso(), null); } catch (_) {}
+    const ex = [...new Set((opts.exclude ? opts.exclude() : []).map(String).filter(Boolean))];
+    const iso = opts.iso || S.todayIso();
+    let overlapping = 0;
+    try {
+      const regs = await Promise.all(ex.map(n => SR.paddleRun(opts.depotKey, 'weekday', n, iso).catch(() => null)));
+      list = await SR.shortRunOptions(opts.depotKey, 'weekday', iso, null, regs);
+      overlapping = list.overlapping || 0;
+    } catch (_) {}
     if (my !== token) return;
-    list = list.filter(r => !ex.has(r.runNo));
+    list = list.filter(r => !ex.includes(r.runNo));
     for (const run of list) {
       const o = el('option', null, shortRunText({ runNo: run.runNo }, run).replace(/^RUN /, 'Run '));
       o.value = run.runNo; sel.appendChild(o);
     }
     if (value && !list.some(r => r.runNo === value)) {
-      const o = el('option', null, 'Run ' + value + ' (not a short run in this paddle)'); o.value = value; sel.appendChild(o);
+      const o = el('option', null, 'Run ' + value + ' (can’t go with your weekday runs)'); o.value = value; sel.appendChild(o);
     }
     sel.value = value; sel.disabled = false;
+    const hidden = overlapping ? ' ' + overlapping + ' more overlap your weekday run' + (ex.length > 1 ? 's' : '') + ' and are not listed.' : '';
     const show = () => {
       const run = list.find(r => r.runNo === value);
       info.className = 'lookup' + (value && !run ? ' warn' : run ? ' ok' : '');
       info.textContent = run ? 'Every weekday: your regular run + short run ' + shortRunText({ runNo: value }, run).replace(/^RUN /, '')
-        : value ? 'Run ' + value + ' is not a short run in the weekday paddle. Choose another or No short run.'
-        : list.length ? list.length + ' short runs in the weekday paddle. Leave it at No short run if your pick has none.'
-        : 'No short runs in the weekday paddle.';
+        : value ? 'Run ' + value + ' can’t go with your weekday runs: it is not a short run, or its times overlap them. Choose another or No short run.'
+        : (list.length ? list.length + ' short run' + (list.length === 1 ? '' : 's') + ' fit outside your weekday run times. Leave it at No short run if your pick has none.'
+                       : 'No short run in the weekday paddle fits outside your weekday run times.') + hidden;
     };
     sel.addEventListener('change', () => { value = sel.value; show(); opts.onChange && opts.onChange(value); });
     show();

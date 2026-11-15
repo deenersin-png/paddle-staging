@@ -27,6 +27,7 @@
 .hv-row .run .tag.red{color:var(--red);border-color:rgba(255,107,107,.35)}
 .hv-row .run .tag.blue{color:var(--blue,#2f6fd6);border-color:rgba(47,111,214,.35)}
 .hv-row .run .run2{margin-top:4px}
+.hv-row .run .run2 .nw{white-space:nowrap}
 .hv-row .run .ex{display:block;font-size:10px;color:var(--amber);margin-top:3px}
 .hv-row .n{text-align:right;font-variant-numeric:tabular-nums;color:var(--text)}
 .hv-row .n.dim{color:var(--dim)}
@@ -60,11 +61,11 @@
   .hv-tot-v{font-size:16px}
 }
 /* My Run: Sched / Actual (real time worked) / Paid. */
-.hv-wp .hv-hrow,.hv-wp .hv-row{grid-template-columns:88px 1fr 60px 60px}
+.hv-wp .hv-hrow,.hv-wp .hv-row{grid-template-columns:88px 1fr 60px 60px 60px}
 .hv-wp .hv-row .n.paid{color:var(--amber);font-weight:600}
 .hv-totals.hv-four{grid-template-columns:repeat(4,1fr)}
 @media (max-width:560px){
-  .hv-wp .hv-hrow,.hv-wp .hv-row{grid-template-columns:58px 1fr 46px 48px;gap:5px}
+  .hv-wp .hv-hrow,.hv-wp .hv-row{grid-template-columns:58px 1fr 46px 46px 48px;gap:5px}
   .hv-wp .hv-row{font-size:10.5px}
   .hv-totals.hv-four{grid-template-columns:1fr 1fr}
 }

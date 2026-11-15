@@ -68,9 +68,10 @@ export function mount(root, opts = {}) {
   const sheet = el('div', 'hv-sheet');
   const head = el('div', 'hv-hrow');
   const wp = !!opts.workPaid;
-  // My Run's Schedule tab (workPaid): Actual and Pay per day; the
-  // scheduled route time is in the totals below. Weekly Hours keeps Sched.
-  if (wp) { head.append(el('span', null, 'Day'), el('span', null, 'Run'), el('span', 'n', 'Actual'), el('span', 'n', 'Pay')); root.classList.add('hv-wp'); }
+  // My Run's Schedule tab (workPaid): Sched = the day's route time (every
+  // piece's pull-out / relief to pull-in / relief, short run included),
+  // Actual = time really worked, Pay = what the day pays.
+  if (wp) { head.append(el('span', null, 'Day'), el('span', null, 'Run'), el('span', 'n', 'Sched'), el('span', 'n', 'Actual'), el('span', 'n', 'Pay')); root.classList.add('hv-wp'); }
   else head.append(el('span', null, 'Day'), el('span', null, 'Run'), el('span', 'n', 'Sched'), el('span', 'n', 'Actual'));
   const rows = el('div');
   sheet.append(head, rows);
@@ -182,7 +183,8 @@ export function mount(root, opts = {}) {
       // regular run's (RUN 132 · 107), marked short.
       if (!r.off && r.shortRun) {
         const sr = run && run.shortRun;
-        const l2 = el('div', 'run2', 'RUN ' + r.shortRun.runNo + (sr && sr.pieces[0] ? ' · ' + sr.pieces.map(p => p.routeLabel).join(' / ') : ''));
+        const l2 = el('div', 'run2');
+        l2.appendChild(el('span', 'nw', 'RUN ' + r.shortRun.runNo + (sr && sr.pieces[0] ? ' · ' + sr.pieces.map(p => p.routeLabel).join(' / ') : '')));
         l2.appendChild(el('span', 'tag blue', 'short'));
         rc.appendChild(l2);
       }
@@ -196,7 +198,9 @@ export function mount(root, opts = {}) {
       if (wp) {
         // Actual = real time worked; Paid = what the day pays.
         const wBlank = hours.workMin == null || !hours.working;
-        row.append(dc, rc,
+        // Route time; pieces of 0:00 add nothing and a day without any shows a dash.
+        const rt = el('div', 'n' + (hours.routeMin ? '' : ' dim') + (hours.unknownRun ? ' warn' : ''), hours.routeMin ? A.fmtHours(hours.routeMin) : '—');
+        row.append(dc, rc, rt,
           el('div', 'n' + (wBlank ? ' dim' : ''), wBlank ? '—' : A.fmtHours(hours.workMin)),
           el('div', 'n paid' + (blank ? ' dim' : ''), blank ? '—' : A.fmtHours(hours.paidMin)));
       } else {
@@ -224,6 +228,7 @@ export function mount(root, opts = {}) {
       if (wp) {
         vc.lastChild.textContent = 'Paid 44 hours by the week; nothing worked.';
         vr.append(vd, vc,
+          el('div', 'n dim', '—'),
           el('div', 'n' + (started ? '' : ' dim'), started ? '0.00' : '—'),
           el('div', 'n paid' + (started ? '' : ' dim'), started ? A.fmtHours(t.vacationMin) : '—'));
       } else {

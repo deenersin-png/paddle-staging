@@ -393,15 +393,19 @@ export async function openSetup(node, { user, profile, overrides, onDone, runsOn
         return;
       }
       if (weekdays.length) {
+        // The short-run chooser below lists only short runs clear of these
+        // runs' times, so it is looked at again after each change.
+        let ch = null, chT;
+        const again = () => { clearTimeout(chT); chT = setTimeout(() => ch && ch.refresh(), 600); };
         if (w.perDay) {
           weekdays.forEach(i => runField(runsWrap, {
             label: S.DAY_NAMES[i] + ' run #', dayType: 'weekday',
-            get: () => w.perDay[i] || '', set: v => { w.perDay[i] = v; }
+            get: () => w.perDay[i] || '', set: v => { w.perDay[i] = v; again(); }
           }));
         } else {
           runField(runsWrap, {
             label: 'Weekday run # · ' + weekdays.map(i => S.DAY_SHORT[i]).join(' '), dayType: 'weekday',
-            get: () => w.runs.weekday, set: v => { w.runs.weekday = v; }
+            get: () => w.runs.weekday, set: v => { w.runs.weekday = v; again(); }
           });
         }
         const t = el('button', 'pa-su-link', w.perDay ? 'Same run every weekday' : 'Different run on some weekdays?');
@@ -413,7 +417,7 @@ export async function openSetup(node, { user, profile, overrides, onDone, runsOn
         });
         runsWrap.appendChild(t);
         // Districts with short runs: guide the operator to add theirs.
-        const ch = E.shortRunChooser({
+        ch = E.shortRunChooser({
           depotKey: w.depotKey, iso: (w.season && w.season.start) || today, value: w.shortRun,
           exclude: () => (w.perDay ? weekdays.map(i => w.perDay[i]) : [w.runs.weekday]).filter(Boolean),
           onChange: x => { w.shortRun = x; saveDraft(user.uid, w); }

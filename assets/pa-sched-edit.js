@@ -252,6 +252,7 @@ function runsEditor(seed, from) {
   const weekdays = () => [1, 2, 3, 4, 5].filter(i => v.days.has(i));
   const chooser = E.shortRunChooser({ depotKey: depotKey(), iso: from, value: v.short,
     exclude: () => weekdays().map(i => v.runs[i]).filter(Boolean), onChange: x => { v.short = x; } });
+  let chT;
   const shortWrap = el('div'); shortWrap.appendChild(chooser.node);
   shortWrap.style.display = weekdays().length ? '' : 'none';
   node.append(dWrap, rWrap, shortWrap);
@@ -261,6 +262,7 @@ function runsEditor(seed, from) {
       dRow.appendChild(btn('dchip' + (v.days.has(i) ? ' on' : ''), S.DAY_SHORT[i].toUpperCase(), () => {
         v.days.has(i) ? v.days.delete(i) : v.days.add(i); drawDays(); drawRuns();
         shortWrap.style.display = weekdays().length ? '' : 'none';
+        if (i >= 1 && i <= 5) chooser.refresh();
       }));
     }
   }
@@ -272,7 +274,10 @@ function runsEditor(seed, from) {
       f.appendChild(el('label', 'pa-label', S.DAY_NAMES[i] + ' run #'));
       const inp = el('input', 'pa-input'); inp.type = 'text'; inp.inputMode = 'numeric'; inp.maxLength = 4; inp.placeholder = 'e.g. 209'; inp.value = v.runs[i] || '';
       const lk = el('div', 'lookup');
-      let t; inp.addEventListener('input', () => { v.runs[i] = inp.value.trim(); clearTimeout(t); t = setTimeout(() => E.lookupLine(lk, dtOf(i), v.runs[i], from, depotKey()), 350); });
+      let t; inp.addEventListener('input', () => {
+        v.runs[i] = inp.value.trim(); clearTimeout(t); t = setTimeout(() => E.lookupLine(lk, dtOf(i), v.runs[i], from, depotKey()), 350);
+        if (i >= 1 && i <= 5) { clearTimeout(chT); chT = setTimeout(() => chooser.refresh(), 600); }   // short runs clear of the new run
+      });
       f.append(inp, lk);
       if (v.runs[i]) E.lookupLine(lk, dtOf(i), v.runs[i], from, depotKey());
       rWrap.appendChild(f);

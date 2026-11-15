@@ -11,7 +11,7 @@
 // The vectors in assets/tests/resolver-cases.json pin every rule here.
 // ==========================================================================
 
-import { dayTypeFor, isHoliday, dowOf, daysBetween, addDays, todayIso } from './pa-schedule.js';
+import { dayTypeFor, isHoliday, dowOf, daysBetween, addDays, todayIso, fmtClock } from './pa-schedule.js';
 
 // Holiday pay, per the operator rule: 8 hours for a holiday not worked;
 // 12 hours on top of the hours actually worked for a holiday worked.
@@ -107,11 +107,34 @@ export function isShortPay(payHours, rules) {
 const hrs = h => (+h).toFixed(2).replace(/\.?0+$/, '');
 
 /**
+ * When a run keeps the driver busy, as [from, to] minutes of its schedule
+ * day: each piece, the first from the report time and the last to the
+ * finish. A swing break between pieces is free time.
+ */
+export function busyIntervals(run) {
+  if (!run) return [];
+  const ps = (run.pieces || []).filter(p => p.startMin != null && p.endMin != null);
+  if (!ps.length) return run.reportMin != null && run.finishMin != null ? [[run.reportMin, run.finishMin]] : [];
+  return ps.map((p, i) => [
+    i === 0 && run.reportMin != null ? Math.min(run.reportMin, p.startMin) : p.startMin,
+    i === ps.length - 1 && run.finishMin != null ? Math.max(run.finishMin, p.endMin) : p.endMin
+  ]);
+}
+
+/** Do two runs keep the driver busy at the same time? Touching ends are fine. */
+export function runsOverlap(a, b) {
+  const A = busyIntervals(a), B = busyIntervals(b);
+  return A.some(([s1, e1]) => B.some(([s2, e2]) => s1 < e2 && s2 < e1));
+}
+const span = r => fmtClock(r.reportMin) + ' – ' + fmtClock(r.finishMin);
+
+/**
  * Is this day's combination of runs allowed? Returns '' when it is, else
  * the reason in the operator's words.
- *   day   = { runNo, payHours, shortRun: null | { runNo, payHours } }
+ *   day   = { runNo, payHours, run?, shortRun: null | { runNo, payHours, run? } }
  *           payHours = the paddle's pay for that run, null when the paddle
  *           does not know the run. runNo null = no run (a day off).
+ *           run = the paddle run (times): with both, the two may not overlap.
  *   rules = shortRunRules(...)
  */
 export function checkDayRuns(day, rules) {
@@ -136,6 +159,11 @@ export function checkDayRuns(day, rules) {
       : 'Run ' + d.runNo + ' is the short run (' + hrs(d.payHours) + ' h). Enter the regular run first and add the short run as the second run.';
   }
   if (!isShortPay(sr.payHours, rules)) return 'Run ' + sr.runNo + ' pays ' + hrs(sr.payHours) + ' h. Only one regular run per day: the second run must be a short run (under ' + max + ' h).';
+  // The driver can't be on two runs at once. Checked when both runs' times
+  // are known (day.run / shortRun.run = paddle runs).
+  if (d.run && sr.run && runsOverlap(d.run, sr.run)) {
+    return 'Short run ' + sr.runNo + ' (' + span(sr.run) + ') overlaps run ' + d.runNo + ' (' + span(d.run) + '). You can’t be on two runs at once: choose a short run outside your run’s times.';
+  }
   return '';
 }
 
