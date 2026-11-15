@@ -809,7 +809,13 @@ function currentPiece(c) {
 // the live feed first, then the block <-> bus pairing (a bus keeps its block
 // all day, even while it rests at a terminal and drops out of the feed).
 async function curBus(p) {
-  const show = v => { const b = $('cur-bus'); if (b && v) b.textContent = v; };
+  // The answer arrives later; write it only if this run is still the one on
+  // screen and still on now (not replaced by the next, unstarted run).
+  const asked = ctx.current;
+  const show = v => {
+    const c = ctx.current, b = $('cur-bus');
+    if (b && v && c === asked && c && c.mode === 'live') b.textContent = v;
+  };
   try {
     const routes = p.routes || [];
     const buses = await L.fetchRoutes(routes);
