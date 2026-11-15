@@ -329,11 +329,13 @@ export async function openBulk() {
     const list = el('div', 'se-opts');
     shown.forEach(pk => {
       const parts = partsIn(pk);
-      const what = !parts.length ? 'Nothing saved yet'
-        : parts.length === 1 ? summary(parts[0].runs, SR.shortRunOf(parts[0].p)) : parts.length + ' schedules saved';
+      const hand = A.daysIn(pk.start, pk.last || null).length;
+      const handTxt = hand ? hand + (hand === 1 ? ' day' : ' days') + ' entered by hand' : '';
+      const what = !parts.length ? (handTxt || 'Nothing saved yet')
+        : (parts.length === 1 ? summary(parts[0].runs, SR.shortRunOf(parts[0].p)) : parts.length + ' schedules saved') + (handTxt ? ' · ' + handTxt : '');
       const b = option(pk.label + (pk.when === 'now' ? ' · now' : pk.when === 'next' ? ' · next' : ''),
         rangeY(pk.start, pk.last), () => stepPick(pk), pk.when === 'now' ? 'cur' : '');
-      b.appendChild(el('span', 'se-opt-s se-opt-runs' + (parts.length ? '' : ' none'), what));
+      b.appendChild(el('span', 'se-opt-s se-opt-runs' + (parts.length || hand ? '' : ' none'), what));
       list.appendChild(b);
     });
     w.main.appendChild(list);
@@ -365,12 +367,14 @@ export async function openBulk() {
     if (!parts.length) {
       const before = A.getState().patterns.filter(p => p.effectiveFrom < pk.start).slice(-1)[0];
       list.appendChild(option('Add my runs', 'One schedule for the whole picking', () => stepEdit(pk, [{ from: pk.start, to: pk.last || null, seed: before ? seedOf({ runs: runsOf(before), short: SR.shortRunOf(before) }) : null }])));
+      const hand = A.daysIn(pk.start, pk.last || null).length;
+      if (hand) list.appendChild(option('Remove', 'Delete the ' + hand + (hand === 1 ? ' day' : ' days') + ' you entered or changed by hand', () => stepRemove(pk), 'danger'));
     } else {
       list.append(
         option('Change', parts.length === 1 ? 'New runs for the whole picking' : 'One schedule for the whole picking, replacing the ' + parts.length + ' saved',
           () => stepEdit(pk, [{ from: pk.start, to: pk.last || null, seed: seedOf(parts[0]) }])),
         option('Split', 'One schedule until a date, a different one after it', () => stepSplit(pk, parts)),
-        option('Remove', 'Delete the runs saved for this picking', () => stepRemove(pk), 'danger')
+        option('Remove', A.daysIn(pk.start, pk.last || null).length ? 'Delete the runs, and if you want the days you changed by hand' : 'Delete the runs saved for this picking', () => stepRemove(pk), 'danger')
       );
     }
     w.main.appendChild(list);
@@ -453,14 +457,53 @@ export async function openBulk() {
     });
   }
 
-  function stepRemove(pk) {
+  /** Remove a picking: its runs only, or its runs and every day entered or
+   *  changed by hand in its dates. Vacation weeks stay either way. */
+  function stepRemove(pk, withDays) {
+    const parts = partsIn(pk);
+    const days = A.daysIn(pk.start, pk.last || null);
+    const nDays = days.length + (days.length === 1 ? ' day' : ' days');
     w.page(); w.title(pk.label + ' · remove');
-    w.main.appendChild(el('div', 'se-warn', 'Remove all runs saved for ' + pk.label + ' (' + range(pk.start, pk.last) + ')?'));
-    w.main.appendChild(el('div', 'hint', 'Days you changed by hand and vacation weeks stay. You can add the runs again any time.'));
-    w.foot.appendChild(btn('pa-ghost', 'Cancel', () => stepPick(pk)));
+    w.main.appendChild(el('div', 'se-sub', rangeY(pk.start, pk.last)));
+    if (withDays == null) {
+      // Nothing to choose when only one of the two is there.
+      if (!parts.length && days.length) withDays = true;
+      else if (parts.length && !days.length) withDays = false;
+    }
+    if (withDays == null) {
+      w.main.appendChild(el('div', 'se-q', 'What do you want to remove?'));
+      const list = el('div', 'se-opts');
+      list.append(
+        option('Runs only', 'Your runs for the picking. The ' + nDays + ' you entered or changed by hand stay.', () => stepRemove(pk, false)),
+        option('Runs and changed days', 'Everything for this picking: your runs and all ' + nDays + ' you entered or changed by hand.', () => stepRemove(pk, true), 'danger')
+      );
+      w.main.appendChild(list);
+      w.main.appendChild(el('div', 'hint', 'Vacation weeks stay either way (Edit → Vacation edit).'));
+      footer(w, () => stepPick(pk));
+      return;
+    }
+    const what = withDays
+      ? (parts.length ? 'your runs and the ' + nDays + ' you entered or changed by hand' : 'the ' + nDays + ' you entered or changed by hand')
+      : 'your runs';
+    w.main.appendChild(el('div', 'se-warn', 'Remove ' + what + ' for ' + pk.label + '?'));
+    if (withDays && days.length) {
+      const box = el('div', 'se-clash');
+      const shown = days.slice(0, 8).map(d => {
+        const a = A.getState().assignments.get(d) || {};
+        return S.fmtDate(d) + ' · ' + (a.runNo ? 'run ' + a.runNo + (a.shortRun && a.shortRun.runNo ? ' + short ' + a.shortRun.runNo : '') : (A.KIND_LABELS[a.kind] || a.status || 'day off').toLowerCase());
+      });
+      shown.forEach(t => box.appendChild(el('div', null, t)));
+      if (days.length > 8) box.appendChild(el('div', null, '… and ' + (days.length - 8) + ' more'));
+      w.main.appendChild(box);
+    }
+    w.main.appendChild(el('div', 'hint', withDays
+      ? 'Those dates go back to empty. Vacation weeks stay. This can’t be undone, but you can enter everything again.'
+      : 'Days you changed by hand and vacation weeks stay. You can add the runs again any time.'));
+    w.foot.appendChild(btn('pa-ghost', 'Back', () => (parts.length && days.length ? stepRemove(pk) : stepPick(pk))));
     const go = btn('pa-submit', 'Remove', async () => {
       go.disabled = true;
-      await write(w, A.clearWindow(pk.start, pk.last || null), 'Removed the runs for ' + pk.label + '.');
+      await write(w, A.clearPicking(pk.start, pk.last || null, { withDays }),
+        withDays ? 'Removed ' + what + ' for ' + pk.label + '.' : 'Removed the runs for ' + pk.label + '.');
       go.disabled = false;
     });
     w.foot.appendChild(go);

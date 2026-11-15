@@ -37,7 +37,7 @@
 // ==========================================================================
 
 import {
-  doc, setDoc, deleteDoc, collection, query, where, onSnapshot, writeBatch, serverTimestamp
+  doc, setDoc, deleteDoc, collection, query, where, onSnapshot, writeBatch, serverTimestamp, getDocs
 } from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore.js';
 
 import { initFirebase } from './pa-firebase.js';
@@ -390,6 +390,46 @@ export async function clearWindow(from, to) {
   const batch = writeBatch(db);
   clearOps(batch, from, to || null);
   await confirmed(batch.commit(), 'patterns');
+}
+
+/** Explicit days (entered or changed by hand) in [from, to] (to null =
+ *  open-ended), from this device's copy: what the screens can count. */
+export function daysIn(from, to) {
+  const hi = to || '9999-12-31';
+  return [...state.assignments.keys()].filter(d => d >= from && d <= hi).sort();
+}
+
+/**
+ * Bulk remove for a picking: every saved block in [from, to] (trimmed at the
+ * edges, as clearWindow) and, with `withDays`, every day entered or changed
+ * by hand in those dates. The days are read from the server, so ones outside
+ * this device's window go too. Vacation weeks are not touched. Firestore
+ * takes 500 writes per batch; a picking is far below that, but larger sets
+ * are split. Resolves to { days }: how many days were removed.
+ */
+export async function clearPicking(from, to, { withDays = false } = {}) {
+  if (!db) throw new Error('not signed in');
+  const batch = writeBatch(db);
+  clearOps(batch, from, to || null);
+  let dates = [];
+  if (withDays) {
+    const q = to
+      ? query(collection(db, 'users', uid, 'assignments'), where('date', '>=', from), where('date', '<=', to))
+      : query(collection(db, 'users', uid, 'assignments'), where('date', '>=', from));
+    try { dates = (await getDocs(q)).docs.map(d => d.id); }
+    catch (_) { dates = daysIn(from, to); }       // no signal: what this device holds
+    dates = [...new Set([...dates, ...daysIn(from, to)])];
+  }
+  const first = dates.slice(0, 400), rest = dates.slice(400);
+  first.forEach(d => batch.delete(asgRef(d)));
+  try { await batch.commit(); }
+  catch (e) { rollbackUnconfirmed('patterns'); rollbackUnconfirmed('assignments'); throw e; }
+  for (let i = 0; i < rest.length; i += 450) {
+    const b = writeBatch(db);
+    rest.slice(i, i + 450).forEach(d => b.delete(asgRef(d)));
+    await confirmed(b.commit(), 'assignments');
+  }
+  return { days: dates.length };
 }
 
 /**
