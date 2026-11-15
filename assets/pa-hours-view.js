@@ -68,8 +68,10 @@ export function mount(root, opts = {}) {
   const sheet = el('div', 'hv-sheet');
   const head = el('div', 'hv-hrow');
   const wp = !!opts.workPaid;
-  head.append(el('span', null, 'Day'), el('span', null, 'Run'), el('span', 'n', 'Sched'), el('span', 'n', 'Actual'));
-  if (wp) { head.appendChild(el('span', 'n', 'Paid')); root.classList.add('hv-wp'); }
+  // My Run's Schedule tab (workPaid): Actual and Pay per day; the
+  // scheduled route time is in the totals below. Weekly Hours keeps Sched.
+  if (wp) { head.append(el('span', null, 'Day'), el('span', null, 'Run'), el('span', 'n', 'Actual'), el('span', 'n', 'Pay')); root.classList.add('hv-wp'); }
+  else head.append(el('span', null, 'Day'), el('span', null, 'Run'), el('span', 'n', 'Sched'), el('span', 'n', 'Actual'));
   const rows = el('div');
   sheet.append(head, rows);
 
@@ -82,9 +84,9 @@ export function mount(root, opts = {}) {
     totals.appendChild(t);
     return { v, s };
   };
-  const tSch = tot('Scheduled', '', 'full week');
+  const tSch = tot('Scheduled', '', wp ? 'route time · full week' : 'full week');
   const tAct = tot(wp ? 'Actual worked' : 'Actual', 'amber', 'through today');
-  const tPaid = wp ? tot('Paid', '', 'through today') : null;
+  const tPaid = wp ? tot('Pay', '', 'through today') : null;
   const tDays = tot('Days worked', '', 'through today');
   if (wp) totals.classList.add('hv-four');
   const hintRead = opts.hint || HINT_READ;
@@ -113,7 +115,7 @@ export function mount(root, opts = {}) {
     };
     ytd.sch = ytot('YTD scheduled', '', 'through today');
     ytd.act = ytot(wp ? 'YTD actual worked' : 'YTD actual', 'amber', 'through today');
-    ytd.paid = wp ? ytot('YTD paid', '', 'through today') : null;
+    ytd.paid = wp ? ytot('YTD pay', '', 'through today') : null;
     ytd.days = ytot('YTD days worked', '', 'through today');
   }
   root.append(nav, sheet);
@@ -164,13 +166,6 @@ export function mount(root, opts = {}) {
       const rc = el('div', 'run' + (r.off ? ' off' : ''));
       rc.appendChild(document.createTextNode(statusLabel(r)));
       if (!r.off && run && run.pieces[0]) rc.appendChild(document.createTextNode(' · ' + run.pieces.map(p => p.routeLabel).join(' / ')));
-      // The additional short run gets a line of its own under the regular run.
-      if (!r.off && r.shortRun) {
-        const sl = el('span', 'short');
-        sl.appendChild(el('span', 'tag blue', '+ short run'));
-        sl.appendChild(document.createTextNode(' ' + E.shortRunText(r.shortRun, run && run.shortRun).replace(/^RUN /, '')));
-        rc.appendChild(sl);
-      }
       if (r.extraShift) rc.appendChild(el('span', 'tag green', 'extra shift'));
       else if (r.source === 'assignment' && !r.off && r.patternRunNo && r.runNo !== r.patternRunNo) rc.appendChild(el('span', 'tag violet', 'swapped'));
       else if (r.source === 'assignment' && r.off && r.patternRunNo) rc.appendChild(el('span', 'tag red', 'override'));
@@ -183,6 +178,14 @@ export function mount(root, opts = {}) {
       }
       const rowSeason = S.seasonFor(st.seasons, r.date);
       if (rowSeason && season && rowSeason.id !== season.id) rc.appendChild(el('span', 'tag', rowSeason.label));
+      // The additional short run: a second line in the same form as the
+      // regular run's (RUN 132 · 107), marked short.
+      if (!r.off && r.shortRun) {
+        const sr = run && run.shortRun;
+        const l2 = el('div', 'run2', 'RUN ' + r.shortRun.runNo + (sr && sr.pieces[0] ? ' · ' + sr.pieces.map(p => p.routeLabel).join(' / ') : ''));
+        l2.appendChild(el('span', 'tag blue', 'short'));
+        rc.appendChild(l2);
+      }
       const ex = extrasText(r, hours);
       if (ex) rc.appendChild(el('span', 'ex', ex));
 
@@ -193,7 +196,7 @@ export function mount(root, opts = {}) {
       if (wp) {
         // Actual = real time worked; Paid = what the day pays.
         const wBlank = hours.workMin == null || !hours.working;
-        row.append(dc, rc, sc,
+        row.append(dc, rc,
           el('div', 'n' + (wBlank ? ' dim' : ''), wBlank ? '—' : A.fmtHours(hours.workMin)),
           el('div', 'n paid' + (blank ? ' dim' : ''), blank ? '—' : A.fmtHours(hours.paidMin)));
       } else {
@@ -221,7 +224,6 @@ export function mount(root, opts = {}) {
       if (wp) {
         vc.lastChild.textContent = 'Paid 44 hours by the week; nothing worked.';
         vr.append(vd, vc,
-          el('div', 'n', A.fmtHours(t.vacationMin)),
           el('div', 'n' + (started ? '' : ' dim'), started ? '0.00' : '—'),
           el('div', 'n paid' + (started ? '' : ' dim'), started ? A.fmtHours(t.vacationMin) : '—'));
       } else {
@@ -231,7 +233,9 @@ export function mount(root, opts = {}) {
       }
       rows.appendChild(vr);
     }
-    tSch.v.textContent = A.fmtHours(t.scheduledMin);
+    // Scheduled on My Run = route time: pull-out / relief to pull-in / relief
+    // of every piece, short runs included.
+    tSch.v.textContent = A.fmtHours(wp ? t.routeMin : t.scheduledMin);
     tAct.v.textContent = A.fmtHours(wp ? t.workMin : t.actualMin);
     if (tPaid) tPaid.v.textContent = A.fmtHours(t.paidMin);
     tDays.v.textContent = String(t.daysWorked);
@@ -274,7 +278,7 @@ export function mount(root, opts = {}) {
     const t = A.weekTotals(days, today);
     // Scheduled through today: the vacation weeks that have started count
     // their 44 hours (weekTotals adds each week once).
-    ytd.sch.textContent = A.fmtHours(t.scheduledMin);
+    ytd.sch.textContent = A.fmtHours(wp ? t.routeMin : t.scheduledMin);
     ytd.act.textContent = A.fmtHours(wp ? t.workMin : t.actualMin);
     if (ytd.paid) ytd.paid.textContent = A.fmtHours(t.paidMin);
     ytd.days.textContent = String(t.daysWorked);

@@ -7,7 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-import { shortRunRules, isShortPay, checkDayRuns, resolvePure, dayHours, payHoursFor, SHORT_RUN_MAX_PAY_HOURS } from '../pa-resolve.js';
+import { shortRunRules, isShortPay, checkDayRuns, resolvePure, dayHours, payHoursFor, weekTotals, SHORT_RUN_MAX_PAY_HOURS } from '../pa-resolve.js';
 
 const SETTINGS = {
   defaults: { allowsShortRuns: false, shortRunMaxPayHours: 4 },
@@ -109,4 +109,44 @@ test('paddle finish with AM/PM flipped (12 h after the last pull-in) is taken ba
   // An ordinary run keeps its finish.
   const ok = normalizeRun({ ...row, runno: '101', finish: '2023-10-11 08:42 AM', pay: '8' }, 'weekday');
   assert.equal(fmtClock(ok.finishMin), '8:42 AM');
+});
+
+const PICK = { id: 'p', periodDays: 7, effectiveFrom: '2026-11-01', effectiveTo: null, preset: 'pick', depotKey: 'victory',
+  days: { 1: { runNo: '1', shortRun: { runNo: '132', runDayType: 'weekday' } }, 2: { runNo: '1', shortRun: { runNo: '132', runDayType: 'weekday' } },
+          6: { runNo: '50' } }, runByDayType: { weekday: '1', saturday: '50' } };
+const pst = (assignments = {}) => ({ patterns: [PICK], vacations: new Map(), assignments: new Map(Object.entries(assignments)) });
+
+test('a pick carries its short run on weekdays only', () => {
+  assert.deepEqual(resolvePure(pst(), '2026-11-16', {}).shortRun, { runNo: '132', runDayType: 'weekday' });   // Mon
+  assert.equal(resolvePure(pst(), '2026-11-21', {}).shortRun, null);                                        // Sat
+  assert.equal(resolvePure(pst(), '2026-11-16', { '2026-11-16': 'sunday' }).shortRun, null);               // holiday
+});
+
+test('an edited day keeps the pick short run unless it says otherwise', () => {
+  const old = { date: '2026-11-16', runNo: '1', status: 'scheduled', extras: [{ kind: 'late', min: 8 }] };
+  assert.equal(resolvePure(pst({ '2026-11-16': old }), '2026-11-16', {}).shortRun.runNo, '132');
+  assert.equal(resolvePure(pst({ '2026-11-16': { ...old, shortRun: null } }), '2026-11-16', {}).shortRun, null);
+  assert.equal(resolvePure(pst({ '2026-11-16': { ...old, runNo: '7' } }), '2026-11-16', {}).shortRun, null);   // swapped run
+});
+
+test('route time = pull-out to pull-in of every piece, short run included', () => {
+  const r = resolvePure(pst(), '2026-11-16', {});
+  const run = { payHours: 9.2, reportMin: 282, finishMin: 869,
+    pieces: [{ startMin: 296, endMin: 515 }, { startMin: 540, endMin: 540 }, { startMin: 540, endMin: 861 }],
+    shortRun: { payHours: 2, reportMin: 831, finishMin: 895, pieces: [{ startMin: 845, endMin: 892 }] } };
+  const h = dayHours(r, run, '2026-11-20');
+  assert.equal(h.routeMin, 219 + 0 + 321 + 47);
+  const off = dayHours(resolvePure(pst(), '2026-11-15', {}), null, '2026-11-20');
+  assert.equal(off.routeMin, 0);
+  assert.equal(weekTotals([{ r, hours: h }, { r, hours: h }], '2026-11-20').routeMin, 2 * 587);
+});
+
+test('withShortRun / shortRunOf put the short run on weekday slots only', async () => {
+  const { withShortRun, shortRunOf } = await import('../pa-short-runs.js');
+  const d = withShortRun({ 0: { runNo: '9' }, 1: { runNo: '1' }, 5: { runNo: '1' }, 6: { runNo: '50' } }, '132');
+  assert.deepEqual(d[1].shortRun, { runNo: '132', runDayType: 'weekday' });
+  assert.deepEqual(d[5].shortRun, { runNo: '132', runDayType: 'weekday' });
+  assert.equal(d[0].shortRun, undefined); assert.equal(d[6].shortRun, undefined);
+  assert.equal(shortRunOf({ days: d }), '132');
+  assert.equal(shortRunOf({ days: withShortRun(d, '') }), '');
 });

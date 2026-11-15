@@ -694,3 +694,68 @@ export function openEdit(r) {
 
   card.append(head, body); o.appendChild(card);
 }
+
+/**
+ * The pick's short run, for the screens where an operator enters a whole
+ * pick (Bulk edit, first-time setup). Shown only where the district allows
+ * short runs: it says so and offers the weekday paddle's SHORT runs; the one
+ * chosen goes with every weekday run of the pick.
+ *   opts = { depotKey, iso (a date in the pick), value (run # or ''),
+ *            exclude: () => [weekday run #s], onChange(runNo) }
+ * Returns { node, refresh() }.
+ */
+export function shortRunChooser(opts) {
+  const node = el('div', 'pa-field pa-short-pick');
+  node.style.display = 'none';
+  let value = opts.value ? String(opts.value) : '';
+  let token = 0;
+  async function refresh() {
+    const my = ++token;
+    let rules = null, list = [];
+    try { rules = await SR.rulesFor(opts.depotKey); } catch (_) {}
+    if (my !== token) return;
+    node.textContent = '';
+    if (!rules || !rules.allowsShortRuns) {
+      if (value) {
+        node.style.display = '';
+        node.appendChild(el('div', 'lookup warn', 'Short run ' + value + ' is saved with your weekday runs, but your district allows one run per day. It will be removed when you save.'));
+        value = ''; opts.onChange && opts.onChange('');
+      } else node.style.display = 'none';
+      return;
+    }
+    node.style.display = '';
+    const max = hoursStr(rules.shortRunMaxPayHours * 60);
+    node.appendChild(el('label', 'pa-label', 'Short run with your weekday runs'));
+    node.appendChild(el('div', 'hint', 'Your district has short runs (under ' + max + ' h). If your pick has one, choose it here: it is added to every weekday, on top of your regular run.'));
+    const sel = el('select', 'pa-select');
+    const none = el('option', null, 'No short run'); none.value = ''; sel.appendChild(none);
+    sel.disabled = true;
+    node.appendChild(sel);
+    const info = el('div', 'lookup', 'Looking up short runs…');
+    node.appendChild(info);
+    const ex = new Set((opts.exclude ? opts.exclude() : []).map(String));
+    try { list = await SR.shortRunOptions(opts.depotKey, 'weekday', opts.iso || S.todayIso(), null); } catch (_) {}
+    if (my !== token) return;
+    list = list.filter(r => !ex.has(r.runNo));
+    for (const run of list) {
+      const o = el('option', null, shortRunText({ runNo: run.runNo }, run).replace(/^RUN /, 'Run '));
+      o.value = run.runNo; sel.appendChild(o);
+    }
+    if (value && !list.some(r => r.runNo === value)) {
+      const o = el('option', null, 'Run ' + value + ' (not a short run in this paddle)'); o.value = value; sel.appendChild(o);
+    }
+    sel.value = value; sel.disabled = false;
+    const show = () => {
+      const run = list.find(r => r.runNo === value);
+      info.className = 'lookup' + (value && !run ? ' warn' : run ? ' ok' : '');
+      info.textContent = run ? 'Every weekday: your regular run + short run ' + shortRunText({ runNo: value }, run).replace(/^RUN /, '')
+        : value ? 'Run ' + value + ' is not a short run in the weekday paddle. Choose another or No short run.'
+        : list.length ? list.length + ' short runs in the weekday paddle. Leave it at No short run if your pick has none.'
+        : 'No short runs in the weekday paddle.';
+    };
+    sel.addEventListener('change', () => { value = sel.value; show(); opts.onChange && opts.onChange(value); });
+    show();
+  }
+  refresh();
+  return { node, refresh };
+}

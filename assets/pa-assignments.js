@@ -43,7 +43,7 @@ import {
 import { initFirebase } from './pa-firebase.js';
 import { addDays, dowOf, todayIso, fmtDate as fmtDay } from './pa-schedule.js';
 import { resolvePure, vacationWeekOf, windowOps, VACATION_ALLOWANCE_ID } from './pa-resolve.js';
-import { assertDayRuns } from './pa-short-runs.js';
+import { assertDayRuns, assertPatternRuns } from './pa-short-runs.js';
 
 // The rules themselves live in pa-resolve.js so the email sender can run the
 // very same code. Everything they export stays importable from here, which is
@@ -312,6 +312,7 @@ export async function savePattern(p) {
   const from = p.effectiveFrom, to = p.effectiveTo || null;
   if (!from) throw new Error('effectiveFrom required');
   if (to && to < from) throw new Error('end before start');
+  await assertPatternRuns(p);
   const batch = writeBatch(db);
   clearOps(batch, from, to);
   const id = 'p' + from.replace(/-/g, '') + '_' + Math.random().toString(36).slice(2, 6);
@@ -398,6 +399,7 @@ export async function clearWindow(from, to) {
  */
 export async function replaceWindow(from, to, list) {
   if (!db) throw new Error('not signed in');
+  for (const p of list) await assertPatternRuns(p);
   const batch = writeBatch(db);
   clearOps(batch, from, to || null);
   for (const p of list) {

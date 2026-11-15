@@ -26,6 +26,7 @@
 import * as S from './pa-schedule.js';
 import * as A from './pa-assignments.js';
 import * as E from './pa-edit-sheet.js';
+import * as SR from './pa-short-runs.js';
 import { saveProfile } from './pa-store.js';
 
 export const DRIVER_TYPES = [
@@ -127,9 +128,9 @@ function loadDraft(uid) {
 function saveDraft(uid, w) {
   try {
     // The answers only — the season and the depot list are reloaded, not kept.
-    const { depotKey, depotLabel, driverType, vacAllowance, vacWeeks, runs, perDay, scope, slate } = w;
+    const { depotKey, depotLabel, driverType, vacAllowance, vacWeeks, runs, perDay, scope, slate, shortRun } = w;
     localStorage.setItem(DRAFT_PREFIX + uid, JSON.stringify({
-      depotKey, depotLabel, driverType, vacAllowance, vacWeeks, runs, perDay, scope, slate,
+      depotKey, depotLabel, driverType, vacAllowance, vacWeeks, runs, perDay, scope, slate, shortRun,
       offDays: [...w.offDays]
     }));
   } catch (_) {}
@@ -162,6 +163,7 @@ export async function openSetup(node, { user, profile, overrides, onDone, runsOn
     offDays:    draft.offDays instanceof Set ? draft.offDays : new Set([0, 6]),
     runs:       draft.runs || { weekday: '', saturday: '', sunday: '' },
     perDay:     draft.perDay || null,
+    shortRun:   draft.shortRun || '',             // districts with short runs: goes with every weekday run
     scope:      draft.scope || null,
     slate:      draft.slate || { today: '', todayRun: '', tomorrow: '', tomorrowRun: '', week: 'none' },
     // Filled in from the pick sheet; the runs step needs the pick it is filling.
@@ -410,6 +412,14 @@ export async function openSetup(node, { user, profile, overrides, onDone, runsOn
           drawRuns(); saveDraft(user.uid, w);
         });
         runsWrap.appendChild(t);
+        // Districts with short runs: guide the operator to add theirs.
+        const ch = E.shortRunChooser({
+          depotKey: w.depotKey, iso: (w.season && w.season.start) || today, value: w.shortRun,
+          exclude: () => (w.perDay ? weekdays.map(i => w.perDay[i]) : [w.runs.weekday]).filter(Boolean),
+          onChange: x => { w.shortRun = x; saveDraft(user.uid, w); }
+        });
+        ch.node.style.marginTop = '12px';
+        runsWrap.appendChild(ch.node);
       }
       if (!w.offDays.has(6)) runField(runsWrap, { label: 'Saturday run #', dayType: 'saturday', get: () => w.runs.saturday, set: v => { w.runs.saturday = v; } });
       if (!w.offDays.has(0)) runField(runsWrap, { label: 'Sunday run #', dayType: 'sunday', get: () => w.runs.sunday, set: v => { w.runs.sunday = v; } });
@@ -772,7 +782,7 @@ export function patternFrom(w) {
   if (weekdays.length && !w.perDay && w.runs.weekday) runByDayType.weekday = String(w.runs.weekday).trim();
   if (!w.offDays.has(6) && w.runs.saturday) { days['6'] = { runNo: String(w.runs.saturday).trim() }; runByDayType.saturday = String(w.runs.saturday).trim(); }
   if (!w.offDays.has(0) && w.runs.sunday)   { days['0'] = { runNo: String(w.runs.sunday).trim() };   runByDayType.sunday = String(w.runs.sunday).trim(); }
-  return { days, runByDayType };
+  return { days: SR.withShortRun(days, w.shortRun || ''), runByDayType };
 }
 
 /** The window a pattern covers, from the scope the operator chose. */

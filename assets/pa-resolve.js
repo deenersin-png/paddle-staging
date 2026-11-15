@@ -223,7 +223,7 @@ function fromPattern(patterns, date, base) {
   const slot = p.days ? p.days[String(idx)] : null;
   const out = { ...base, source: 'pattern', patternId: p.id, depotKey: p.depotKey || null,
                 flags: {}, holiday: null, extras: [], status: 'scheduled', off: false,
-                reportMin: null, payMin: null, runNo: null };
+                reportMin: null, payMin: null, runNo: null, shortRun: null };
 
   // Holiday rule (from the operator): a holiday runs the Sunday schedule. Off
   // with holiday pay unless you hold a Sunday run, in which case you work it
@@ -251,7 +251,12 @@ function fromPattern(patterns, date, base) {
   if (!slot) return { ...out, off: true, status: 'off' };
   const runNo = slot.runNo || (p.runByDayType && p.runByDayType[base.dayType]) || null;
   if (!runNo) return { ...out, off: true, status: 'off', reason: 'no-run-for-daytype' };
-  return { ...out, runNo: String(runNo) };
+  // The pick's short run (districts with allowsShortRuns) rides on the
+  // weekday slots, and only on a day that runs that schedule.
+  const sr = slot.shortRun && slot.shortRun.runNo ? slot.shortRun : null;
+  const shortRun = sr && (sr.runDayType || 'weekday') === base.dayType
+    ? { runNo: String(sr.runNo), runDayType: sr.runDayType || 'weekday' } : null;
+  return { ...out, runNo: String(runNo), shortRun };
 }
 
 /**
@@ -288,8 +293,11 @@ export function resolvePure(st, date, overrides) {
     runDayType: a.runDayType || null,           // paddle the swapped-in run belongs to
     // The additional short run (districts with allowsShortRuns). Only a
     // working day with a run of its own carries one.
-    shortRun: working && a.shortRun && a.shortRun.runNo
-      ? { runNo: String(a.shortRun.runNo), runDayType: a.shortRun.runDayType || a.runDayType || null } : null,
+    // A day saved before short runs existed (no shortRun field) keeps the
+    // pick's short run while it still works the pick's run.
+    shortRun: !working ? null
+      : a.shortRun && a.shortRun.runNo ? { runNo: String(a.shortRun.runNo), runDayType: a.shortRun.runDayType || a.runDayType || null }
+      : !('shortRun' in a) && pat.shortRun && String(a.runNo) === String(pat.runNo) ? pat.shortRun : null,
     kind: a.kind || null,
     depotKey: a.depotKey || pat.depotKey || null,
     dayType: a.dayType || base.dayType,
@@ -364,8 +372,13 @@ export function dayHours(resolved, run, today) {
     }
     if (workRunMin < 0) workRunMin = 0;
   }
+  // Route time: every piece from its pull-out / relief to its pull-in /
+  // relief, the regular run's and the short run's. 0 when the paddle does
+  // not know the run.
+  const pieceMin = x => (x && x.pieces ? x.pieces.reduce((s, p) => s + (p.endMin != null && p.startMin != null && p.endMin > p.startMin ? p.endMin - p.startMin : 0), 0) : 0);
+  const routeMin = working ? pieceMin(run) + pieceMin(sr) : 0;
   return {
-    runMin, shortRunMin: working ? shortMin : 0,
+    runMin, shortRunMin: working ? shortMin : 0, routeMin,
     scheduledMin, extrasMin: ex, workedMin: working ? workedMin : 0, earlyReportMin: early,
     actualMin: past ? (working ? workedMin : 0) + ex : null,
     // actualMin is what the day PAYS (kept under its old name for Weekly
@@ -386,10 +399,11 @@ export function dayHours(resolved, run, today) {
  */
 export function weekTotals(days, today) {
   const t = today || todayIso();
-  let scheduledMin = 0, actualMin = 0, daysWorked = 0, workMin = 0;
+  let scheduledMin = 0, actualMin = 0, daysWorked = 0, workMin = 0, routeMin = 0;
   const vacWeeks = new Set();
   for (const d of days) {
     scheduledMin += d.hours.scheduledMin;
+    routeMin += d.hours.routeMin || 0;
     if (d.r && d.r.vacationWeek) vacWeeks.add(d.r.vacationWeek);
     if (d.hours.past) {
       actualMin += d.hours.actualMin || 0;
@@ -405,7 +419,8 @@ export function weekTotals(days, today) {
   }
   // paidMin = actualMin (pay, with vacation's 44 h); workMin = real time
   // worked, which a vacation week adds nothing to.
-  return { scheduledMin, actualMin, paidMin: actualMin, workMin, daysWorked, vacationMin, vacationWeeks: vacWeeks.size };
+  // routeMin = scheduled route time (pull-out to pull-in of every piece).
+  return { scheduledMin, actualMin, paidMin: actualMin, workMin, routeMin, daysWorked, vacationMin, vacationWeeks: vacWeeks.size };
 }
 
 export const fmtHours = min => ((+min || 0) / 60).toFixed(2);

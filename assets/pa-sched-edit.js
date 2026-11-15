@@ -18,6 +18,7 @@
 import * as S from './pa-schedule.js';
 import * as A from './pa-assignments.js';
 import * as E from './pa-edit-sheet.js';
+import * as SR from './pa-short-runs.js';
 import { weekCalendar } from './pa-setup.js';
 
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
@@ -228,7 +229,7 @@ function runsOf(p) {
   Object.keys(p.days || {}).forEach(i => { o[+i] = (p.days[i] && p.days[i].runNo) || (p.runByDayType && p.runByDayType[dtOf(+i)]) || ''; });
   return o;
 }
-const summary = runs => Object.keys(runs).map(Number).sort((x, y) => x - y).map(i => S.DAY_SHORT[i] + ' ' + runs[i]).join(' · ');
+const summary = (runs, short) => Object.keys(runs).map(Number).sort((x, y) => x - y).map(i => S.DAY_SHORT[i] + ' ' + runs[i]).join(' · ') + (short ? ' · + short run ' + short + ' weekdays' : '');
 
 /** The saved blocks inside a picking, cut to its dates. */
 function partsIn(pk) {
@@ -241,18 +242,25 @@ function partsIn(pk) {
 
 /** Work days + one run per day, for [from, to]. */
 function runsEditor(seed, from) {
-  const v = { days: new Set(seed && seed.days ? seed.days : [1, 2, 3, 4, 5]), runs: { ...((seed && seed.runs) || {}) } };
+  const v = { days: new Set(seed && seed.days ? seed.days : [1, 2, 3, 4, 5]), runs: { ...((seed && seed.runs) || {}) }, short: (seed && seed.short) || '' };
   const node = el('div');
   const dWrap = el('div', 'pa-field');
   dWrap.appendChild(el('label', 'pa-label', 'Work days (tap to change)'));
   const dRow = el('div', 'days'); dWrap.appendChild(dRow);
   const rWrap = el('div', 'se-runs');
-  node.append(dWrap, rWrap);
+  // Districts with short runs: one short run goes with every weekday run.
+  const weekdays = () => [1, 2, 3, 4, 5].filter(i => v.days.has(i));
+  const chooser = E.shortRunChooser({ depotKey: depotKey(), iso: from, value: v.short,
+    exclude: () => weekdays().map(i => v.runs[i]).filter(Boolean), onChange: x => { v.short = x; } });
+  const shortWrap = el('div'); shortWrap.appendChild(chooser.node);
+  shortWrap.style.display = weekdays().length ? '' : 'none';
+  node.append(dWrap, rWrap, shortWrap);
   function drawDays() {
     dRow.textContent = '';
     for (let i = 0; i < 7; i++) {
       dRow.appendChild(btn('dchip' + (v.days.has(i) ? ' on' : ''), S.DAY_SHORT[i].toUpperCase(), () => {
         v.days.has(i) ? v.days.delete(i) : v.days.add(i); drawDays(); drawRuns();
+        shortWrap.style.display = weekdays().length ? '' : 'none';
       }));
     }
   }
@@ -273,7 +281,7 @@ function runsEditor(seed, from) {
   drawDays(); drawRuns();
   return {
     node,
-    value: () => ({ days: new Set(v.days), runs: { ...v.runs } }),
+    value: () => ({ days: new Set(v.days), runs: { ...v.runs }, short: weekdays().length ? v.short : '' }),
     error() {
       if (!v.days.size) return 'Tap at least one work day.';
       const missing = [...v.days].sort().filter(i => !v.runs[i]).map(i => S.DAY_SHORT[i]);
@@ -282,7 +290,8 @@ function runsEditor(seed, from) {
   };
 }
 function patternOf(v, from, to) {
-  const d = {}; [...v.days].forEach(i => { d[String(i)] = { runNo: v.runs[i] }; });
+  let d = {}; [...v.days].forEach(i => { d[String(i)] = { runNo: v.runs[i] }; });
+  d = SR.withShortRun(d, v.short || '');
   const rbt = {};
   const wk = [1, 2, 3, 4, 5].filter(i => v.days.has(i));
   if (wk.length) rbt.weekday = v.runs[wk[0]];
@@ -290,7 +299,7 @@ function patternOf(v, from, to) {
   if (v.days.has(0)) rbt.sunday = v.runs[0];
   return { periodDays: 7, days: d, runByDayType: rbt, depotKey: depotKey(), effectiveFrom: from, effectiveTo: to || null, preset: 'pick', label: range(from, to) };
 }
-const seedOf = part => part ? { days: Object.keys(part.runs).map(Number), runs: part.runs } : null;
+const seedOf = part => part ? { days: Object.keys(part.runs).map(Number), runs: part.runs, short: part.p ? SR.shortRunOf(part.p) : (part.short || '') } : null;
 
 export async function openBulk() {
   const w = popup('Bulk edit');
@@ -316,7 +325,7 @@ export async function openBulk() {
     shown.forEach(pk => {
       const parts = partsIn(pk);
       const what = !parts.length ? 'Nothing saved yet'
-        : parts.length === 1 ? summary(parts[0].runs) : parts.length + ' schedules saved';
+        : parts.length === 1 ? summary(parts[0].runs, SR.shortRunOf(parts[0].p)) : parts.length + ' schedules saved';
       const b = option(pk.label + (pk.when === 'now' ? ' · now' : pk.when === 'next' ? ' · next' : ''),
         rangeY(pk.start, pk.last), () => stepPick(pk), pk.when === 'now' ? 'cur' : '');
       b.appendChild(el('span', 'se-opt-s se-opt-runs' + (parts.length ? '' : ' none'), what));
@@ -335,7 +344,7 @@ export async function openBulk() {
       parts.forEach(pt => {
         const row = el('div', 'win');
         const dd = el('div', 'win-d', range(pt.from, pt.to));
-        dd.appendChild(el('small', null, summary(pt.runs)));
+        dd.appendChild(el('small', null, summary(pt.runs, SR.shortRunOf(pt.p))));
         row.appendChild(dd);
         wins.appendChild(row);
       });
@@ -350,7 +359,7 @@ export async function openBulk() {
     const list = el('div', 'se-opts');
     if (!parts.length) {
       const before = A.getState().patterns.filter(p => p.effectiveFrom < pk.start).slice(-1)[0];
-      list.appendChild(option('Add my runs', 'One schedule for the whole picking', () => stepEdit(pk, [{ from: pk.start, to: pk.last || null, seed: before ? seedOf({ runs: runsOf(before) }) : null }])));
+      list.appendChild(option('Add my runs', 'One schedule for the whole picking', () => stepEdit(pk, [{ from: pk.start, to: pk.last || null, seed: before ? seedOf({ runs: runsOf(before), short: SR.shortRunOf(before) }) : null }])));
     } else {
       list.append(
         option('Change', parts.length === 1 ? 'New runs for the whole picking' : 'One schedule for the whole picking, replacing the ' + parts.length + ' saved',
@@ -408,13 +417,13 @@ export async function openBulk() {
     const box = el('div', 'whole-pick');
     box.appendChild(el('b', null, rangeY(seg.from, seg.to)));
     w.main.appendChild(box);
-    if (!seg.editor) seg.editor = runsEditor(seg.value ? { days: [...seg.value.days], runs: seg.value.runs } : seg.seed, seg.from);
+    if (!seg.editor) seg.editor = runsEditor(seg.value ? { days: [...seg.value.days], runs: seg.value.runs, short: seg.value.short } : seg.seed, seg.from);
     w.main.appendChild(seg.editor.node);
     if (i > 0 && !segs[i].touchedCopy) {
       const prev = segs[i - 1];
       w.main.appendChild(btn('pa-ghost se-copy', 'Copy runs from the first schedule', () => {
         const v = prev.editor.value();
-        seg.editor = runsEditor({ days: [...v.days], runs: v.runs }, seg.from); seg.touchedCopy = true; stepEdit(pk, segs, i);
+        seg.editor = runsEditor({ days: [...v.days], runs: v.runs, short: v.short }, seg.from); seg.touchedCopy = true; stepEdit(pk, segs, i);
       }));
     }
     w.main.appendChild(el('div', 'hint', 'Every day in these dates fills in with these runs. Days you changed by hand, vacation weeks and holidays stay as they are.'));
