@@ -1,0 +1,52 @@
+# Checks paddle CSVs every time they are uploaded (Add files via upload,
+# a commit, a push). Only the pick folders the upload touched are checked;
+# a manual run (Actions -> Check paddles -> Run workflow) checks every pick.
+#
+# A mistake the app would show wrong (AM/PM typed the wrong way round on
+# any run, a finish that disagrees with `arrive`, missing pay, ...) makes
+# the run fail: GitHub marks the commit with a red X and emails whoever
+# uploaded. The report is on the run's Summary page. What each check means
+# is at the top of tools/check-paddles.py. The site still publishes either
+# way; this only tells you.
+
+name: Check paddles
+
+on:
+  push:
+    paths:
+      - 'data/**.csv'
+      - 'data/manifest*.json'
+      - 'tools/check-paddles.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Pick folders in this upload
+        id: picks
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          dirs=""
+          if [ "${{ github.event_name }}" = "push" ] && [ -n "$BEFORE" ] && git cat-file -e "$BEFORE" 2>/dev/null; then
+            dirs=$(git diff --name-only --diff-filter=AMR "$BEFORE" "$AFTER" -- 'data/*/*.csv' \
+                   | xargs -r -n1 dirname | sort -u | tr '\n' ' ')
+          fi
+          echo "Checking: ${dirs:-every pick}"
+          echo "dirs=$dirs" >> "$GITHUB_OUTPUT"
+
+      - name: Check
+        run: python tools/check-paddles.py ${{ steps.picks.outputs.dirs }} --summary "$GITHUB_STEP_SUMMARY"
