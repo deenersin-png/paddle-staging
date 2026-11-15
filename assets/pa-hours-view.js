@@ -11,6 +11,26 @@ const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls)
 const HINT_EDIT = 'Tap a day to swap the run, mark it off, sick, vacation or holiday, or add overtime and bonuses. Hours come from the paddle for the run number; you never type them. Amber-edged days have something extra on them.';
 const HINT_READ = 'Tap Edit to change a day: swap the run, mark it off, sick, vacation or holiday, or add overtime and bonuses. Hours come from the paddle for the run number. Amber-edged days have something extra on them.';
 
+/**
+ * My Run's Schedule tab fills a day in only once its work is done: a
+ * working day when its run (and short run) has finished, any other day
+ * when it is over. Until then Sched, Actual and Pay read "—" and the day
+ * adds nothing to the week or year totals.
+ */
+function workDone(d, nowMs, today) {
+  const { r, run, hours } = d;
+  if (hours.working && run) {
+    let fin = run.finishMin;
+    if (run.shortRun && run.shortRun.finishMin != null) fin = Math.max(fin == null ? -Infinity : fin, run.shortRun.finishMin);
+    if (fin != null && Number.isFinite(fin)) return nowMs >= S.minToMs(r.date, fin);
+  }
+  return r.date < today;
+}
+function afterWork(d, nowMs, today) {
+  if (workDone(d, nowMs, today)) return d;
+  return { ...d, hours: { ...d.hours, past: false, actualMin: null, paidMin: null, workMin: null, routeMin: 0 } };
+}
+
 function statusLabel(r) {
   if (r.unregistered) return '—';
   if (!r.off) return 'RUN ' + r.runNo + (r.runDayType && r.runDayType !== r.dayType ? ' (' + r.runDayType + ')' : '');
@@ -149,9 +169,11 @@ export function mount(root, opts = {}) {
     } else { pick.textContent = st.seasonsLoaded ? 'before any pick on record' : ''; pick.className = 'hv-pick none'; }
 
     const resolved = A.resolveRange(ws, we, st.overrides);
+    const nowMs = Date.now();
     const days = await Promise.all(resolved.map(async r => {
       const run = r.off ? null : await E.runFor(r, r.date, profile.depotKey).catch(() => null);
-      return { r, run, hours: A.dayHours(r, run, today) };
+      const d = { r, run, hours: A.dayHours(r, run, today) };
+      return wp ? afterWork(d, nowMs, today) : d;
     }));
     if (myToken !== st.token) return;      // a newer render superseded this one
 
@@ -246,6 +268,8 @@ export function mount(root, opts = {}) {
     tDays.v.textContent = String(t.daysWorked);
     const whole = we < today;
     tAct.s.textContent = whole ? 'full week' : (ws > today ? 'not started' : 'through today');
+    // On My Run the Scheduled box adds up finished days too, like Actual.
+    if (wp) tSch.s.textContent = 'route time · ' + (whole ? 'full week' : ws > today ? 'not started' : 'work done so far');
     tDays.s.textContent = tAct.s.textContent;
     if (tPaid) tPaid.s.textContent = tAct.s.textContent;
     if (ytd) renderYtd(profile, today).catch(() => {});
@@ -269,15 +293,18 @@ export function mount(root, opts = {}) {
       if (ytd.paid) ytd.paid.textContent = '—';
       return;
     }
-    const key = A.getState().version + '|' + today + '|' + y.start + '|' + Object.keys(st.overrides || {}).length;
+    // The 10-minute slot lets today's run count once it has finished.
+    const key = A.getState().version + '|' + today + '|' + y.start + '|' + Object.keys(st.overrides || {}).length + '|' + Math.floor(Date.now() / 600000);
     ytd.head.textContent = 'Year to date · since ' + S.fmtDate(y.start) + ', ' + S.fromIso(y.start).getFullYear();
     if (ytd.key === key) return;
     ytd.key = key;
     const from = y.start, to = today < y.last ? today : y.last;
     const resolved = from <= to ? A.resolveRange(from, to, st.overrides) : [];
+    const nowMs = Date.now();
     const days = await Promise.all(resolved.map(async r => {
       const run = r.off ? null : await E.runFor(r, r.date, profile.depotKey).catch(() => null);
-      return { r, run, hours: A.dayHours(r, run, today) };
+      const d = { r, run, hours: A.dayHours(r, run, today) };
+      return wp ? afterWork(d, nowMs, today) : d;
     }));
     if (ytd.key !== key) return;            // a newer one started meanwhile
     const t = A.weekTotals(days, today);
