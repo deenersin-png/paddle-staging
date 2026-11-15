@@ -390,6 +390,12 @@ export async function openSetup(node, { user, profile, overrides, onDone, runsOn
     function drawRuns() {
       runsWrap.textContent = '';
       const weekdays = [1, 2, 3, 4, 5].filter(i => !w.offDays.has(i));
+      // A Regular pick has ONE weekday run for every weekday worked; a swap
+      // or an off-day run is changed later, one day at a time.
+      if (isRegular && w.perDay) {
+        w.runs.weekday = w.runs.weekday || weekdays.map(i => w.perDay[i]).find(Boolean) || '';
+        w.perDay = null;
+      }
       if (!weekdays.length && w.offDays.has(0) && w.offDays.has(6)) {
         runsWrap.appendChild(el('div', 'hint', 'Every day is marked off — tap at least one working day above.'));
         return;
@@ -410,14 +416,18 @@ export async function openSetup(node, { user, profile, overrides, onDone, runsOn
             get: () => w.runs.weekday, set: v => { w.runs.weekday = v; again(); }
           });
         }
-        const t = el('button', 'pa-su-link', w.perDay ? 'Same run every weekday' : 'Different run on some weekdays?');
-        t.type = 'button';
-        t.addEventListener('click', () => {
-          if (w.perDay) w.perDay = null;
-          else { w.perDay = {}; weekdays.forEach(i => { w.perDay[i] = w.runs.weekday || ''; }); }
-          drawRuns(); saveDraft(user.uid, w);
-        });
-        runsWrap.appendChild(t);
+        if (isRegular) {
+          runsWrap.appendChild(el('div', 'hint', 'The same run on all ' + weekdays.length + ' weekday' + (weekdays.length === 1 ? '' : 's') + ' you work. A swap or a run on an off day: change that day later on its own.'));
+        } else {
+          const t = el('button', 'pa-su-link', w.perDay ? 'Same run every weekday' : 'Different run on some weekdays?');
+          t.type = 'button';
+          t.addEventListener('click', () => {
+            if (w.perDay) w.perDay = null;
+            else { w.perDay = {}; weekdays.forEach(i => { w.perDay[i] = w.runs.weekday || ''; }); }
+            drawRuns(); saveDraft(user.uid, w);
+          });
+          runsWrap.appendChild(t);
+        }
         // Districts with short runs: guide the operator to add theirs.
         ch = shortFor('weekday', () => (w.perDay ? weekdays.map(i => w.perDay[i]) : [w.runs.weekday]));
       }

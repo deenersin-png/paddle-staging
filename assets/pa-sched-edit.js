@@ -245,6 +245,15 @@ function partsIn(pk) {
 function runsEditor(seed, from) {
   const v = { days: new Set(seed && seed.days ? seed.days : [1, 2, 3, 4, 5]), runs: { ...((seed && seed.runs) || {}) },
               shorts: { weekday: '', saturday: '', sunday: '', ...((seed && seed.shorts) || {}) } };
+  // A pick has ONE weekday run: the same run on every weekday worked (3, 4
+  // or 5 of them). A swap or a run on an off day is a single-day change
+  // (Edit this day), not part of the pick. A pick saved earlier with
+  // different weekday runs opens with the first one and says so.
+  const seededWk = [1, 2, 3, 4, 5].filter(i => v.days.has(i)).map(i => v.runs[i]).filter(Boolean);
+  v.wk = seededWk[0] || '';
+  const mixedWk = new Set(seededWk).size > 1
+    ? [1, 2, 3, 4, 5].filter(i => v.days.has(i) && v.runs[i]).map(i => S.DAY_SHORT[i] + ' ' + v.runs[i]).join(', ') : '';
+  const wkRuns = () => { const o = {}; for (const i of [1, 2, 3, 4, 5]) if (v.days.has(i)) o[i] = v.wk; return o; };
   const node = el('div');
   const dWrap = el('div', 'pa-field');
   dWrap.appendChild(el('label', 'pa-label', 'Work days (tap to change)'));
@@ -259,7 +268,7 @@ function runsEditor(seed, from) {
   const shortWrap = el('div');
   for (const dt of ['weekday', 'saturday', 'sunday']) {
     const c = E.shortRunChooser({ depotKey: depotKey(), dayType: dt, iso: from, value: v.shorts[dt],
-      exclude: () => worked(dt).map(i => v.runs[i]).filter(Boolean), onChange: x => { v.shorts[dt] = x; } });
+      exclude: () => (dt === 'weekday' ? (worked(dt).length ? [v.wk] : []) : worked(dt).map(i => v.runs[i])).filter(Boolean), onChange: x => { v.shorts[dt] = x; } });
     const wrap = el('div'); wrap.appendChild(c.node);
     choosers[dt] = { c, wrap };
     shortWrap.appendChild(wrap);
@@ -279,20 +288,30 @@ function runsEditor(seed, from) {
   }
   function drawRuns() {
     rWrap.textContent = '';
-    for (let i = 0; i < 7; i++) {
-      if (!v.days.has(i)) continue;
+    // One field per kind of day: the weekday run (all weekdays worked),
+    // then Saturday, then Sunday.
+    const field = (label, get, set, dt, idx) => {
       const f = el('div', 'pa-field');
-      f.appendChild(el('label', 'pa-label', S.DAY_NAMES[i] + ' run #'));
-      const inp = el('input', 'pa-input'); inp.type = 'text'; inp.inputMode = 'numeric'; inp.maxLength = 4; inp.placeholder = 'e.g. 209'; inp.value = v.runs[i] || '';
+      f.appendChild(el('label', 'pa-label', label));
+      const inp = el('input', 'pa-input'); inp.type = 'text'; inp.inputMode = 'numeric'; inp.maxLength = 4; inp.placeholder = 'e.g. 209'; inp.value = get() || '';
       const lk = el('div', 'lookup');
       let t; inp.addEventListener('input', () => {
-        v.runs[i] = inp.value.trim(); clearTimeout(t); t = setTimeout(() => E.lookupLine(lk, dtOf(i), v.runs[i], from, depotKey()), 350);
-        again(i, 600);   // short runs clear of the new run
+        set(inp.value.trim()); clearTimeout(t); t = setTimeout(() => E.lookupLine(lk, dt, get(), from, depotKey()), 350);
+        again(idx, 600);   // short runs clear of the new run
       });
       f.append(inp, lk);
-      if (v.runs[i]) E.lookupLine(lk, dtOf(i), v.runs[i], from, depotKey());
+      if (get()) E.lookupLine(lk, dt, get(), from, depotKey());
       rWrap.appendChild(f);
+      return f;
+    };
+    const wk = worked('weekday');
+    if (wk.length) {
+      const f = field('Weekday run # · ' + wk.map(i => S.DAY_SHORT[i]).join(' '), () => v.wk, x => { v.wk = x; }, 'weekday', wk[0]);
+      f.appendChild(el('div', 'hint', 'The same run on all ' + wk.length + ' weekday' + (wk.length === 1 ? '' : 's') + ' you work. A swap or a run on an off day: change that day on its own (tap the day).'));
+      if (mixedWk) f.appendChild(el('div', 'lookup warn', 'Saved before with different weekday runs (' + mixedWk + '). Saving uses run ' + (v.wk || '…') + ' on every weekday.'));
     }
+    if (v.days.has(6)) field('Saturday run #', () => v.runs[6], x => { v.runs[6] = x; }, 'saturday', 6);
+    if (v.days.has(0)) field('Sunday run #', () => v.runs[0], x => { v.runs[0] = x; }, 'sunday', 0);
   }
   drawDays(); drawRuns();
   return {
@@ -300,11 +319,17 @@ function runsEditor(seed, from) {
     value: () => {
       const shorts = {};
       for (const dt of ['weekday', 'saturday', 'sunday']) shorts[dt] = worked(dt).length ? v.shorts[dt] : '';
-      return { days: new Set(v.days), runs: { ...v.runs }, shorts };
+      const runs = { ...wkRuns() };
+      if (v.days.has(6)) runs[6] = v.runs[6] || '';
+      if (v.days.has(0)) runs[0] = v.runs[0] || '';
+      return { days: new Set(v.days), runs, shorts };
     },
     error() {
       if (!v.days.size) return 'Tap at least one work day.';
-      const missing = [...v.days].sort().filter(i => !v.runs[i]).map(i => S.DAY_SHORT[i]);
+      const missing = [];
+      if (worked('weekday').length && !v.wk) missing.push('weekdays');
+      if (v.days.has(6) && !v.runs[6]) missing.push('Saturday');
+      if (v.days.has(0) && !v.runs[0]) missing.push('Sunday');
       return missing.length ? 'Enter the run number for: ' + missing.join(', ') + '.' : '';
     }
   };
