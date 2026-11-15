@@ -70,6 +70,75 @@ export function windowOps(existing, from, to) {
   return ops;
 }
 
+// ---- short runs -----------------------------------------------------------
+// Some districts let an operator add ONE short run on top of a day's regular
+// run (data/district-settings.json, allowsShortRuns, off unless a district
+// turns it on). A run is short when the paddle's pay hours are below the
+// district's shortRunMaxPayHours (4 unless set). A day is then either one
+// regular run, or one regular run plus one short run - never a short run
+// alone and never two short runs. Districts without the setting keep the
+// one-run-per-day rule. The short run is stored on the day itself
+// (assignments/{date}.shortRun = { runNo, runDayType }); hours come from the
+// paddle like every other run's.
+
+export const SHORT_RUN_MAX_PAY_HOURS = 4;
+
+/** The short-run rules for a depot. `settings` is district-settings.json
+ *  (or null); the key tolerates "callowhill" vs "callowhillb". */
+export function shortRunRules(settings, depotKey) {
+  const def = (settings && settings.defaults) || {};
+  const all = (settings && settings.districts) || {};
+  const k = String(depotKey || '').replace(/-(summer|fall|spring|winter)-?\d{4}$/i, '');
+  const own = [k, k.replace(/b$/, ''), k + 'b'].map(c => all[c]).find(Boolean) || {};
+  const pick = (name, fallback) => own[name] != null ? own[name] : def[name] != null ? def[name] : fallback;
+  const max = +pick('shortRunMaxPayHours', SHORT_RUN_MAX_PAY_HOURS);
+  return {
+    allowsShortRuns: pick('allowsShortRuns', false) === true,
+    shortRunMaxPayHours: Number.isFinite(max) && max > 0 ? max : SHORT_RUN_MAX_PAY_HOURS
+  };
+}
+
+/** Short = paddle pay hours known and below the limit. Unknown pay is not short. */
+export function isShortPay(payHours, rules) {
+  const p = +payHours, max = (rules && rules.shortRunMaxPayHours) || SHORT_RUN_MAX_PAY_HOURS;
+  return Number.isFinite(p) && p > 0 && p < max;
+}
+
+const hrs = h => (+h).toFixed(2).replace(/\.?0+$/, '');
+
+/**
+ * Is this day's combination of runs allowed? Returns '' when it is, else
+ * the reason in the operator's words.
+ *   day   = { runNo, payHours, shortRun: null | { runNo, payHours } }
+ *           payHours = the paddle's pay for that run, null when the paddle
+ *           does not know the run. runNo null = no run (a day off).
+ *   rules = shortRunRules(...)
+ */
+export function checkDayRuns(day, rules) {
+  const d = day || {}, sr = d.shortRun && d.shortRun.runNo ? d.shortRun : null;
+  const max = hrs((rules && rules.shortRunMaxPayHours) || SHORT_RUN_MAX_PAY_HOURS);
+  if (!rules || !rules.allowsShortRuns) {
+    return sr ? 'Your district allows one run per day. Remove the second run.' : '';
+  }
+  const mainShort = d.runNo && isShortPay(d.payHours, rules);
+  if (!sr) {
+    return mainShort
+      ? 'Run ' + d.runNo + ' pays ' + hrs(d.payHours) + ' h, a short run (under ' + max + ' h). A short run can’t be the only run of the day: add it as the second run next to a regular run.'
+      : '';
+  }
+  if (!d.runNo) return 'A short run can’t be the only run of the day. Enter the regular run first.';
+  if (String(sr.runNo) === String(d.runNo)) return 'The second run must be a different run from run ' + d.runNo + '.';
+  if (d.payHours == null || !(+d.payHours > 0)) return 'Run ' + d.runNo + ' is not in the paddle, so it can’t be checked as a regular run. A short run can only be added next to a regular run from the paddle.';
+  if (sr.payHours == null || !(+sr.payHours > 0)) return 'Run ' + sr.runNo + ' is not in the paddle, so it can’t be checked as a short run.';
+  if (mainShort) {
+    return isShortPay(sr.payHours, rules)
+      ? 'Two short runs on the same day are not allowed. The first run must be a regular run (' + max + ' h or more).'
+      : 'Run ' + d.runNo + ' is the short run (' + hrs(d.payHours) + ' h). Enter the regular run first and add the short run as the second run.';
+  }
+  if (!isShortPay(sr.payHours, rules)) return 'Run ' + sr.runNo + ' pays ' + hrs(sr.payHours) + ' h. Only one regular run per day: the second run must be a short run (under ' + max + ' h).';
+  return '';
+}
+
 export function activePattern(patterns, date) {
   return patterns
     .filter(p => p.effectiveFrom <= date && (!p.effectiveTo || date <= p.effectiveTo))
@@ -217,6 +286,10 @@ export function resolvePure(st, date, overrides) {
     assignment: a,
     runNo: a.runNo ? String(a.runNo) : null,
     runDayType: a.runDayType || null,           // paddle the swapped-in run belongs to
+    // The additional short run (districts with allowsShortRuns). Only a
+    // working day with a run of its own carries one.
+    shortRun: working && a.shortRun && a.shortRun.runNo
+      ? { runNo: String(a.shortRun.runNo), runDayType: a.shortRun.runDayType || a.runDayType || null } : null,
     kind: a.kind || null,
     depotKey: a.depotKey || pat.depotKey || null,
     dayType: a.dayType || base.dayType,
@@ -256,9 +329,13 @@ export function dayHours(resolved, run, today) {
   // the paddle does not know.
   const paddleMin = run && run.payHours ? Math.round(run.payHours * 60) : 0;
   const working = !r.off && r.status === 'scheduled' && !!r.runNo;
-  const workedMin = r.payMin != null ? Math.round(r.payMin) : paddleMin;
-  const runMin = paddleMin || workedMin;
-  const scheduledMin = working ? runMin : 0;
+  // The additional short run: runFor() hangs its paddle run on run.shortRun.
+  // Its paddle pay and its own start-to-finish are added to the day.
+  const sr = working && r.shortRun && run && run.shortRun ? run.shortRun : null;
+  const shortMin = sr && sr.payHours ? Math.round(sr.payHours * 60) : 0;
+  const workedMin = (r.payMin != null ? Math.round(r.payMin) : paddleMin) + shortMin;
+  const runMin = paddleMin || (r.payMin != null ? Math.round(r.payMin) : 0);
+  const scheduledMin = working ? runMin + shortMin : 0;
   // The run's scheduled start is the paddle's; runFor() keeps it as
   // paddleStartMin when the day's report time replaces run.reportMin.
   const startMin = !run ? null
@@ -279,7 +356,8 @@ export function dayHours(resolved, run, today) {
   if (working) {
     const st0 = run ? run.reportMin : null, fin = run ? run.finishMin : null;
     if (st0 != null && fin != null && fin > st0) workRunMin = fin - st0 + (r.payMin != null && paddleMin ? Math.round(r.payMin) - paddleMin : 0);
-    else workRunMin = workedMin;
+    else workRunMin = workedMin - shortMin;
+    if (sr) workRunMin += sr.reportMin != null && sr.finishMin != null && sr.finishMin > sr.reportMin ? sr.finishMin - sr.reportMin : shortMin;
     for (const x of r.extras || []) {
       if (x.kind === 'late') workRunMin += Math.abs(+x.min || 0);
       else if (x.kind === 'ot') workRunMin += Math.round(+x.min || 0);
@@ -287,7 +365,8 @@ export function dayHours(resolved, run, today) {
     if (workRunMin < 0) workRunMin = 0;
   }
   return {
-    runMin, scheduledMin, extrasMin: ex, workedMin: working ? workedMin : 0, earlyReportMin: early,
+    runMin, shortRunMin: working ? shortMin : 0,
+    scheduledMin, extrasMin: ex, workedMin: working ? workedMin : 0, earlyReportMin: early,
     actualMin: past ? (working ? workedMin : 0) + ex : null,
     // actualMin is what the day PAYS (kept under its old name for Weekly
     // Hours); paidMin says so, workMin is the real time worked.
@@ -335,7 +414,8 @@ export const fmtHours = min => ((+min || 0) / 60).toFixed(2);
 export function payHoursFor(resolved, run) {
   const h = dayHours(resolved, run, '9999-12-31');
   const parts = [];
-  if (h.working) parts.push(['Worked', h.workedMin / 60]);
+  if (h.working) parts.push(['Worked', (h.workedMin - h.shortRunMin) / 60]);
+  if (h.shortRunMin) parts.push(['Short run', h.shortRunMin / 60]);
   (resolved.extras || []).forEach(x => parts.push([EXTRA_KINDS[x.kind] || 'Extra', extraPayMin(x) / 60]));
   if (h.earlyReportMin) parts.push(['Early report', h.earlyReportMin / 60]);
   return { total: (h.workedMin + h.extrasMin) / 60, parts };

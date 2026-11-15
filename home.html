@@ -128,6 +128,7 @@ a.chip{text-decoration:none}
 .row .d.src-vac{color:var(--amber)}
 .row .run{color:var(--text);min-width:0;overflow-wrap:anywhere}.row .run.off{color:var(--dim)}
 .row .t{color:var(--mid);white-space:nowrap}
+.row .run .short-run{font-size:11px;color:var(--blue,#2f6fd6);margin-top:3px}
 .rowbtn{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.06em;padding:6px 10px;background:none;border:1px solid var(--line2);border-radius:3px;color:var(--mid);cursor:pointer}
 .rowbtn:hover{color:var(--amber);border-color:var(--line3)}
 .week-nav{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
@@ -909,6 +910,14 @@ function renderToday() {
   }
   if (r.runNo && run && !run.synthetic) attachPaddleLink(cardEl, r, run, c.date);
   body.appendChild(RC.stack(top, cardEl, dayType));
+  // The day's additional short run, named under the regular run's card. The
+  // countdown and alerts above follow the regular run only.
+  if (r.shortRun) {
+    const ss = el('div', 'live-sect');
+    ss.appendChild(el('div', 'live-h', 'Additional short run · ' + S.fmtDate(c.date)));
+    ss.appendChild(el('div', 'leader-line', E.shortRunText(r.shortRun, run && run.shortRun)));
+    body.appendChild(ss);
+  }
   wakeLock(c.mode === 'live' && ['layover', 'in_service', 'first_departure'].includes(c.st.phase));
 
   // Leaders: the live tracker's scorecard for every bus still scheduled ahead
@@ -1708,6 +1717,8 @@ async function renderUpcoming() {
       runFor(r, r.date).then(run => {
         if (run) { t.textContent = S.fmtClock(run.reportMin) + ' – ' + S.fmtClock(run.finishMin) + (A.extrasMin(r.extras) ? ' +' + A.fmtHours(A.extrasMin(r.extras)) : ''); if (run.pieces[0]) runCell.textContent += ' · ' + run.pieces.map(p => p.routeLabel).join(' / '); }
         else t.textContent = 'not in paddle';
+        // The additional short run: its own line under the regular run.
+        if (r.shortRun) runCell.appendChild(el('div', 'short-run', '+ SHORT RUN · ' + E.shortRunText(r.shortRun, run && run.shortRun).replace(/^RUN /, '')));
       }).catch(() => {});
     }
     row.append(d, runCell, t);

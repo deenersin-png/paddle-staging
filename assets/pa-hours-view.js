@@ -164,6 +164,13 @@ export function mount(root, opts = {}) {
       const rc = el('div', 'run' + (r.off ? ' off' : ''));
       rc.appendChild(document.createTextNode(statusLabel(r)));
       if (!r.off && run && run.pieces[0]) rc.appendChild(document.createTextNode(' · ' + run.pieces.map(p => p.routeLabel).join(' / ')));
+      // The additional short run gets a line of its own under the regular run.
+      if (!r.off && r.shortRun) {
+        const sl = el('span', 'short');
+        sl.appendChild(el('span', 'tag blue', '+ short run'));
+        sl.appendChild(document.createTextNode(' ' + E.shortRunText(r.shortRun, run && run.shortRun).replace(/^RUN /, '')));
+        rc.appendChild(sl);
+      }
       if (r.extraShift) rc.appendChild(el('span', 'tag green', 'extra shift'));
       else if (r.source === 'assignment' && !r.off && r.patternRunNo && r.runNo !== r.patternRunNo) rc.appendChild(el('span', 'tag violet', 'swapped'));
       else if (r.source === 'assignment' && r.off && r.patternRunNo) rc.appendChild(el('span', 'tag red', 'override'));

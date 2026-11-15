@@ -335,6 +335,13 @@ export function normalizeRun(row, dayType) {
   const bump = v => { if (v == null) return v; while (v < prev) v += 1440; prev = v; return v; };
   for (const p of pieces) { p.startMin = bump(p.startMin); p.endMin = bump(p.endMin); }
   finishMin = bump(finishMin);
+  // Some short runs' paddle rows carry the finish with AM/PM flipped (Victory
+  // 132: last pull-in 2:52 PM, finish "2:55 AM"; Callowhill 711: 8:39 AM,
+  // "8:42 PM"), so the finish lands 12 hours + a few minutes after the last
+  // pull-in. No real run finishes that long after pulling in: take the 12
+  // hours back off. (Fall 2026: 22 rows, all short runs, gap 722-724 min.)
+  const lastIn = pieces.length ? pieces[pieces.length - 1].endMin : null;
+  if (finishMin != null && lastIn != null && finishMin - lastIn >= 690 && finishMin - lastIn <= 780) finishMin -= 720;
 
   return {
     runNo: String(row.runno), dayType,

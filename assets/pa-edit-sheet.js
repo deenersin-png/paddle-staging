@@ -12,6 +12,7 @@
 
 import * as S from './pa-schedule.js';
 import * as A from './pa-assignments.js';
+import * as SR from './pa-short-runs.js';
 
 const cfg = { profile: null, onSaved: null, onClosed: null, dayNotes: null };
 let overlay = null, msgEl = null;
@@ -65,7 +66,25 @@ export async function runFor(r, iso, depotKey) {
     run = { runNo: r.runNo, dayType: dt, reportMin: r.reportMin, finishMin: null,
             pullOutMin: r.reportMin, pullInMin: null, payHours: 0, pieces: [], routes: [], blocks: [], synthetic: true };
   }
+  // The additional short run rides on the main run: dayHours() adds its
+  // hours from run.shortRun, the schedule views show it from there.
+  if (run && r.shortRun && r.shortRun.runNo) {
+    const sr = slug ? await S.getRun(slug, r.shortRun.runDayType || dt, r.shortRun.runNo, iso).catch(() => null) : null;
+    run = { ...run, shortRun: sr };
+  }
   return run;
+}
+
+/** "RUN 512 · 2.35 h · 6:10 AM – 8:45 AM · 23" for the additional short run. */
+export function shortRunText(sr, run) {
+  if (!sr) return '';
+  const bits = ['RUN ' + sr.runNo];
+  if (run) {
+    bits.push(run.payHours.toFixed(2) + ' h');
+    if (run.reportMin != null && run.finishMin != null) bits.push(S.fmtClock(run.reportMin) + ' – ' + S.fmtClock(run.finishMin));
+    if (run.pieces && run.pieces[0]) bits.push(run.pieces.map(p => p.routeLabel).join(' / '));
+  }
+  return bits.join(' · ');
 }
 
 /** Fill `node` with what the paddle knows about a run. Resolves to the run. */
@@ -285,8 +304,14 @@ export function dayForm(r, opts = {}) {
     hoursMin: r.payMin != null ? r.payMin : null,   // typed hours (override / paid-off)
     lateMin: (r.extras || []).filter(x => x.kind === 'late').reduce((s, x) => s + Math.abs(x.min), 0) || null,
     reportMin: r.reportMin != null ? r.reportMin : null,
-    note: r.note || ''
+    note: r.note || '',
+    // The additional short run (districts with allowsShortRuns).
+    shortRun: r.shortRun && r.shortRun.runNo ? { runNo: r.shortRun.runNo, runDayType: r.shortRun.runDayType || null } : null,
+    shortObj: null,                             // its paddle run
+    rules: null                                 // this district's short-run rules, once loaded
   };
+  let shortEl = null, shortToken = 0;
+  SR.rulesFor(depotKey).then(x => { st.rules = x; drawShort(); }).catch(() => {});
   if (st.kind === 'paid-off' && st.hoursMin == null) {
     const other = (r.extras || []).find(x => x.kind === 'other');
     st.hoursMin = other ? other.min : null;
@@ -335,7 +360,7 @@ export function dayForm(r, opts = {}) {
   let lookupTimer;
   function drawFields() {
     fields.textContent = '';
-    lkEl = iHEl = repHintEl = null;
+    lkEl = iHEl = repHintEl = shortEl = null;
     const working = WORKING.has(st.kind);
 
     if (st.kind === 'vacation') {
@@ -370,6 +395,9 @@ export function dayForm(r, opts = {}) {
       fH.appendChild(iH);
       fH.appendChild(el('div', 'hint', 'Pre-filled with the run’s pay from the paddle. Change it only if you were paid a different amount (e.g. you left early).'));
       fields.appendChild(fH);
+
+      shortEl = el('div', 'pa-field pa-short'); shortEl.style.display = 'none';
+      fields.appendChild(shortEl);
 
       if (st.kind === 'late') {
         const fL = el('div', 'pa-field'); fL.appendChild(el('label', 'pa-label', 'Late allowance'));
@@ -419,6 +447,83 @@ export function dayForm(r, opts = {}) {
     if (iH && st.run && st.hoursMin == null) iH.value = hoursStr(Math.round(st.run.payHours * 60));
     if (iH && !st.run) iH.placeholder = 'run not in paddle - enter hours';
     drawPay();
+    drawShort();
+  }
+
+  // ---- the additional short run
+  // Shown only where the district allows short runs, and only once the day
+  // has a REGULAR run from the paddle: the picker then offers short runs and
+  // nothing else. A short run already on the day stays visible in every case
+  // so the operator sees why a save is refused.
+  async function drawShort() {
+    const box = shortEl, rules = st.rules;
+    if (!box) return;
+    const my = ++shortToken;
+    box.textContent = ''; box.style.display = 'none';
+    if (!rules) return;
+    const max = rules.shortRunMaxPayHours;
+    const head = () => { box.style.display = ''; box.appendChild(el('label', 'pa-label', 'Additional short run (under ' + hoursStr(max * 60) + ' h)')); };
+    if (!rules.allowsShortRuns) {
+      if (st.shortRun) {
+        head();
+        box.appendChild(el('div', 'lookup warn', 'Run ' + st.shortRun.runNo + ' was saved as a short run, but your district allows one run per day. Remove it to save this day.'));
+        addRemove(box);
+      }
+      return;
+    }
+    const regular = st.run && st.run.payHours > 0 && !A.isShortPay(st.run.payHours, rules);
+    if (!regular) {
+      if (!st.runNo) return;
+      head();
+      box.appendChild(el('div', 'hint', !st.run
+        ? 'A short run can be added only next to a regular run from the paddle.'
+        : 'Run ' + st.runNo + ' is itself a short run (' + st.run.payHours.toFixed(2) + ' h). A short run can’t be the only run of the day, and two short runs are not allowed.'));
+      if (st.shortRun) { box.appendChild(el('div', 'lookup warn', 'Short run ' + st.shortRun.runNo + ' can’t stay on this day.')); addRemove(box); }
+      return;
+    }
+    head();
+    const dt = st.runDayType || r.dayType;
+    const sel = el('select', 'pa-select');
+    const none = el('option', null, 'None'); none.value = ''; sel.appendChild(none);
+    sel.disabled = true;
+    box.appendChild(sel);
+    const info = el('div', 'lookup'); box.appendChild(info);
+    info.textContent = 'Looking up short runs…';
+    let list = [];
+    try { list = await SR.shortRunOptions(depotKey, dt, r.date, st.runNo); } catch (_) {}
+    if (my !== shortToken) return;
+    for (const run of list) {
+      const o = el('option', null, shortRunText({ runNo: run.runNo }, run).replace(/^RUN /, 'Run '));
+      o.value = run.runNo;
+      sel.appendChild(o);
+    }
+    // A short run saved earlier that the list no longer offers (other
+    // schedule, paddle changed) stays selectable so it is not lost silently.
+    if (st.shortRun && !list.some(x => x.runNo === String(st.shortRun.runNo))) {
+      const o = el('option', null, 'Run ' + st.shortRun.runNo + ' (not a short run in this paddle)'); o.value = st.shortRun.runNo; sel.appendChild(o);
+    }
+    sel.value = st.shortRun ? String(st.shortRun.runNo) : '';
+    sel.disabled = false;
+    const show = () => {
+      st.shortObj = st.shortRun ? (list.find(x => x.runNo === String(st.shortRun.runNo)) || null) : null;
+      info.className = 'lookup' + (st.shortRun && !st.shortObj ? ' warn' : st.shortObj ? ' ok' : '');
+      info.textContent = st.shortObj ? 'Added on top of run ' + st.runNo + ': ' + shortRunText(st.shortRun, st.shortObj).replace(/^RUN \S+ · /, '')
+        : st.shortRun ? 'Run ' + st.shortRun.runNo + ' is not a short run in the ' + dt + ' paddle. Choose another or None.'
+        : list.length ? 'Only short runs are listed. One per day, on top of your regular run.'
+        : 'No short runs in the ' + dt + ' paddle.';
+      drawPay();
+    };
+    sel.addEventListener('change', () => {
+      dirty = true;
+      st.shortRun = sel.value ? { runNo: sel.value, runDayType: dt } : null;
+      show();
+    });
+    show();
+  }
+  function addRemove(box) {
+    const b = el('button', 'rowbtn', 'REMOVE SHORT RUN'); b.type = 'button';
+    b.addEventListener('click', () => { st.shortRun = null; st.shortObj = null; dirty = true; drawShort(); drawPay(); });
+    box.appendChild(b);
   }
 
   // ---- notes (every kind)
@@ -445,7 +550,9 @@ export function dayForm(r, opts = {}) {
     const status = working ? 'scheduled'
       : st.kind === 'holiday-off' ? 'holiday'
       : st.kind === 'paid-off' ? 'vacation' : 'off';
-    return { working, runMin, workedMin, extras, earlyMin, status };
+    // The additional short run's paddle pay, on top of the regular run's.
+    const shortMin = working && st.shortRun && st.shortObj ? Math.round(st.shortObj.payHours * 60) : 0;
+    return { working, runMin, workedMin, shortMin, extras, earlyMin, status };
   }
   function drawReportHint(b) {
     const h = repHintEl;
@@ -469,6 +576,11 @@ export function dayForm(r, opts = {}) {
     if (st.hoursMin != null && st.hoursMin !== b.runMin) { const d = st.hoursMin - b.runMin; min += d; bits.push((d < 0 ? '− ' : '+ ') + (Math.abs(d) / 60).toFixed(2) + ' changed'); }
     if (st.kind === 'late' && st.lateMin) { min += st.lateMin; bits.push('+ ' + st.lateMin + ' min late'); }
     if (bits.length > 1) bits[0] += ' (' + ((run.finishMin - start) / 60).toFixed(2) + ')';
+    const so = b.shortMin ? st.shortObj : null;
+    if (so && so.reportMin != null && so.finishMin > so.reportMin) {
+      min += so.finishMin - so.reportMin;
+      bits.push('+ short run ' + S.fmtClock(so.reportMin) + ' – ' + S.fmtClock(so.finishMin) + ' (' + ((so.finishMin - so.reportMin) / 60).toFixed(2) + ')');
+    }
     return 'Worked ' + esc(bits.join(' ')) + ' = <b>' + (Math.max(0, min) / 60).toFixed(2) + ' h</b>';
   }
   function drawPay() {
@@ -480,6 +592,7 @@ export function dayForm(r, opts = {}) {
     drawReportHint(b);
     const parts = [];
     if (b.working) parts.push(['Run', b.workedMin]);
+    if (b.shortMin) parts.push(['Short run ' + st.shortRun.runNo, b.shortMin]);
     b.extras.forEach(x => parts.push([A.EXTRA_KINDS[x.kind] || 'Extra', A.extraPayMin(x)]));
     if (b.earlyMin) parts.push(['Early report', b.earlyMin]);
     const total = parts.reduce((s, p) => s + p[1], 0);
@@ -497,10 +610,22 @@ export function dayForm(r, opts = {}) {
     if (b.working && !st.runNo) return { error: 'Enter the run number, or choose a day-off kind.' };
     if (st.kind === 'late' && !st.lateMin) return { error: 'Enter the minutes you were held late (Late allowance → ADD).' };
     if (b.working && !st.run && st.hoursMin == null) return { error: 'That run is not in the paddle. Enter the hours.' };
+    // The day's runs must be an allowed combination (checked again, from
+    // the paddle, by A.saveAssignment / A.saveDays before anything is written).
+    const shortRun = b.working && st.shortRun ? { runNo: String(st.shortRun.runNo), runDayType: st.shortRun.runDayType || st.runDayType } : null;
+    // A short run whose paddle run is not in hand yet is left to that check.
+    if (b.working && st.rules && st.rules.loaded && (shortRun ? !!st.shortObj : !!st.run)) {
+      const msg = A.checkDayRuns({
+        runNo: st.runNo, payHours: st.run ? st.run.payHours : null,
+        shortRun: shortRun ? { runNo: shortRun.runNo, payHours: st.shortObj ? st.shortObj.payHours : null } : null
+      }, st.rules);
+      if (msg) return { error: msg };
+    }
     return { data: {
       kind: st.kind,
       runNo: b.working ? st.runNo : null,
       runDayType: b.working ? st.runDayType : null,
+      shortRun,
       depotKey: depotKey || null, dayType: r.dayType,
       status: b.status,
       extras: b.extras,

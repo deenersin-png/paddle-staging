@@ -41,8 +41,9 @@ import {
 } from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore.js';
 
 import { initFirebase } from './pa-firebase.js';
-import { addDays, dowOf, todayIso } from './pa-schedule.js';
+import { addDays, dowOf, todayIso, fmtDate as fmtDay } from './pa-schedule.js';
 import { resolvePure, vacationWeekOf, windowOps, VACATION_ALLOWANCE_ID } from './pa-resolve.js';
+import { assertDayRuns } from './pa-short-runs.js';
 
 // The rules themselves live in pa-resolve.js so the email sender can run the
 // very same code. Everything they export stays importable from here, which is
@@ -427,10 +428,28 @@ export async function deletePattern(id) {
 
 // ---- assignments ----------------------------------------------------------
 
+/**
+ * Every day write goes through here first. Writes are merges, so the day is
+ * checked as it will be AFTER the write (stored fields + new ones). A short
+ * run the write does not mention is dropped when the day stops being a
+ * working day (set off, sick, ...): no run, nothing for it to sit next to.
+ * Any other combination the district does not allow throws (DayRunsError).
+ */
+async function checkedDay(date, data) {
+  const out = { ...data };
+  const prev = state.assignments.get(date) || {};
+  const next = { ...prev, ...out };
+  const working = (next.status || (next.runNo ? 'scheduled' : 'off')) === 'scheduled' && !!next.runNo;
+  if (!('shortRun' in out) && next.shortRun && !working) { out.shortRun = null; next.shortRun = null; }
+  await assertDayRuns(date, next);
+  return out;
+}
+
 /** Write (merge) one explicit day. */
 export async function saveAssignment(date, data) {
   if (!db) throw new Error('not signed in');
-  await confirmed(setDoc(asgRef(date), { ...data, date, updatedAt: serverTimestamp(), schemaVersion: 2 }, { merge: true }), 'assignments');
+  const d = await checkedDay(date, data);
+  await confirmed(setDoc(asgRef(date), { ...d, date, updatedAt: serverTimestamp(), schemaVersion: 2 }, { merge: true }), 'assignments');
 }
 
 /** Remove an explicit day so the date falls back to the pattern. */
@@ -442,10 +461,17 @@ export async function clearAssignment(date) {
 /** Write several days at once (a holdowner / slate week). */
 export async function saveDays(entries) {
   if (!db) throw new Error('not signed in');
-  const batch = writeBatch(db);
-  let n = 0;
+  // Check every day before writing any: one bad day refuses the whole batch.
+  const checked = [];
   for (const e of entries) {
     if (!e.date) continue;
+    if (e.remove) { checked.push(e); continue; }
+    try { checked.push(await checkedDay(e.date, e)); }
+    catch (err) { err.message = fmtDay(e.date) + ': ' + err.message; throw err; }
+  }
+  const batch = writeBatch(db);
+  let n = 0;
+  for (const e of checked) {
     if (e.remove) { batch.delete(asgRef(e.date)); n++; continue; }
     batch.set(asgRef(e.date), { ...e, updatedAt: serverTimestamp(), schemaVersion: 2 }, { merge: true });
     n++;

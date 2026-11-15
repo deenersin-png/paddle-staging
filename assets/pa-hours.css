@@ -25,6 +25,8 @@
 .hv-row .run .tag.violet{color:var(--violet);border-color:rgba(167,139,250,.35)}
 .hv-row .run .tag.green{color:var(--green);border-color:rgba(61,214,140,.35)}
 .hv-row .run .tag.red{color:var(--red);border-color:rgba(255,107,107,.35)}
+.hv-row .run .tag.blue{color:var(--blue,#2f6fd6);border-color:rgba(47,111,214,.35);margin-left:0}
+.hv-row .run .short{display:block;font-size:11px;color:var(--text);margin-top:4px}
 .hv-row .run .ex{display:block;font-size:10px;color:var(--amber);margin-top:3px}
 .hv-row .n{text-align:right;font-variant-numeric:tabular-nums;color:var(--text)}
 .hv-row .n.dim{color:var(--dim)}
