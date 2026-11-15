@@ -2,15 +2,15 @@
   "note": "Per-district rules for the Paddle App, keyed by depot key (the district's manifest name without the season, e.g. callowhillb). Anything left out takes the value in defaults. allowsShortRuns: a day may hold one regular run plus ONE additional short run (never a short run alone, never two short runs). shortRunMaxPayHours: a run is short when its paddle pay hours are BELOW this number.",
   "defaults": { "allowsShortRuns": false, "shortRunMaxPayHours": 4 },
   "districts": {
-    "allegheny":      { "allowsShortRuns": false },
-    "callowhillb":    { "allowsShortRuns": false },
-    "comly":          { "allowsShortRuns": false },
-    "elmwood":        { "allowsShortRuns": false },
-    "frankford-rail": { "allowsShortRuns": false },
-    "frankfordb":     { "allowsShortRuns": false },
-    "frontier":       { "allowsShortRuns": false },
-    "midvale":        { "allowsShortRuns": false },
-    "southern":       { "allowsShortRuns": false },
+    "allegheny":      { "allowsShortRuns": true },
+    "callowhillb":    { "allowsShortRuns": true },
+    "comly":          { "allowsShortRuns": true },
+    "elmwood":        { "allowsShortRuns": true },
+    "frankford-rail": { "allowsShortRuns": true },
+    "frankfordb":     { "allowsShortRuns": true },
+    "frontier":       { "allowsShortRuns": true },
+    "midvale":        { "allowsShortRuns": true },
+    "southern":       { "allowsShortRuns": true },
     "victory":        { "allowsShortRuns": true }
   }
 }

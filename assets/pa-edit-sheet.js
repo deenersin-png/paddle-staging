@@ -473,7 +473,9 @@ export function dayForm(r, opts = {}) {
     }
     const regular = st.run && st.run.payHours > 0 && !A.isShortPay(st.run.payHours, rules);
     if (!regular) {
-      if (!st.runNo) return;
+      // Nothing to say about a run the paddle doesn't know, unless a short
+      // run is already on the day.
+      if (!st.runNo || (!st.run && !st.shortRun)) return;
       head();
       box.appendChild(el('div', 'hint', !st.run
         ? 'A short run can be added only next to a regular run from the paddle.'
@@ -492,6 +494,8 @@ export function dayForm(r, opts = {}) {
     let list = [];
     try { list = await SR.shortRunOptions(depotKey, dt, r.date, st.runNo, [st.run]); } catch (_) {}
     if (my !== shortToken) return;
+    // A paddle with no short runs at all: nothing to offer, say nothing.
+    if (!list.length && !list.overlapping && !st.shortRun) { box.textContent = ''; box.style.display = 'none'; return; }
     for (const run of list) {
       const o = el('option', null, shortRunText({ runNo: run.runNo }, run).replace(/^RUN /, 'Run '));
       o.value = run.runNo;
@@ -746,6 +750,8 @@ export function shortRunChooser(opts) {
     } catch (_) {}
     if (my !== token) return;
     list = list.filter(r => !ex.includes(r.runNo));
+    // The weekday paddle has no short runs at all: nothing to guide.
+    if (!list.length && !overlapping && !value) { node.textContent = ''; node.style.display = 'none'; return; }
     for (const run of list) {
       const o = el('option', null, shortRunText({ runNo: run.runNo }, run).replace(/^RUN /, 'Run '));
       o.value = run.runNo; sel.appendChild(o);
