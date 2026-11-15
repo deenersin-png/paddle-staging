@@ -131,10 +131,13 @@ const span = r => fmtClock(r.reportMin) + ' – ' + fmtClock(r.finishMin);
 /**
  * Is this day's combination of runs allowed? Returns '' when it is, else
  * the reason in the operator's words.
- *   day   = { runNo, payHours, run?, shortRun: null | { runNo, payHours, run? } }
+ *   day   = { runNo, payHours, run?, dayType?, shortRun: null | { runNo, payHours, run?, runDayType? } }
  *           payHours = the paddle's pay for that run, null when the paddle
  *           does not know the run. runNo null = no run (a day off).
  *           run = the paddle run (times): with both, the two may not overlap.
+ *           dayType = the day's schedule: a short run goes only on its own
+ *           kind of day (weekday short runs on weekdays, Saturday ones on
+ *           Saturdays, Sunday ones on Sundays).
  *   rules = shortRunRules(...)
  */
 export function checkDayRuns(day, rules) {
@@ -151,6 +154,10 @@ export function checkDayRuns(day, rules) {
   }
   if (!d.runNo) return 'A short run can’t be the only run of the day. Enter the regular run first.';
   if (String(sr.runNo) === String(d.runNo)) return 'The second run must be a different run from run ' + d.runNo + '.';
+  if (d.dayType && sr.runDayType && sr.runDayType !== d.dayType) {
+    const nm = t => (t === 'weekday' ? 'weekday' : t.charAt(0).toUpperCase() + t.slice(1));
+    return 'Short run ' + sr.runNo + ' is a ' + nm(sr.runDayType) + ' run: it only goes on a ' + nm(sr.runDayType) + ' (this day runs the ' + nm(d.dayType) + ' schedule).';
+  }
   if (d.payHours == null || !(+d.payHours > 0)) return 'Run ' + d.runNo + ' is not in the paddle, so it can’t be checked as a regular run. A short run can only be added next to a regular run from the paddle.';
   if (sr.payHours == null || !(+sr.payHours > 0)) return 'Run ' + sr.runNo + ' is not in the paddle, so it can’t be checked as a short run.';
   if (mainShort) {

@@ -171,3 +171,25 @@ test('a short run may not overlap the regular run; a swing break is free', async
   assert.equal(checkDayRuns(day({ no: '134', run: s134 }), ON), '');
   assert.equal(checkDayRuns(day({ no: '132', run: null }), ON), '');      // times unknown: pay rules only
 });
+
+test('short runs go on their own kind of day', async () => {
+  const { withShortRun, shortRunsOf } = await import('../pa-short-runs.js');
+  const d = withShortRun({ 0: { runNo: '9' }, 1: { runNo: '1' }, 5: { runNo: '1' }, 6: { runNo: '50' } }, { weekday: '901', sunday: '701' });
+  assert.deepEqual(d[1].shortRun, { runNo: '901', runDayType: 'weekday' });
+  assert.deepEqual(d[0].shortRun, { runNo: '701', runDayType: 'sunday' });
+  assert.equal(d[6].shortRun, undefined);                                   // no Saturday short run chosen
+  assert.deepEqual(shortRunsOf({ days: d }), { weekday: '901', saturday: '', sunday: '701' });
+
+  // The resolver gives each day only its own kind's short run.
+  const pick = { id: 'f', periodDays: 7, effectiveFrom: '2026-11-01', effectiveTo: null, preset: 'pick', depotKey: 'frontier', days: d };
+  const st = { patterns: [pick], vacations: new Map(), assignments: new Map() };
+  assert.equal(resolvePure(st, '2026-11-16', {}).shortRun.runNo, '901');   // Monday
+  assert.equal(resolvePure(st, '2026-11-15', {}).shortRun.runNo, '701');   // Sunday
+  assert.equal(resolvePure(st, '2026-11-21', {}).shortRun, null);          // Saturday
+
+  // The day check refuses a short run from another kind of day.
+  const day = (dayType, runDayType) => ({ runNo: '1', payHours: 8, dayType, shortRun: { runNo: '701', payHours: 3, runDayType } });
+  assert.equal(checkDayRuns(day('sunday', 'sunday'), ON), '');
+  assert.match(checkDayRuns(day('weekday', 'sunday'), ON), /Sunday run: it only goes on a Sunday \(this day runs the weekday schedule\)/);
+  assert.match(checkDayRuns(day('saturday', 'weekday'), ON), /weekday run: it only goes on a weekday \(this day runs the Saturday schedule\)/);
+});

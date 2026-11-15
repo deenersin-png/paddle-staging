@@ -98,8 +98,8 @@ export async function assertDayRuns(date, next) {
     sr ? paddleRun(d.depotKey, sr.runDayType || dt, sr.runNo, date).catch(() => null) : null
   ]);
   const msg = checkDayRuns({
-    runNo: d.runNo, payHours: main ? main.payHours : null, run: main,
-    shortRun: sr ? { runNo: sr.runNo, payHours: short ? short.payHours : null, run: short } : null
+    runNo: d.runNo, payHours: main ? main.payHours : null, run: main, dayType: d.dayType || null,
+    shortRun: sr ? { runNo: sr.runNo, payHours: short ? short.payHours : null, run: short, runDayType: sr.runDayType || dt } : null
   }, rules);
   if (msg) throw dayError(msg);
 }
@@ -136,29 +136,47 @@ export async function assertPatternRuns(p) {
       sr ? paddleRun(p.depotKey, sr.runDayType || dt, sr.runNo, date).catch(() => null) : null
     ]);
     const msg = checkDayRuns({
-      runNo: slot.runNo, payHours: main ? main.payHours : null, run: main,
-      shortRun: sr ? { runNo: sr.runNo, payHours: short ? short.payHours : null, run: short } : null
+      runNo: slot.runNo, payHours: main ? main.payHours : null, run: main, dayType: dt,
+      shortRun: sr ? { runNo: sr.runNo, payHours: short ? short.payHours : null, run: short, runDayType: sr.runDayType || dt } : null
     }, rules);
     seen.set(key, true);
     if (msg) throw dayError(S.DAY_NAMES[idx] + ': ' + msg);
   }
 }
 
-/** Put `shortRunNo` on every weekday slot of a pattern's days (null removes it). */
-export function withShortRun(days, shortRunNo) {
+/** The schedule a pattern slot (0 = Sunday .. 6 = Saturday) runs. */
+export const slotDayType = k => (+k === 0 ? 'sunday' : +k === 6 ? 'saturday' : 'weekday');
+
+/**
+ * Put the pick's short runs on its slots: a weekday short run on every
+ * Monday-Friday slot, a Saturday one on Saturday, a Sunday one on Sunday.
+ * `shorts` = { weekday, saturday, sunday } (run # or ''), or a run # alone
+ * for the weekday one. Slots without a run, or whose kind of day has no
+ * short run, carry none.
+ */
+export function withShortRun(days, shorts) {
+  const by = typeof shorts === 'object' && shorts ? shorts : { weekday: shorts || '' };
   const out = {};
   for (const [k, v] of Object.entries(days || {})) {
     const slot = { ...v };
     delete slot.shortRun;
-    if (shortRunNo && +k >= 1 && +k <= 5 && slot.runNo) slot.shortRun = { runNo: String(shortRunNo), runDayType: 'weekday' };
+    const dt = slotDayType(k), no = by[dt];
+    if (no && slot.runNo) slot.shortRun = { runNo: String(no), runDayType: dt };
     out[k] = slot;
   }
   return out;
 }
 
-/** The short run a pattern's weekday slots carry, or ''. */
-export function shortRunOf(p) {
+/** The pick's short runs by kind of day: { weekday, saturday, sunday } ('' = none). */
+export function shortRunsOf(p) {
   const d = (p && p.days) || {};
-  for (const k of ['1', '2', '3', '4', '5']) if (d[k] && d[k].shortRun && d[k].shortRun.runNo) return String(d[k].shortRun.runNo);
-  return '';
+  const out = { weekday: '', saturday: '', sunday: '' };
+  for (const k of ['1', '2', '3', '4', '5', '6', '0']) {
+    const dt = slotDayType(k);
+    if (!out[dt] && d[k] && d[k].shortRun && d[k].shortRun.runNo) out[dt] = String(d[k].shortRun.runNo);
+  }
+  return out;
 }
+
+/** The weekday short run a pattern carries, or ''. */
+export const shortRunOf = p => shortRunsOf(p).weekday;
