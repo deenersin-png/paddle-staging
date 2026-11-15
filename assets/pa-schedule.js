@@ -341,7 +341,10 @@ export function normalizeRun(row, dayType) {
   // pull-in. No real run finishes that long after pulling in: take the 12
   // hours back off. (Fall 2026: 22 rows, all short runs, gap 722-724 min.)
   const lastIn = pieces.length ? pieces[pieces.length - 1].endMin : null;
-  if (finishMin != null && lastIn != null && finishMin - lastIn >= 690 && finishMin - lastIn <= 780) finishMin -= 720;
+  // The fall / summer files were corrected by hand (2026-11-14); this keeps
+  // a future upload with the same mistake from showing it.
+  let finishFixed = false;
+  if (finishMin != null && lastIn != null && finishMin - lastIn >= 690 && finishMin - lastIn <= 780) { finishMin -= 720; finishFixed = true; }
 
   return {
     runNo: String(row.runno), dayType,
@@ -352,7 +355,7 @@ export function normalizeRun(row, dayType) {
     payHours: parseFloat(row.pay) || 0,
     workTime: row.worktime || '',
     // As the paddle prints them, for the Paddle App's run scorecard.
-    startText: timePart(row.start), finishText: timePart(row.finish),
+    startText: timePart(row.start), finishText: finishFixed ? fmtClock(finishMin) : timePart(row.finish),
     payText: row.pay || '', swingDur: row.pullout2 ? (row.swingdur || '') : '',
     // Runs listed in two versions (see loadPaddle): this one's days, e.g. "Fri".
     versionLabel: row._version || '', versions: row._versions || 1,

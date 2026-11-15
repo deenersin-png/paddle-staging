@@ -105,6 +105,7 @@ test('paddle finish with AM/PM flipped (12 h after the last pull-in) is taken ba
                 r1: '43', b1: '9405', pot1: '06:34 AM', pit1: '08:39 AM' };
   const r = normalizeRun(row, 'weekday');
   assert.equal(fmtClock(r.finishMin), '8:42 AM');
+  assert.equal(r.finishText, '8:42 AM');               // the run card prints this
   // An ordinary run keeps its finish.
   const ok = normalizeRun({ ...row, runno: '101', finish: '2023-10-11 08:42 AM', pay: '8' }, 'weekday');
   assert.equal(fmtClock(ok.finishMin), '8:42 AM');
