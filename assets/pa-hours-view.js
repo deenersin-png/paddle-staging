@@ -66,7 +66,8 @@ function extrasText(r, hours) {
  *              work year from the pick sheet, through today)
  *   dayInfo    (iso, routes) => { alt } from the holiday calendar: a working
  *              day on an alternate schedule gets a "check" tag
- *   hint       text under the totals (replaces the read-only hint)
+ *   hint       text, or a DOM node, under the totals (replaces the
+ *              read-only hint)
  *   workPaid   true: Actual is the REAL time worked (finish minus start,
  *              plus minutes held late) and a Paid column / box shows the pay
  *              (extras, holiday hours, vacation's 44 h). My Run only; Weekly
@@ -115,7 +116,10 @@ export function mount(root, opts = {}) {
   const tDays = tot('Days worked', '', 'through today');
   if (wp) totals.classList.add('hv-four');
   const hintRead = opts.hint || HINT_READ;
-  const hint = el('div', 'hv-hint', st.readOnly ? hintRead : HINT_EDIT);
+  const hint = el('div', 'hv-hint');
+  // A string hint is text; a node (My Run's Schedule guide) is shown as is.
+  const setHint = v => { if (v && typeof v === 'object' && v.nodeType) hint.replaceChildren(v); else hint.textContent = v; };
+  setHint(st.readOnly ? hintRead : HINT_EDIT);
 
   // Edit: under the Saturday row, above the totals.
   let editBar = null;
@@ -278,11 +282,11 @@ export function mount(root, opts = {}) {
     if (tPaid) tPaid.s.textContent = tAct.s.textContent;
     if (ytd) renderYtd(profile, today).catch(() => {});
     const sync = A.getState().sync;
-    hint.textContent = anyRegistered
+    setHint(anyRegistered
       ? (st.readOnly ? hintRead : HINT_EDIT)
       : sync.status === 'connecting' ? 'Loading your schedule…'
       : sync.status === 'error' && !A.getState().patterns.length ? 'Can’t load your schedule right now (' + sync.error + '). It will retry by itself.'
-      : 'Nothing is registered for this week. Set up your pick on My run and every week from its start date fills in by itself.';
+      : 'Nothing is registered for this week. Set up your pick on My run and every week from its start date fills in by itself.');
   }
 
   /** Year to date, from the work year's first day through today. Worked

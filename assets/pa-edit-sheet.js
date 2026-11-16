@@ -255,7 +255,7 @@ export function askSmall(opts = {}) {
     const done = v => { ov.remove(); resolve(v); };
     const submit = () => {
       const v = inp.value.trim();
-      const e = !v ? 'Enter a value, or tap Cancel.' : (opts.check ? opts.check(v) : '');
+      const e = !v ? (opts.allowEmpty ? '' : 'Enter a value, or tap Cancel.') : (opts.check ? opts.check(v) : '');
       if (e) { err.textContent = e; err.hidden = false; return; }
       done(v);
     };
@@ -280,11 +280,14 @@ function miniCss() {
     + '@media (max-width:480px){.pa-mini-ov{align-items:center!important;padding:16px!important}.pa-card.pa-mini{border-radius:var(--pa-radius)!important;border:1px solid var(--pa-line2)!important}}';
   document.head.appendChild(st);
 }
-const LATE_CHECK = v => (/^\d{1,3}$/.test(v) && +v > 0 ? '' : 'Enter the minutes as a number, e.g. 8.');
+// 0 is allowed: it removes the late minutes.
+const LATE_CHECK = v => (/^\d{1,3}$/.test(v) ? '' : 'Enter the minutes as a number, e.g. 8 (0 removes them).');
 const RUN_CHECK = v => (/^[0-9A-Za-z]{1,4}$/.test(v) ? '' : 'Enter the run number, e.g. 209.');
 function askLate(cur) {
   return askSmall({ title: 'Late allowance', label: 'How many minutes were you held late?', placeholder: 'e.g. 8', numeric: true, maxLength: 3,
-    value: cur || '', hint: 'Paid at time and a half: 8 minutes adds 0.20 h pay and 0.13 h work.', check: LATE_CHECK });
+    value: cur || '', allowEmpty: !!cur,
+    hint: 'Paid at time and a half: 8 minutes adds 0.20 h pay and 0.13 h work.' + (cur ? ' Enter 0 or leave it empty to remove the late minutes.' : ''),
+    check: LATE_CHECK });
 }
 function askRun(r, cur) {
   return askSmall({ title: 'Add a run', label: 'Which run number for ' + S.fmtDate(r.date) + '?', placeholder: 'e.g. 209', numeric: true, maxLength: 4,
@@ -359,13 +362,17 @@ export function dayForm(r, opts = {}) {
       if (v == null) { sK.value = was; return; }
       st.runNo = v;
     }
+    let kindNow = want;
     if (want === 'late') {
       const v = await askLate(st.lateMin);
       if (v == null) { sK.value = was; return; }
-      st.lateMin = parseInt(v, 10);
+      const res = A.lateAfterEdit(want, v);
+      // 0 minutes is not a late allowance: stay as the day was.
+      if (!res.lateMin) { sK.value = was; return; }
+      st.lateMin = res.lateMin; kindNow = res.kind;
     }
     dirty = true;
-    st.kind = want;
+    st.kind = kindNow;
     // Worked hours and paid-day-off hours mean different things; don't carry
     // one into the other when switching between a working and a day-off kind.
     if (WORKING.has(was) !== WORKING.has(st.kind) || was === 'personal-holiday' || st.kind === 'personal-holiday') st.hoursMin = null;
@@ -432,13 +439,12 @@ export function dayForm(r, opts = {}) {
         ch.addEventListener('click', async () => {
           const v = await askLate(st.lateMin);
           if (v == null) return;
-          st.lateMin = parseInt(v, 10); dirty = true;
-          drawFields(); drawPay();
+          setLate(v);
         });
         line.append(txt, ch);
-        if (st.kind !== 'late' && st.lateMin) {
+        if (st.lateMin) {
           const rm = el('button', 'rowbtn', 'REMOVE'); rm.type = 'button';
-          rm.addEventListener('click', () => { st.lateMin = null; dirty = true; drawFields(); drawPay(); });
+          rm.addEventListener('click', () => setLate(0));
           line.appendChild(rm);
         }
         fL.appendChild(line);
@@ -476,6 +482,17 @@ export function dayForm(r, opts = {}) {
     } else {
       fields.appendChild(el('div', 'hint', 'No run and no hours this day.'));
     }
+  }
+
+  // Late minutes typed (0 / empty removes them; a Late allowance day without
+  // minutes becomes a normal day). Saving writes the whole extras list and
+  // the kind, so the saved copy loses the minutes too.
+  function setLate(v) {
+    const res = A.lateAfterEdit(st.kind, v);
+    st.lateMin = res.lateMin;
+    if (res.kind !== st.kind) { st.kind = res.kind; sK.value = res.kind; }
+    dirty = true;
+    drawFields(); drawPay();
   }
 
   async function doLookup() {

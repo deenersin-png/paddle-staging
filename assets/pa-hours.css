@@ -44,6 +44,21 @@
 .hv-tot-v.amber{color:var(--amber)}
 .hv-tot-s{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:2px}
 .hv-hint{font-family:var(--sans);font-size:12px;color:var(--dim);line-height:1.5;margin-top:10px}
+/* My Run's Schedule guide (a node passed as the hint): short lines, readable size and contrast. */
+.hv-hint:has(.hv-guide){color:var(--text);font-size:14px;margin-top:14px}
+.hv-guide{border:1px solid var(--line2);border-radius:6px;padding:12px 14px;background:var(--ink2);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.45}
+.hv-guide-lead{color:var(--bright);font-size:15px;margin:0 0 10px}
+.hv-guide dl{display:grid;grid-template-columns:max-content 1fr;gap:6px 12px;margin:0}
+.hv-guide dt{font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.06em;color:var(--amber);padding-top:2px}
+.hv-guide dd{margin:0;color:var(--text);min-width:0}
+.hv-guide-cols dt{text-transform:uppercase}
+.hv-guide-h{font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--mid);margin:14px 0 6px;padding-top:12px;border-top:1px solid var(--line2)}
+.hv-guide-extras{max-width:440px}
+.hv-guide-extras dt{font-family:var(--sans);font-size:14px;font-weight:500;letter-spacing:0;color:var(--bright);padding-top:0}
+.hv-guide-extras dd{font-family:var(--mono);font-size:13px;color:var(--amber);text-align:right}
+.hv-guide-note{margin:10px 0 0;color:var(--text)}
+.hv-guide-tag{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--red);border:1px solid rgba(255,107,107,.45);border-radius:3px;padding:1px 6px;white-space:nowrap}
+@media (max-width:380px){.hv-guide{padding:10px 12px}.hv-guide dl{gap:6px 10px}}
 /* My Run → Schedule: the Edit button under the Saturday row, and the year-to-date boxes. */
 .hv-editbar{display:flex;justify-content:flex-end;margin-top:10px}
 .hv-edit{display:inline-flex;align-items:center;gap:8px;font-family:var(--sans);font-size:15px;font-weight:700;letter-spacing:.01em;

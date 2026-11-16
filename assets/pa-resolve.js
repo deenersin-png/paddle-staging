@@ -273,6 +273,17 @@ export function reportPayMin(reportMin, startMin, assignedMin) {
   const toAssigned = (((assignedMin - reportMin) % 1440) + 1440) % 1440;
   return Math.min(full, toAssigned);
 }
+/**
+ * The minutes typed in the "held late" window. 0 or nothing REMOVES the
+ * late minutes, and a Late allowance day without minutes is a normal day.
+ * Returns { kind, lateMin } (lateMin null when removed).
+ */
+export function lateAfterEdit(kind, typed) {
+  const t = typed == null ? '' : String(typed).trim();
+  const min = t === '' ? 0 : parseInt(t, 10);
+  if (!(min > 0)) return { kind: kind === 'late' ? 'normal' : kind, lateMin: null };
+  return { kind, lateMin: min };
+}
 export const hasExtra = (r, kind) => !!(r && r.extras && r.extras.some(x => x.kind === kind));
 
 // ---- resolver -------------------------------------------------------------

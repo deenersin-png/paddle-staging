@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { resolvePure, dayHours, weekTotals, KIND_LABELS, reportPayMin,
+import { resolvePure, dayHours, weekTotals, KIND_LABELS, reportPayMin, lateAfterEdit,
          OVERTIME_PAY_MIN, HOLIDAY_WORKED_PAY_MIN, WORKED_HOLIDAY_PAY_MIN, HOLIDAY_PAY_MIN } from '../pa-resolve.js';
 
 const st = assignments => ({ patterns: [], vacations: new Map(), assignments: new Map(Object.entries(assignments)) });
@@ -138,4 +138,24 @@ test('pay set by hand replaces the pay, never the time worked, on any kind', () 
     { r: day({ kind: 'unpaid-off', runNo: null, status: 'off', payOverrideMin: 120, extras: [] }), run: null }
   ].map(d => ({ ...d, hours: dayHours(d.r, d.run, TODAY) })), TODAY);
   assert.equal(t.paidMin, 570 + 120); assert.equal(t.workMin, 690);
+});
+
+test('late minutes can be removed: 0 or empty clears them, a Late allowance day turns normal', () => {
+  assert.deepEqual(lateAfterEdit('late', '30'), { kind: 'late', lateMin: 30 });
+  assert.deepEqual(lateAfterEdit('late', '0'), { kind: 'normal', lateMin: null });
+  assert.deepEqual(lateAfterEdit('late', ''), { kind: 'normal', lateMin: null });
+  assert.deepEqual(lateAfterEdit('late', '  '), { kind: 'normal', lateMin: null });
+  for (const k of ['overtime', 'holiday-worked', 'worked-holiday']) {
+    assert.deepEqual(lateAfterEdit(k, '0'), { kind: k, lateMin: null });
+    assert.deepEqual(lateAfterEdit(k, ''), { kind: k, lateMin: null });
+    assert.deepEqual(lateAfterEdit(k, '15'), { kind: k, lateMin: 15 });
+  }
+  // What the editor saves after removing them: the whole extras list without
+  // the late entry, and the new kind. The day then reads with no late pay.
+  const before = hours({ kind: 'late', runNo: '209', status: 'scheduled', extras: [{ kind: 'late', min: 30 }] });
+  assert.equal(before.paidMin, 645); assert.equal(before.workMin, 660);
+  const after = hours({ kind: 'normal', runNo: '209', status: 'scheduled', extras: [] });
+  assert.equal(after.paidMin, 600); assert.equal(after.workMin, 630);
+  const prem = hours({ kind: 'holiday-worked', runNo: '209', status: 'scheduled', extras: [{ kind: 'holiday', min: 720 }] });
+  assert.equal(prem.paidMin, 1320); assert.equal(prem.workMin, 630);
 });
