@@ -37,7 +37,11 @@ const DAY_TYPES = [['weekday', 'Weekday schedule'], ['saturday', 'Saturday sched
 // ---- shared lookups -------------------------------------------------------
 
 export async function slugForDate(depotKey, iso) {
-  const k = 'slug|' + depotKey + '|' + iso.slice(0, 7);
+  // Keyed by the DAY, not the month: picks change mid-month (Summer 2026
+  // starts June 14), so a month key handed June 14-30 the Spring paddle
+  // whenever June 1-13 was looked up first. The files themselves are
+  // fetched once (pa-schedule's fetch cache), so a day key costs nothing.
+  const k = 'slug|' + depotKey + '|' + iso.slice(0, 10);
   if (!slugCache.has(k)) {
     // An empty answer is usually a failed download, not a real "no season":
     // don't keep it, so the next lookup tries again.
