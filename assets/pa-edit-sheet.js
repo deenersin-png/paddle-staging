@@ -23,15 +23,25 @@ export function configure(c) { Object.assign(cfg, c); }
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+// The ids are stored on saved days, so they stay as they are; only the
+// labels changed ('holiday-worked' = Holiday premium, 'paid-off' = Earned
+// paid off day, 'unpaid-off' = Earned excused off).
 export const KINDS = [
-  ['normal',         'Normal hours worked'],
-  ['late',           'Late allowance'],
-  ['holiday-off',    'Holiday, not worked (8 h)'],
-  ['holiday-worked', 'Holiday, worked (12 h + hours worked)'],
-  ['paid-off',       'Paid day off'],
-  ['unpaid-off',     'Unpaid day off']
+  ['normal',           'Normal hours worked'],
+  ['late',             'Late allowance'],
+  ['overtime',         'Overtime (run + 4 h paid)'],
+  ['holiday-off',      'Holiday, not worked (8 h)'],
+  ['holiday-worked',   'Holiday premium (run + 12 h paid)'],
+  ['worked-holiday',   'Worked holiday (run + 8 h paid)'],
+  ['personal-holiday', 'Personal holiday (paid the run’s hours)'],
+  ['paid-off',         'Earned paid off day'],
+  ['unpaid-off',       'Earned excused off']
 ];
-const WORKING = new Set(['normal', 'late', 'holiday-worked']);
+const WORKING = new Set(['normal', 'late', 'overtime', 'holiday-worked', 'worked-holiday']);
+// Kinds that need a run: the working ones, and a personal holiday (paid the
+// run's hours, not worked).
+const NEEDS_RUN = new Set([...WORKING, 'personal-holiday']);
+const HOLIDAY_KINDS = new Set(['holiday-off', 'holiday-worked', 'worked-holiday']);
 const DAY_TYPES = [['weekday', 'Weekday schedule'], ['saturday', 'Saturday schedule'], ['sunday', 'Sunday schedule']];
 
 // ---- shared lookups -------------------------------------------------------
@@ -302,8 +312,8 @@ export function dayForm(r, opts = {}) {
 
   const st = {
     kind: kindOf(r),
-    runNo: r.runNo || r.patternRunNo || '',
-    runDayType: r.runDayType || r.dayType,
+    runNo: r.runNo || (r.assignment && r.assignment.paidRun && r.assignment.paidRun.runNo) || r.patternRunNo || '',
+    runDayType: r.runDayType || (r.assignment && r.assignment.paidRun && r.assignment.paidRun.runDayType) || r.dayType,
     run: null,                                  // paddle run for runNo/runDayType
     hoursMin: r.payMin != null ? r.payMin : null,   // typed hours (override / paid-off)
     lateMin: (r.extras || []).filter(x => x.kind === 'late').reduce((s, x) => s + Math.abs(x.min), 0) || null,
@@ -316,7 +326,7 @@ export function dayForm(r, opts = {}) {
   };
   let shortEl = null, shortToken = 0;
   SR.rulesFor(depotKey).then(x => { st.rules = x; drawShort(); }).catch(() => {});
-  if (st.kind === 'paid-off' && st.hoursMin == null) {
+  if ((st.kind === 'paid-off' || st.kind === 'personal-holiday') && st.hoursMin == null) {
     const other = (r.extras || []).find(x => x.kind === 'other');
     st.hoursMin = other ? other.min : null;
   }
@@ -339,7 +349,7 @@ export function dayForm(r, opts = {}) {
     const was = st.kind, want = sK.value;
     // A working day needs a run, and a late allowance its minutes: ask for
     // each in a small window. Cancel leaves the day as it was.
-    if (WORKING.has(want) && !st.runNo) {
+    if (NEEDS_RUN.has(want) && !st.runNo) {
       const v = await askRun(r, '');
       if (v == null) { sK.value = was; return; }
       st.runNo = v;
@@ -353,7 +363,7 @@ export function dayForm(r, opts = {}) {
     st.kind = want;
     // Worked hours and paid-day-off hours mean different things; don't carry
     // one into the other when switching between a working and a day-off kind.
-    if (WORKING.has(was) !== WORKING.has(st.kind)) st.hoursMin = null;
+    if (WORKING.has(was) !== WORKING.has(st.kind) || was === 'personal-holiday' || st.kind === 'personal-holiday') st.hoursMin = null;
     if (st.kind === 'paid-off' && st.hoursMin == null) st.hoursMin = 480;
     drawFields(); drawPay();
   });
@@ -372,7 +382,7 @@ export function dayForm(r, opts = {}) {
       return;
     }
 
-    if (working) {
+    if (working || st.kind === 'personal-holiday') {
       const row = el('div', 'form-row');
       const fRun = el('div', 'pa-field'); fRun.appendChild(el('label', 'pa-label', 'Run #'));
       const iRun = el('input', 'pa-input'); iRun.type = 'text'; iRun.inputMode = 'numeric'; iRun.maxLength = 4; iRun.value = st.runNo;
@@ -391,14 +401,20 @@ export function dayForm(r, opts = {}) {
       const lk = el('div', 'lookup'); lkEl = lk; fields.appendChild(lk);
 
       const fH = el('div', 'pa-field'); fH.style.marginTop = '10px';
-      fH.appendChild(el('label', 'pa-label', 'Paid hours for the run'));
+      fH.appendChild(el('label', 'pa-label', working ? 'Paid hours for the run' : 'Personal holiday pay (hours)'));
       const iH = el('input', 'pa-input'); iH.type = 'number'; iH.step = '0.05'; iH.min = '0'; iH.inputMode = 'decimal'; iHEl = iH;
       iH.placeholder = 'from the paddle';
       if (st.hoursMin != null) iH.value = hoursStr(st.hoursMin);
       iH.addEventListener('input', () => { st.hoursMin = parseHours(iH.value); drawPay(); });
       fH.appendChild(iH);
-      fH.appendChild(el('div', 'hint', 'Pre-filled with the run’s pay from the paddle. Change it only if you were paid a different amount (e.g. you left early).'));
+      fH.appendChild(el('div', 'hint', working
+        ? 'Pre-filled with the run’s pay from the paddle. Change it only if you were paid a different amount (e.g. you left early).'
+        : 'Not worked. You are paid the run’s regular hours, pre-filled from the paddle.'));
       fields.appendChild(fH);
+      if (!working) {
+        if (st.runNo) doLookup();
+        return;
+      }
 
       shortEl = el('div', 'pa-field pa-short'); shortEl.style.display = 'none';
       fields.appendChild(shortEl);
@@ -546,6 +562,7 @@ export function dayForm(r, opts = {}) {
   const pay = el('div', 'pay'); body.appendChild(pay);
   function build() {
     const working = WORKING.has(st.kind);
+    const personal = st.kind === 'personal-holiday';
     const runMin = st.run ? Math.round(st.run.payHours * 60) : 0;
     const workedMin = working ? (st.hoursMin != null ? st.hoursMin : runMin) : 0;
     const extras = [];
@@ -554,6 +571,11 @@ export function dayForm(r, opts = {}) {
     if (st.kind === 'late' && st.lateMin) extras.push({ kind: 'late', min: st.lateMin, note: '' });
     if (st.kind === 'holiday-off') extras.push({ kind: 'holiday', min: A.HOLIDAY_PAY_MIN, note: '' });
     if (st.kind === 'holiday-worked') extras.push({ kind: 'holiday', min: A.HOLIDAY_WORKED_PAY_MIN, note: '' });
+    if (st.kind === 'worked-holiday') extras.push({ kind: 'holiday', min: A.WORKED_HOLIDAY_PAY_MIN, note: '' });
+    if (st.kind === 'overtime') extras.push({ kind: 'ot', min: A.OVERTIME_PAY_MIN, note: 'paid' });
+    // A personal holiday pays the run's regular hours, not worked.
+    const personalMin = personal ? (st.hoursMin != null ? st.hoursMin : runMin) : 0;
+    if (personal && personalMin) extras.push({ kind: 'other', min: personalMin, note: 'personal holiday' });
     if (st.kind === 'paid-off') extras.push({ kind: 'other', min: st.hoursMin != null ? st.hoursMin : 480, note: 'paid day off' });
     // Slate report time against the run's scheduled start (the paddle's).
     const earlyMin = working ? A.earlyReportMin(st.reportMin, st.run ? st.run.reportMin : null) : 0;
@@ -562,7 +584,7 @@ export function dayForm(r, opts = {}) {
       : st.kind === 'paid-off' ? 'vacation' : 'off';
     // The additional short run's paddle pay, on top of the regular run's.
     const shortMin = working && st.shortRun && st.shortObj ? Math.round(st.shortObj.payHours * 60) : 0;
-    return { working, runMin, workedMin, shortMin, extras, earlyMin, status };
+    return { working, personal, personalMin, runMin, workedMin, shortMin, extras, earlyMin, status };
   }
   function drawReportHint(b) {
     const h = repHintEl;
@@ -603,7 +625,11 @@ export function dayForm(r, opts = {}) {
     const parts = [];
     if (b.working) parts.push(['Run', b.workedMin]);
     if (b.shortMin) parts.push(['Short run ' + st.shortRun.runNo, b.shortMin]);
-    b.extras.forEach(x => parts.push([A.EXTRA_KINDS[x.kind] || 'Extra', A.extraPayMin(x)]));
+    const exLabel = x => x.kind === 'holiday' ? (A.KIND_LABELS[st.kind] || 'Holiday')
+      : x.kind === 'other' && A.KIND_LABELS[st.kind] && !WORKING.has(st.kind) ? A.KIND_LABELS[st.kind]
+      : x.kind === 'other' && x.note ? x.note.charAt(0).toUpperCase() + x.note.slice(1)
+      : A.EXTRA_KINDS[x.kind] || 'Extra';
+    b.extras.forEach(x => parts.push([exLabel(x), A.extraPayMin(x)]));
     if (b.earlyMin) parts.push(['Early report', b.earlyMin]);
     const total = parts.reduce((s, p) => s + p[1], 0);
     pay.innerHTML = workLine(b) + '<br>Paid ' + (parts.length
@@ -620,6 +646,8 @@ export function dayForm(r, opts = {}) {
     if (b.working && !st.runNo) return { error: 'Enter the run number, or choose a day-off kind.' };
     if (st.kind === 'late' && !st.lateMin) return { error: 'Enter the minutes you were held late (Late allowance → ADD).' };
     if (b.working && !st.run && st.hoursMin == null) return { error: 'That run is not in the paddle. Enter the hours.' };
+    if (b.personal && !st.runNo) return { error: 'Enter the run number for the personal holiday.' };
+    if (b.personal && !b.personalMin) return { error: st.run || st.hoursMin != null ? 'Enter the hours paid for the personal holiday.' : 'Run ' + st.runNo + ' is not in the paddle (or still loading). Enter the hours.' };
     // The day's runs must be an allowed combination (checked again, from
     // the paddle, by A.saveAssignment / A.saveDays before anything is written).
     const shortRun = b.working && st.shortRun ? { runNo: String(st.shortRun.runNo), runDayType: st.shortRun.runDayType || r.dayType } : null;
@@ -636,12 +664,14 @@ export function dayForm(r, opts = {}) {
       runNo: b.working ? st.runNo : null,
       runDayType: b.working ? st.runDayType : null,
       shortRun,
+      // The run a personal holiday is paid for (not worked, so not runNo).
+      paidRun: b.personal ? { runNo: String(st.runNo), runDayType: st.runDayType || r.dayType } : null,
       depotKey: depotKey || null, dayType: r.dayType,
       status: b.status,
       extras: b.extras,
       payMin: b.working && st.hoursMin != null && (!st.run || st.hoursMin !== b.runMin) ? st.hoursMin : null,
       reportMin: b.working ? st.reportMin : null,
-      flags: { holiday: st.kind.startsWith('holiday'), late: st.kind === 'late', callIn: false },
+      flags: { holiday: HOLIDAY_KINDS.has(st.kind), late: st.kind === 'late', overtime: st.kind === 'overtime', callIn: false },
       note: st.note, source: 'edit'
     } };
   }

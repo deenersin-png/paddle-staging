@@ -14,9 +14,15 @@
 import { dayTypeFor, isHoliday, dowOf, daysBetween, addDays, todayIso, fmtClock } from './pa-schedule.js';
 
 // Holiday pay, per the operator rule: 8 hours for a holiday not worked;
-// 12 hours on top of the hours actually worked for a holiday worked.
+// a holiday premium adds 12 PAID hours on top of the run's pay; a worked
+// holiday adds 8. Neither adds worked hours: the run's own time is the work.
+// (Stored kind 'holiday-worked' is the holiday premium, kept for old days.)
 export const HOLIDAY_PAY_MIN = 480;
 export const HOLIDAY_WORKED_PAY_MIN = 720;
+export const WORKED_HOLIDAY_PAY_MIN = 480;
+
+// Overtime day: the run plus 4 PAID hours. The 4 hours are not worked time.
+export const OVERTIME_PAY_MIN = 240;
 
 // Late allowance: minutes held late are paid at time and a half, on top of
 // the day's worked hours (30 min late adds 45 min = 0.75 h).
@@ -31,11 +37,15 @@ export const VACATION_ALLOWANCE_ID = 'allowance';
 
 export const EXTRA_KINDS = { ot: 'Overtime', holiday: 'Holiday', late: 'Late allowance', other: 'Other' };
 
-/** Labels for the day kinds the edit sheet writes (assignment.kind). The last
- *  three are no longer offered; they stay so days saved with them still read. */
+/** Labels for the day kinds the edit sheet writes (assignment.kind). The ids
+ *  are stored, so they never change: 'holiday-worked' is shown as Holiday
+ *  premium, 'paid-off' as Earned paid off day, 'unpaid-off' as Earned excused
+ *  off. The last three are no longer offered; they stay so old days still read. */
 export const KIND_LABELS = {
-  'normal': 'Worked', 'late': 'Late allowance', 'holiday-off': 'Holiday', 'holiday-worked': 'Holiday worked',
-  'paid-off': 'Paid day off', 'unpaid-off': 'Unpaid day off', 'vacation': 'Vacation',
+  'normal': 'Worked', 'late': 'Late allowance', 'overtime': 'Overtime',
+  'holiday-off': 'Holiday', 'holiday-worked': 'Holiday premium', 'worked-holiday': 'Worked holiday',
+  'personal-holiday': 'Personal holiday',
+  'paid-off': 'Earned paid off day', 'unpaid-off': 'Earned excused off', 'vacation': 'Vacation',
   'called-out': 'Called out', 'sick': 'Sick', 'unpaid-excused': 'Unpaid excused'
 };
 export const STATUSES = ['scheduled', 'off', 'sick', 'vacation', 'holiday'];
@@ -213,12 +223,20 @@ export function normalizeExtras(a) {
   }
   // The day's kind decides the holiday amount, so a day saved under an older
   // rule (holiday worked = 8 h) reads with the current one.
-  if (a.kind === 'holiday-worked' || a.kind === 'holiday-off') {
+  const hol = HOLIDAY_KIND_MIN[a.kind];
+  if (hol != null) {
     out = out.filter(x => x.kind !== 'holiday');
-    out.unshift({ kind: 'holiday', min: a.kind === 'holiday-worked' ? HOLIDAY_WORKED_PAY_MIN : HOLIDAY_PAY_MIN, note: '' });
+    out.unshift({ kind: 'holiday', min: hol, note: '' });
+  }
+  // An overtime day's extra is its paid 4 hours, whatever was stored.
+  if (a.kind === 'overtime') {
+    out = out.filter(x => x.kind !== 'ot');
+    out.push({ kind: 'ot', min: OVERTIME_PAY_MIN, note: 'paid' });
   }
   return out;
 }
+
+const HOLIDAY_KIND_MIN = { 'holiday-off': HOLIDAY_PAY_MIN, 'holiday-worked': HOLIDAY_WORKED_PAY_MIN, 'worked-holiday': WORKED_HOLIDAY_PAY_MIN };
 
 /** Pay minutes one extra adds. A late allowance is stored as the minutes held
  *  late and paid at LATE_ALLOWANCE_RATE; every other extra is paid as stored.
@@ -403,7 +421,8 @@ export function dayHours(resolved, run, today) {
     if (sr) workRunMin += sr.reportMin != null && sr.finishMin != null && sr.finishMin > sr.reportMin ? sr.finishMin - sr.reportMin : shortMin;
     for (const x of r.extras || []) {
       if (x.kind === 'late') workRunMin += Math.abs(+x.min || 0);
-      else if (x.kind === 'ot') workRunMin += Math.round(+x.min || 0);
+      // An overtime DAY's 4 hours are paid, not worked.
+      else if (x.kind === 'ot' && r.kind !== 'overtime') workRunMin += Math.round(+x.min || 0);
     }
     if (workRunMin < 0) workRunMin = 0;
   }

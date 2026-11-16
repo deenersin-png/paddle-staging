@@ -35,15 +35,18 @@ function statusLabel(r) {
   if (r.unregistered) return '—';
   if (!r.off) return 'RUN ' + r.runNo + (r.runDayType && r.runDayType !== r.dayType ? ' (' + r.runDayType + ')' : '');
   if (r.kind && A.KIND_LABELS[r.kind]) return A.KIND_LABELS[r.kind].toUpperCase();
-  return ({ off: 'OFF', sick: 'SICK', vacation: 'PAID DAY OFF', holiday: 'HOLIDAY' })[r.status] || r.status.toUpperCase();
+  return ({ off: 'OFF', sick: 'SICK', vacation: 'EARNED PAID OFF DAY', holiday: 'HOLIDAY' })[r.status] || r.status.toUpperCase();
 }
 
 function extrasText(r, hours) {
   const bits = [];
   (r.extras || []).forEach(x => {
     if (x.kind === 'late') { bits.push('Late allowance ' + Math.abs(x.min) + 'm (+' + A.fmtHours(A.extraPayMin(x)) + 'h)'); return; }
+    if (x.kind === 'ot' && r.kind === 'overtime') { bits.push('Overtime +' + A.fmtHours(x.min).replace(/\.?0+$/, '') + 'h paid'); return; }
     if (x.kind === 'ot') { bits.push('OT ' + x.min + 'm'); return; }
-    const label = x.kind === 'holiday' ? 'Holiday' : (x.note || 'Extra');
+    const label = x.kind === 'holiday' ? (r.kind === 'holiday-worked' || r.kind === 'worked-holiday' ? A.KIND_LABELS[r.kind] : 'Holiday')
+      : x.kind === 'other' && (r.kind === 'paid-off' || r.kind === 'personal-holiday') ? A.KIND_LABELS[r.kind]
+      : x.note ? x.note.charAt(0).toUpperCase() + x.note.slice(1) : 'Extra';
     bits.push(label + ' +' + (x.min / 60).toFixed(2).replace(/\.?0+$/, '') + 'h');
   });
   if (hours && hours.earlyReportMin) bits.push('Early report +' + A.fmtHours(hours.earlyReportMin) + 'h');
