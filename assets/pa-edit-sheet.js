@@ -321,6 +321,8 @@ export function dayForm(r, opts = {}) {
     hoursMin: r.payMin != null ? r.payMin : null,   // typed hours (override / paid-off)
     lateMin: (r.extras || []).filter(x => x.kind === 'late').reduce((s, x) => s + Math.abs(x.min), 0) || null,
     reportMin: r.reportMin != null ? r.reportMin : null,
+    assignedMin: r.assignedMin != null ? r.assignedMin : null,   // Slate: when dispatch gave the run
+    payOverrideMin: r.payOverrideMin != null ? r.payOverrideMin : null,   // the day's pay, typed by hand
     note: r.note || '',
     // The additional short run (districts with allowsShortRuns).
     shortRun: r.shortRun && r.shortRun.runNo ? { runNo: r.shortRun.runNo, runDayType: r.shortRun.runDayType || null } : null,
@@ -452,6 +454,15 @@ export function dayForm(r, opts = {}) {
       fRep.appendChild(repHint);
       fields.appendChild(fRep);
 
+      // Slate: report pay stops when dispatch gives the run.
+      const fAs = el('div', 'pa-field'); fAs.appendChild(el('label', 'pa-label', 'Run given at (Slate)'));
+      const iAs = el('input', 'pa-input'); iAs.type = 'time';
+      if (st.assignedMin != null) iAs.value = S.pad2(Math.floor((st.assignedMin % 1440) / 60)) + ':' + S.pad2(st.assignedMin % 60);
+      iAs.addEventListener('input', () => { const m = iAs.value.match(/^(\d{2}):(\d{2})$/); st.assignedMin = m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : null; drawPay(); });
+      fAs.appendChild(iAs);
+      fAs.appendChild(el('div', 'hint', 'When dispatch gave you the run. Report pay stops here: report 9:00, run given 10:00 pays 1 h, even if the run starts at 12:00. Leave empty if it was given when you reported.'));
+      fields.appendChild(fAs);
+
       if (st.runNo) doLookup();
     } else if (st.kind === 'paid-off') {
       const fH = el('div', 'pa-field'); fH.appendChild(el('label', 'pa-label', 'Paid hours'));
@@ -560,6 +571,16 @@ export function dayForm(r, opts = {}) {
     box.appendChild(b);
   }
 
+  // ---- pay set by hand (every kind): for the exceptions no rule covers.
+  // Replaces the day's pay, never the time worked.
+  const fP = el('div', 'pa-field'); fP.appendChild(el('label', 'pa-label', 'Pay for the day (only if different)'));
+  const iP = el('input', 'pa-input'); iP.type = 'number'; iP.step = '0.05'; iP.min = '0'; iP.inputMode = 'decimal';
+  if (st.payOverrideMin != null) iP.value = hoursStr(st.payOverrideMin);
+  iP.addEventListener('input', () => { st.payOverrideMin = iP.value.trim() === '' ? null : parseHours(iP.value); drawPay(); });
+  fP.appendChild(iP);
+  fP.appendChild(el('div', 'hint', 'Leave empty to use the pay worked out below. Type the hours you were really paid if it was different (say why in Notes). Your worked time does not change.'));
+  body.appendChild(fP);
+
   // ---- notes (every kind)
   const fN = el('div', 'pa-field'); fN.appendChild(el('label', 'pa-label', 'Notes'));
   const iN = el('input', 'pa-input'); iN.type = 'text'; iN.maxLength = 140; iN.value = st.note; iN.placeholder = 'e.g. Martin Luther King Day';
@@ -586,13 +607,17 @@ export function dayForm(r, opts = {}) {
     if (personal && personalMin) extras.push({ kind: 'other', min: personalMin, note: 'personal holiday' });
     if (st.kind === 'paid-off') extras.push({ kind: 'other', min: st.hoursMin != null ? st.hoursMin : 480, note: 'paid day off' });
     // Slate report time against the run's scheduled start (the paddle's).
-    const earlyMin = working ? A.earlyReportMin(st.reportMin, st.run ? st.run.reportMin : null) : 0;
+    // waitMin = all the time from reporting to the start (worked time);
+    // earlyMin = the part that is paid, up to when the run was given.
+    const startRun = st.run ? st.run.reportMin : null;
+    const waitMin = working ? A.earlyReportMin(st.reportMin, startRun) : 0;
+    const earlyMin = working ? A.reportPayMin(st.reportMin, startRun, st.assignedMin) : 0;
     const status = working ? 'scheduled'
       : st.kind === 'holiday-off' ? 'holiday'
       : st.kind === 'paid-off' ? 'vacation' : 'off';
     // The additional short run's paddle pay, on top of the regular run's.
     const shortMin = working && st.shortRun && st.shortObj ? Math.round(st.shortObj.payHours * 60) : 0;
-    return { working, personal, personalMin, runMin, workedMin, shortMin, extras, earlyMin, status };
+    return { working, personal, personalMin, runMin, workedMin, shortMin, extras, earlyMin, waitMin, status };
   }
   function drawReportHint(b) {
     const h = repHintEl;
@@ -600,7 +625,9 @@ export function dayForm(r, opts = {}) {
     if (st.reportMin == null) { h.textContent = 'If dispatch had you report before the run’s start, enter the time. The difference is added to the day.'; return; }
     if (!st.run) { h.textContent = 'Run start unknown (not in the paddle), so nothing is added.'; return; }
     h.textContent = 'Run starts ' + S.fmtClock(st.run.reportMin) + ' · reporting ' + S.fmtClock(st.reportMin)
-      + (b.earlyMin ? ' adds ' + (b.earlyMin / 60).toFixed(2) + ' h.' : ' adds nothing (not before the start).');
+      + (b.earlyMin ? ' pays ' + (b.earlyMin / 60).toFixed(2) + ' h'
+          + (b.earlyMin < b.waitMin ? ' (until the run was given at ' + S.fmtClock(st.assignedMin) + ').' : '.')
+        : b.waitMin ? ' pays nothing (run given when you reported).' : ' adds nothing (not before the start).');
   }
   /** Real time worked: the run's finish minus its start (earlier when
    *  reporting early), paid-hours changes and the minutes held late. */
@@ -610,7 +637,7 @@ export function dayForm(r, opts = {}) {
     if (!run || run.reportMin == null || run.finishMin == null || !(run.finishMin > run.reportMin)) {
       return 'Worked <b>' + (b.workedMin / 60).toFixed(2) + ' h</b> (run times not in the paddle)';
     }
-    const start = run.reportMin - (b.earlyMin || 0);
+    const start = run.reportMin - (b.waitMin || 0);
     let min = run.finishMin - start;
     const bits = [S.fmtClock(start) + ' – ' + S.fmtClock(run.finishMin)];
     if (st.hoursMin != null && st.hoursMin !== b.runMin) { const d = st.hoursMin - b.runMin; min += d; bits.push((d < 0 ? '− ' : '+ ') + (Math.abs(d) / 60).toFixed(2) + ' changed'); }
@@ -624,6 +651,7 @@ export function dayForm(r, opts = {}) {
     return 'Worked ' + esc(bits.join(' ')) + ' = <b>' + (Math.max(0, min) / 60).toFixed(2) + ' h</b>';
   }
   function drawPay() {
+    fP.style.display = st.kind === 'vacation' ? 'none' : '';
     if (st.kind === 'vacation') {
       pay.innerHTML = 'Worked <b>0.00 h</b><br>Paid <b>' + (A.VACATION_WEEK_PAY_MIN / 60).toFixed(2) + ' h</b> for the vacation week, not per day';
       return;
@@ -640,9 +668,13 @@ export function dayForm(r, opts = {}) {
     b.extras.forEach(x => parts.push([exLabel(x), A.extraPayMin(x)]));
     if (b.earlyMin) parts.push(['Early report', b.earlyMin]);
     const total = parts.reduce((s, p) => s + p[1], 0);
-    pay.innerHTML = workLine(b) + '<br>Paid ' + (parts.length
-      ? parts.map(([k, v]) => esc(k) + ' ' + (v / 60).toFixed(2)).join(' + ') + ' = <b>' + (total / 60).toFixed(2) + ' h</b>'
-      : '<b>0.00 h</b>');
+    iP.placeholder = (total / 60).toFixed(2) + ' (worked out)';
+    const calc = parts.length
+      ? parts.map(([k, v]) => esc(k) + ' ' + (v / 60).toFixed(2)).join(' + ') + ' = ' + (total / 60).toFixed(2) + ' h'
+      : '0.00 h';
+    pay.innerHTML = workLine(b) + '<br>Paid ' + (st.payOverrideMin != null
+      ? '<b>' + (st.payOverrideMin / 60).toFixed(2) + ' h</b> set by hand (worked out: ' + calc + ')'
+      : calc.replace(/= ([\d.]+ h)$/, '= <b>$1</b>').replace(/^0\.00 h$/, '<b>0.00 h</b>'));
   }
 
   // ---- the answer
@@ -679,6 +711,8 @@ export function dayForm(r, opts = {}) {
       extras: b.extras,
       payMin: b.working && st.hoursMin != null && (!st.run || st.hoursMin !== b.runMin) ? st.hoursMin : null,
       reportMin: b.working ? st.reportMin : null,
+      assignedMin: b.working && st.reportMin != null ? st.assignedMin : null,
+      payOverrideMin: st.payOverrideMin,
       flags: { holiday: HOLIDAY_KINDS.has(st.kind), late: LATE_OK.has(st.kind) && !!st.lateMin, overtime: st.kind === 'overtime', callIn: false },
       note: st.note, source: 'edit'
     } };

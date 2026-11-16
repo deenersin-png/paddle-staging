@@ -261,6 +261,18 @@ export function earlyReportMin(reportMin, startMin) {
   const d = (((startMin - reportMin) % 1440) + 1440) % 1440;
   return d > 0 && d <= 720 ? d : 0;
 }
+/**
+ * Slate report pay: from the report time to the run's start, but it stops at
+ * `assignedMin` when one is given (the time dispatch gave the operator the
+ * run). Report 9:00, assigned 10:00, run starts 12:00 pays 1 h, not 3.
+ * Times are minutes of the day; wraps midnight like earlyReportMin.
+ */
+export function reportPayMin(reportMin, startMin, assignedMin) {
+  const full = earlyReportMin(reportMin, startMin);
+  if (!full || assignedMin == null) return full;
+  const toAssigned = (((assignedMin - reportMin) % 1440) + 1440) % 1440;
+  return Math.min(full, toAssigned);
+}
 export const hasExtra = (r, kind) => !!(r && r.extras && r.extras.some(x => x.kind === kind));
 
 // ---- resolver -------------------------------------------------------------
@@ -355,7 +367,11 @@ export function resolvePure(st, date, overrides) {
     depotKey: a.depotKey || pat.depotKey || null,
     dayType: a.dayType || base.dayType,
     reportMin: a.reportMin != null ? a.reportMin : null,
+    assignedMin: a.assignedMin != null ? a.assignedMin : null,   // Slate: when dispatch gave the run
     payMin: a.payMin != null ? a.payMin : null,
+    // The day's pay typed by hand (any kind): replaces the worked-out pay,
+    // never the time worked.
+    payOverrideMin: a.payOverrideMin != null && Number.isFinite(+a.payOverrideMin) ? Math.round(+a.payOverrideMin) : null,
     status,
     off: !working,
     flags: a.flags || {},
@@ -402,7 +418,8 @@ export function dayHours(resolved, run, today) {
   const startMin = !run ? null
     : run.paddleStartMin != null ? run.paddleStartMin
     : (run.overridden || run.synthetic) ? null : run.reportMin;
-  const early = working ? earlyReportMin(r.reportMin, startMin) : 0;
+  // Report pay ends when dispatch gave the run (assignedMin), if typed.
+  const early = working ? reportPayMin(r.reportMin, startMin, r.assignedMin) : 0;
   const ex = extrasMin(r.extras) + early;
   const past = r.date <= t;
   const changedFromPattern = r.source === 'assignment' &&
@@ -426,6 +443,9 @@ export function dayHours(resolved, run, today) {
     }
     if (workRunMin < 0) workRunMin = 0;
   }
+  // A pay typed by hand replaces the worked-out pay (not the time worked).
+  const override = r.payOverrideMin != null ? r.payOverrideMin : null;
+  const payDay = override != null ? override : (working ? workedMin : 0) + ex;
   // Route time: every piece from its pull-out / relief to its pull-in /
   // relief, the regular run's and the short run's. 0 when the paddle does
   // not know the run.
@@ -434,13 +454,14 @@ export function dayHours(resolved, run, today) {
   return {
     runMin, shortRunMin: working ? shortMin : 0, routeMin,
     scheduledMin, extrasMin: ex, workedMin: working ? workedMin : 0, earlyReportMin: early,
-    actualMin: past ? (working ? workedMin : 0) + ex : null,
+    actualMin: past ? payDay : null,
     // actualMin is what the day PAYS (kept under its old name for Weekly
     // Hours); paidMin says so, workMin is the real time worked.
-    paidMin: past ? (working ? workedMin : 0) + ex : null,
+    paidMin: past ? payDay : null,
+    payOverridden: override != null,
     workMin: past ? workRunMin : null,
     working, past,
-    flagged: ex > 0 || (r.extras && r.extras.length > 0) || (!r.unregistered && !['scheduled', 'off'].includes(r.status)) || !!changedFromPattern,
+    flagged: ex > 0 || override != null || (r.extras && r.extras.length > 0) || (!r.unregistered && !['scheduled', 'off'].includes(r.status)) || !!changedFromPattern,
     unknownRun: working && !run && r.payMin == null
   };
 }
@@ -487,5 +508,6 @@ export function payHoursFor(resolved, run) {
   if (h.shortRunMin) parts.push(['Short run', h.shortRunMin / 60]);
   (resolved.extras || []).forEach(x => parts.push([EXTRA_KINDS[x.kind] || 'Extra', extraPayMin(x) / 60]));
   if (h.earlyReportMin) parts.push(['Early report', h.earlyReportMin / 60]);
+  if (h.payOverridden) return { total: h.paidMin / 60, parts: [['Set by hand', h.paidMin / 60]] };
   return { total: (h.workedMin + h.extrasMin) / 60, parts };
 }

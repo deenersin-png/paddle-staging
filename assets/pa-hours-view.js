@@ -50,6 +50,7 @@ function extrasText(r, hours) {
     bits.push(label + ' +' + (x.min / 60).toFixed(2).replace(/\.?0+$/, '') + 'h');
   });
   if (hours && hours.earlyReportMin) bits.push('Early report +' + A.fmtHours(hours.earlyReportMin) + 'h');
+  if (r.payOverrideMin != null) bits.push('Pay set by hand ' + A.fmtHours(r.payOverrideMin) + 'h');
   if (r.note) bits.push('“' + r.note + '”');
   return bits.join(' · ');
 }
@@ -219,7 +220,7 @@ export function mount(root, opts = {}) {
       const sc = el('div', 'n' + (hours.scheduledMin ? '' : ' dim') + (hours.unknownRun ? ' warn' : ''), hours.scheduledMin ? A.fmtHours(hours.scheduledMin) : '—');
       // Future days and plain days off show a dash; a day that was worked, or
       // that carries extras (holiday pay, sick pay logged as "other"), shows hours.
-      const blank = hours.actualMin == null || (!hours.working && !(r.extras && r.extras.length));
+      const blank = hours.actualMin == null || (!hours.working && !(r.extras && r.extras.length) && !hours.payOverridden);
       if (wp) {
         // Actual = real time worked; Paid = what the day pays.
         const wBlank = hours.workMin == null || !hours.working;

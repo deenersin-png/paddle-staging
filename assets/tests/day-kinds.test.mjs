@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { resolvePure, dayHours, weekTotals, KIND_LABELS,
+import { resolvePure, dayHours, weekTotals, KIND_LABELS, reportPayMin,
          OVERTIME_PAY_MIN, HOLIDAY_WORKED_PAY_MIN, WORKED_HOLIDAY_PAY_MIN, HOLIDAY_PAY_MIN } from '../pa-resolve.js';
 
 const st = assignments => ({ patterns: [], vacations: new Map(), assignments: new Map(Object.entries(assignments)) });
@@ -100,4 +100,42 @@ test('held late on paid-extra days: late minutes are worked AND paid x1.5; the e
   const t = weekTotals([{ r: day({ kind: 'holiday-worked', runNo: '209', status: 'scheduled', extras: [{ kind: 'holiday', min: 720 }, late30] }), run: RUN }]
     .map(d => ({ ...d, hours: dayHours(d.r, d.run, TODAY) })), TODAY);
   assert.equal(t.paidMin, 1365); assert.equal(t.workMin, 660);
+});
+
+// A Slate day: report 9:00, dispatch gives the run at 10:00, the run starts
+// at 12:00 and finishes 8:30 PM, paying 8.5 h. runFor() hands dayHours the
+// paddle run with the typed report time as its start (paddleStartMin keeps
+// the paddle's).
+const SLATE_RUN = { payHours: 8.5, reportMin: 540, paddleStartMin: 720, finishMin: 1230, overridden: true, pieces: [] };
+
+test('slate: report pay stops when the run is given; the wait still counts as time at work', () => {
+  assert.equal(reportPayMin(540, 720, 600), 60);           // 9:00 -> 10:00
+  assert.equal(reportPayMin(540, 720, null), 180);         // no "given at": up to the start, as before
+  assert.equal(reportPayMin(540, 720, 780), 180);          // given after the start: never more than to the start
+  assert.equal(reportPayMin(1425, 15, 1435), 10);          // 11:45 PM report, given 11:55 PM, 12:15 AM start
+  const h = hours({ kind: 'normal', runNo: '209', status: 'scheduled', reportMin: 540, assignedMin: 600, extras: [] }, SLATE_RUN);
+  assert.equal(h.earlyReportMin, 60);
+  assert.equal(h.paidMin, 510 + 60);                       // 1 h report + 8.5 h run = 9.5 h
+  assert.equal(h.workMin, 1230 - 540);                     // 9:00 to 8:30 PM = 11.5 h at work
+  const old = hours({ kind: 'normal', runNo: '209', status: 'scheduled', reportMin: 540, extras: [] }, SLATE_RUN);
+  assert.equal(old.paidMin, 510 + 180);                    // a day without "given at" reads as before
+  assert.equal(old.workMin, 690);
+});
+
+test('pay set by hand replaces the pay, never the time worked, on any kind', () => {
+  const h = hours({ kind: 'normal', runNo: '209', status: 'scheduled', reportMin: 540, assignedMin: 600, payOverrideMin: 600, extras: [] }, SLATE_RUN);
+  assert.equal(h.paidMin, 600); assert.equal(h.actualMin, 600);
+  assert.equal(h.workMin, 690);
+  assert.equal(h.payOverridden, true); assert.equal(h.flagged, true);
+  const prem = hours({ kind: 'holiday-worked', runNo: '209', status: 'scheduled', payOverrideMin: 1300, extras: [{ kind: 'holiday', min: 720 }] });
+  assert.equal(prem.paidMin, 1300); assert.equal(prem.workMin, 630);
+  const off = hours({ kind: 'unpaid-off', runNo: null, status: 'off', payOverrideMin: 120, extras: [] }, null);
+  assert.equal(off.paidMin, 120); assert.equal(off.workMin, 0);
+  const none = hours({ kind: 'normal', runNo: '209', status: 'scheduled', extras: [] });
+  assert.equal(none.payOverridden, false); assert.equal(none.paidMin, 600);
+  const t = weekTotals([
+    { r: day({ kind: 'normal', runNo: '209', status: 'scheduled', reportMin: 540, assignedMin: 600, extras: [] }), run: SLATE_RUN },
+    { r: day({ kind: 'unpaid-off', runNo: null, status: 'off', payOverrideMin: 120, extras: [] }), run: null }
+  ].map(d => ({ ...d, hours: dayHours(d.r, d.run, TODAY) })), TODAY);
+  assert.equal(t.paidMin, 570 + 120); assert.equal(t.workMin, 690);
 });
