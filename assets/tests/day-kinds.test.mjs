@@ -82,3 +82,22 @@ test('a day not yet done shows nothing', () => {
   const h = dayHours(day({ kind: 'overtime', runNo: '209', status: 'scheduled', extras: [] }), RUN, '2026-11-16');
   assert.equal(h.paidMin, null); assert.equal(h.workMin, null);
 });
+
+test('held late on paid-extra days: late minutes are worked AND paid x1.5; the extras are paid only', () => {
+  const late30 = { kind: 'late', min: 30, note: '' };
+  // The user's example: holiday premium on a 10 h run, held 30 min late.
+  // Pay = 10 + 8 + 4 + 0.75 = 22.75 h; Actual = start to finish + 0.5 h.
+  const prem = hours({ kind: 'holiday-worked', runNo: '209', status: 'scheduled', extras: [{ kind: 'holiday', min: 720 }, late30] });
+  assert.equal(prem.paidMin, 1365);                     // 22.75 h
+  assert.equal(prem.workMin, 630 + 30);                 // 10.5 h on the clock + 0.5 h = 11.00 h
+  const wh = hours({ kind: 'worked-holiday', runNo: '209', status: 'scheduled', extras: [{ kind: 'holiday', min: 480 }, late30] });
+  assert.equal(wh.paidMin, 600 + 480 + 45);             // 18.75 h
+  assert.equal(wh.workMin, 660);
+  const ot = hours({ kind: 'overtime', runNo: '209', status: 'scheduled', extras: [{ kind: 'ot', min: 240, note: 'paid' }, late30] });
+  assert.equal(ot.paidMin, 600 + 240 + 45);             // 14.75 h
+  assert.equal(ot.workMin, 660);
+  // Week totals carry the same numbers.
+  const t = weekTotals([{ r: day({ kind: 'holiday-worked', runNo: '209', status: 'scheduled', extras: [{ kind: 'holiday', min: 720 }, late30] }), run: RUN }]
+    .map(d => ({ ...d, hours: dayHours(d.r, d.run, TODAY) })), TODAY);
+  assert.equal(t.paidMin, 1365); assert.equal(t.workMin, 660);
+});

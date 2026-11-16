@@ -42,6 +42,9 @@ const WORKING = new Set(['normal', 'late', 'overtime', 'holiday-worked', 'worked
 // run's hours, not worked).
 const NEEDS_RUN = new Set([...WORKING, 'personal-holiday']);
 const HOLIDAY_KINDS = new Set(['holiday-off', 'holiday-worked', 'worked-holiday']);
+// Kinds that can carry minutes held late (paid at time and a half, and real
+// time worked). Required on a Late allowance day, optional on the others.
+const LATE_OK = new Set(['late', 'overtime', 'holiday-worked', 'worked-holiday']);
 const DAY_TYPES = [['weekday', 'Weekday schedule'], ['saturday', 'Saturday schedule'], ['sunday', 'Sunday schedule']];
 
 // ---- shared lookups -------------------------------------------------------
@@ -419,10 +422,10 @@ export function dayForm(r, opts = {}) {
       shortEl = el('div', 'pa-field pa-short'); shortEl.style.display = 'none';
       fields.appendChild(shortEl);
 
-      if (st.kind === 'late') {
-        const fL = el('div', 'pa-field'); fL.appendChild(el('label', 'pa-label', 'Late allowance'));
+      if (LATE_OK.has(st.kind)) {
+        const fL = el('div', 'pa-field'); fL.appendChild(el('label', 'pa-label', st.kind === 'late' ? 'Late allowance' : 'Held late (optional)'));
         const line = el('div', 'pa-late-line');
-        const txt = el('span', null, st.lateMin ? st.lateMin + ' min late · +' + (st.lateMin * A.LATE_ALLOWANCE_RATE / 60).toFixed(2) + ' h paid' : 'No minutes yet');
+        const txt = el('span', null, st.lateMin ? st.lateMin + ' min late · +' + (st.lateMin * A.LATE_ALLOWANCE_RATE / 60).toFixed(2) + ' h paid' : st.kind === 'late' ? 'No minutes yet' : 'Not held late');
         const ch = el('button', 'rowbtn', st.lateMin ? 'CHANGE' : 'ADD'); ch.type = 'button';
         ch.addEventListener('click', async () => {
           const v = await askLate(st.lateMin);
@@ -431,6 +434,11 @@ export function dayForm(r, opts = {}) {
           drawFields(); drawPay();
         });
         line.append(txt, ch);
+        if (st.kind !== 'late' && st.lateMin) {
+          const rm = el('button', 'rowbtn', 'REMOVE'); rm.type = 'button';
+          rm.addEventListener('click', () => { st.lateMin = null; dirty = true; drawFields(); drawPay(); });
+          line.appendChild(rm);
+        }
         fL.appendChild(line);
         fields.appendChild(fL);
       }
@@ -568,7 +576,7 @@ export function dayForm(r, opts = {}) {
     const extras = [];
     // Late allowance is stored as the minutes held late; the 1.5x is applied
     // when hours are read (A.extraPayMin), so the rule lives in one place.
-    if (st.kind === 'late' && st.lateMin) extras.push({ kind: 'late', min: st.lateMin, note: '' });
+    if (LATE_OK.has(st.kind) && st.lateMin) extras.push({ kind: 'late', min: st.lateMin, note: '' });
     if (st.kind === 'holiday-off') extras.push({ kind: 'holiday', min: A.HOLIDAY_PAY_MIN, note: '' });
     if (st.kind === 'holiday-worked') extras.push({ kind: 'holiday', min: A.HOLIDAY_WORKED_PAY_MIN, note: '' });
     if (st.kind === 'worked-holiday') extras.push({ kind: 'holiday', min: A.WORKED_HOLIDAY_PAY_MIN, note: '' });
@@ -606,7 +614,7 @@ export function dayForm(r, opts = {}) {
     let min = run.finishMin - start;
     const bits = [S.fmtClock(start) + ' – ' + S.fmtClock(run.finishMin)];
     if (st.hoursMin != null && st.hoursMin !== b.runMin) { const d = st.hoursMin - b.runMin; min += d; bits.push((d < 0 ? '− ' : '+ ') + (Math.abs(d) / 60).toFixed(2) + ' changed'); }
-    if (st.kind === 'late' && st.lateMin) { min += st.lateMin; bits.push('+ ' + st.lateMin + ' min late'); }
+    if (LATE_OK.has(st.kind) && st.lateMin) { min += st.lateMin; bits.push('+ ' + st.lateMin + ' min late'); }
     if (bits.length > 1) bits[0] += ' (' + ((run.finishMin - start) / 60).toFixed(2) + ')';
     const so = b.shortMin ? st.shortObj : null;
     if (so && so.reportMin != null && so.finishMin > so.reportMin) {
@@ -671,7 +679,7 @@ export function dayForm(r, opts = {}) {
       extras: b.extras,
       payMin: b.working && st.hoursMin != null && (!st.run || st.hoursMin !== b.runMin) ? st.hoursMin : null,
       reportMin: b.working ? st.reportMin : null,
-      flags: { holiday: HOLIDAY_KINDS.has(st.kind), late: st.kind === 'late', overtime: st.kind === 'overtime', callIn: false },
+      flags: { holiday: HOLIDAY_KINDS.has(st.kind), late: LATE_OK.has(st.kind) && !!st.lateMin, overtime: st.kind === 'overtime', callIn: false },
       note: st.note, source: 'edit'
     } };
   }
