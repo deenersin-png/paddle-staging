@@ -335,6 +335,7 @@ a.run-chip:active{opacity:.7}
 </style>
 <link rel="stylesheet" href="assets/pa-scorecard.css">
 <link rel="stylesheet" href="assets/pa-live-map.css">
+<link rel="stylesheet" href="assets/pa-live-lines.css">
 <link rel="stylesheet" href="assets/pa-theme.css">
 <link rel="stylesheet" href="assets/pa-menu.css">
 <link rel="stylesheet" href="assets/pa-tags.css">
@@ -2885,11 +2886,12 @@ function weaveGhosts(active, ghosts) {
 // The mode (a direction, All Trips or Detours) is also kept across page
 // reloads (bt_view), so a refresh doesn't jump back to the directions.
 // All Trips is its own page in the left menu (block-tracker.html?view=all);
-// the live page's bottom bar is the two directions and Detours.
+// the live page's bottom bar is the two directions, Both (two lines side by
+// side, 'both') and Detours.
 const ALL_TRIPS_PAGE = /[?&]view=all(&|$)/.test(location.search);
 // Opening it jumps to now, not to where the browser last left the page.
 if (ALL_TRIPS_PAGE && 'scrollRestoration' in history) history.scrollRestoration = 'manual';
-const VIEW_MODES = ['dir', 'detours'];
+const VIEW_MODES = ['dir', 'both', 'detours'];
 function savedMode() { if (ALL_TRIPS_PAGE) return 'all'; try { const m = localStorage.getItem('bt_view'); return VIEW_MODES.includes(m) ? m : 'dir'; } catch(e) { return 'dir'; } }
 function saveMode(m) { if (ALL_TRIPS_PAGE) return; try { localStorage.setItem('bt_view', m); } catch(e) {} }
 const view = { mode: savedMode(), dir: '', follow: false, run: '', blk: '', tsMiss: '', tsPrevRoute: null, tsDay: '', tsDayLoading: false, atDir: '', scrollNow: ALL_TRIPS_PAGE };  // blk / tsMiss / tsPrevRoute: Trip Sheets search (see tripSheetSearch)  // run: All Trips shows only this run (depot|runno); atDir: All Trips shows only this direction ('' = Both)
@@ -2936,7 +2938,7 @@ function selectView(mode, dir) {
 }
 
 function viewOrder() {
-  return routeDirs().map(d => ({ mode: 'dir', dir: d })).concat([{ mode: 'detours' }]);
+  return routeDirs().map(d => ({ mode: 'dir', dir: d })).concat([{ mode: 'both' }, { mode: 'detours' }]);
 }
 function swipeView(step) {
   if (ALL_TRIPS_PAGE) return;
@@ -2952,6 +2954,7 @@ function drawView(anim) {
   let html;
   if (view.mode === 'all') html = '<div class="view-wrap">' + buildAllTripsPage(anim) + '</div>';
   else if (view.mode === 'detours') html = '<div class="view-wrap">' + buildDetoursPage(anim) + '</div>';
+  else if (view.mode === 'both' && !view.run) html = '<div class="view-wrap">' + buildBothPage(anim) + '</div>';
   // "Run 452 only" on a live page: that run's trip sheet until "Back to live".
   else if (view.run) html = '<div class="view-wrap">' + buildAllTripsPage(anim) + '</div>';
   else if (!lastCards.length && lastEmptyHtml) html = '<div class="view-wrap">' + lastEmptyHtml + '</div>';
@@ -2999,6 +3002,9 @@ function renderBottomBar() {
     h += d ? '<button type="button" class="page-dot' + (d === cur ? ' active' : '') + '" data-view="dir" data-dir="' + esc(d) + '">' + esc(dirShort(d)) + '</button>'
            : '<button type="button" class="page-dot" disabled>—</button>';
   }
+  // Both directions: two vertical lines side by side.
+  h += '<button type="button" class="page-dot both-dot' + (view.mode === 'both' ? ' active' : '') + '" data-view="both" aria-label="Both directions" title="Both directions">' +
+       '<svg viewBox="0 0 18 18" aria-hidden="true"><rect x="4" y="2" width="3" height="14" rx="1.5" fill="currentColor"/><rect x="11" y="2" width="3" height="14" rx="1.5" fill="currentColor"/></svg></button>';
   const n = routeDetours.length;
   h += '<button type="button" class="page-dot detour-dot' + (view.mode === 'detours' ? ' active' : '') + '" data-view="detours">Detours' +
        (n ? ' <span class="dot-count">' + n + '</span>' : '') + '</button>';
@@ -3489,6 +3495,81 @@ function buildLiveDirPage(dir, anim) {
   lastLiveItems = items;
   if (!items.length) return h + '<div class="at-empty">No ' + esc(dirShort(dir)) + ' buses right now</div>';
   return h + '<div class="at-list">' + items.map((it, i) => allTripsCardHtml(it, anim, i)).join('') + '</div>' + liveMapBoxHtml();
+}
+
+// ── BOTH DIRECTIONS ──────────────────────────────────────────
+// The bottom bar's fourth button (two vertical lines): both directions at
+// once, one line each, side by side, with the same bus tags and colours as
+// the EB / WB pages (liveDirItems). The lines share one ruler, so a street
+// sits at the same height in both: WB / NB buses go UP (label on top),
+// EB / SB buses go DOWN (label at the bottom). Tap a tag for run, bus and
+// where it is. Drawing: assets/pa-live-lines.js; the route's shapes file
+// (data/shapes) places each bus.
+let bothMod = null, bothModP = null;
+const bothShapes = new Map();     // route → prepared shapes, or null (none)
+const bothLoading = new Set();
+function loadBoth(route) {
+  if (bothLoading.has(route)) return;
+  bothLoading.add(route);
+  if (!bothModP) bothModP = import('./assets/pa-live-lines.js').then(m => (bothMod = m));
+  bothModP
+    .then(m => m.loadShapes(route).catch(() => null))
+    .then(sh => {
+      bothShapes.set(route, sh || null);
+      if (view.mode === 'both' && state.route === route) { lastHTML = ''; drawView(false); }
+    })
+    .catch(e => { bothModP = null; console.error('[both lines]', e); })
+    .finally(() => bothLoading.delete(route));
+}
+function bothTip(it) {
+  const runs = runsOnBlockDuring(it.blk, it.s, it.e);
+  const vRaw = it.vid && it.vid !== '0' ? it.vid : '';
+  const vid = vRaw || knownVehicleFor(it.blk);
+  const parts = [];
+  if (runs.length) parts.push('Run ' + runs.map(r => r.runno).join(' → '));
+  parts.push(vid ? 'Bus ' + vid : 'Bus# pending');
+  parts.push('Blk ' + it.blk);
+  if (it.layover) {
+    parts.push('⚓ ' + (layoverStop(it.blk, it.s) || 'At terminal'), 'next trip ' + fmtClock(it.s) + ' #' + (it.nth || '?'));
+  } else if (it.live && it.live.next_stop_name) {
+    const late = parseInt(it.live.late) || 0;
+    parts.push('➜ ' + it.live.next_stop_name, it.live._notTracking ? 'not tracking' : late === 0 ? 'on time' : late < 0 ? Math.abs(late) + 'm early' : '+' + late + 'm late');
+  } else if (it.ghost) {
+    parts.push('not on the live feed', fmtClock(it.s) + ' – ' + fmtClock(it.e));
+  }
+  return parts.join(' · ');
+}
+function buildBothPage(anim) {
+  const dirs = routeDirs();
+  const head = (txt) => '<div class="section-label' + (anim ? ' fade-in' : '') + '">' + txt + '</div>';
+  if (dirs.length < 2) return head('Both directions') + '<div class="at-empty">This route has only one direction</div>';
+  if (!bothMod || !bothShapes.has(state.route)) { loadBoth(state.route); return head('Both directions') + '<div class="at-empty">Loading…</div>'; }
+  // dirs: EB before WB, NB before SB (the bottom bar's order) = left, right.
+  const isUp = d => /west|north/i.test(d);
+  const upIdx = isUp(dirs[0]) === isUp(dirs[1]) ? 1 : (isUp(dirs[0]) ? 0 : 1);
+  const nowMin = serviceNowMin();
+  let lay = 0;
+  const cols = dirs.map((d, i) => {
+    const items = liveDirItems(d);
+    lay += items.filter(x => x.layover).length;
+    return {
+      dir: d, label: dirShort(d), up: i === upIdx,
+      count: items.filter(x => !x.layover).length,
+      items: items.map(it => {
+        const vRaw = it.vid && it.vid !== '0' ? it.vid : '';
+        return {
+          cls: it.layover ? 'lay' : (it.tagCls || 'green'), nth: it.nth, layover: !!it.layover,
+          bus: vRaw || knownVehicleFor(it.blk) || '', tip: bothTip(it),
+          dueMs: it.layover ? serviceMinToMs(it.s) : '', dueTxt: it.layover ? dueText(serviceMinToMs(it.s)) : '',
+          lat: it.lat, lng: it.lng, s: it.s, e: it.e,
+          layStop: it.layover ? layoverStop(it.blk, it.s) : '',
+        };
+      }),
+    };
+  });
+  const label = cols.map(c => c.count + ' ' + esc(c.label)).join(' · ') + (lay ? ' · ' + lay + ' on layover' : '');
+  if (!cols[0].items.length && !cols[1].items.length) return head('Both directions') + '<div class="at-empty">No buses right now</div>';
+  return head(label) + bothMod.bothLinesHtml({ shapes: bothShapes.get(state.route), cols, nowMin });
 }
 
 // ── LIVE MAP ─────────────────────────────────────────────────

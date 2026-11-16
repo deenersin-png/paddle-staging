@@ -1,0 +1,43 @@
+/* Live "both directions" page: two vertical lines with the bus tags
+   (assets/pa-live-lines.js). Tag colours come from .at-nth in pa-scorecard.css. */
+.bl{margin:6px 0 12px;user-select:none;-webkit-user-select:none}
+.bl-row{display:grid;grid-template-columns:1fr minmax(0,1.3fr) 1fr;align-items:center;gap:6px;min-height:30px}
+.bl-row.top{margin-bottom:6px}
+.bl-row.bot{margin-top:6px}
+.bl-lbl{font-size:14px;font-weight:800;color:var(--blue);letter-spacing:.04em;white-space:nowrap}
+.bl-row .bl-lbl:first-child{text-align:right;padding-right:24px}
+.bl-row .bl-lbl:last-child{text-align:left;padding-left:24px}
+.bl-end{font-size:11px;font-weight:600;color:var(--text-faint);text-align:center;line-height:1.2;overflow-wrap:anywhere}
+.bl-cols{display:flex;justify-content:center;gap:4px}
+.bl-col{position:relative;flex:1 1 0;min-width:0;display:flex}
+.bl-left{justify-content:flex-end}
+.bl-svg{flex:0 0 auto;display:block;overflow:visible}
+.bl-line{stroke:var(--blue);stroke-width:4;stroke-linecap:round;opacity:.35}
+.bl-chev{fill:none;stroke:var(--blue);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;opacity:.55}
+.bl-stem{stroke-width:1.5;opacity:.8}
+.bl-dot{stroke:#fff;stroke-width:1.5}
+.bl-tags{position:relative;flex:1 1 auto;min-width:0}
+.bl-pill{position:absolute;display:inline-flex;align-items:center;gap:5px;height:24px;padding:0;margin:0;border:0;background:none;font:inherit;cursor:pointer;touch-action:manipulation;white-space:nowrap;max-width:100%}
+.bl-left .bl-pill{right:0}
+.bl-right .bl-pill{left:0}
+.bl-pill .at-nth{padding:4px 8px}
+.bl-pill.bl-gray .at-nth{border-style:dashed;background:#8a909f}
+.bl-bus,.bl-due{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--text);background:var(--card);border:1px solid var(--border-light);border-radius:4px;padding:3px 5px;line-height:1.2}
+.bl-bus.none{color:var(--text-faint);font-weight:600}
+.bl-due{color:#6a3fc1;border-color:#6a3fc1}
+.bl-due:has(.late){color:#c8102e;border-color:#c8102e}
+.bl-empty{font-size:12px;color:var(--text-faint);text-align:center;margin-top:4px}
+/* The bottom bar's fourth button: two vertical lines. */
+.page-dot.both-dot{flex:0 0 46px}
+.page-dot.both-dot svg{width:18px;height:18px;display:block}
+.page-dot.both-dot.active{background:var(--accent-dim);color:var(--accent);border-color:var(--accent)}
+@media (max-width:360px){
+  .bottom-bar{gap:4px}
+  .page-dot.both-dot{flex-basis:36px}
+  .page-dot.detour-dot{flex-grow:1.25;font-size:12px;padding:0 2px;gap:2px}
+  .bl-pill{gap:3px}
+  .bl-pill .at-nth{padding:3px 5px}
+  .bl-bus,.bl-due{font-size:10px;padding:3px 3px}
+  .bl-row .bl-lbl:first-child{padding-right:16px}
+  .bl-row .bl-lbl:last-child{padding-left:16px}
+}
