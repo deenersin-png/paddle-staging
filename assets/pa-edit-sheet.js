@@ -31,7 +31,7 @@ export const KINDS = [
   ['late',             'Late allowance'],
   ['overtime',         'Overtime (run + 4 h paid)'],
   ['holiday-off',      'Holiday, not worked (8 h)'],
-  ['holiday-worked',   'Holiday premium (run + 12 h paid)'],
+  ['holiday-worked',   'Holiday premium (run + 8 + 4 h paid)'],
   ['worked-holiday',   'Worked holiday (run + 8 h paid)'],
   ['personal-holiday', 'Personal holiday (paid the run’s hours)'],
   ['paid-off',         'Earned paid off day'],
@@ -625,7 +625,7 @@ export function dayForm(r, opts = {}) {
     const parts = [];
     if (b.working) parts.push(['Run', b.workedMin]);
     if (b.shortMin) parts.push(['Short run ' + st.shortRun.runNo, b.shortMin]);
-    const exLabel = x => x.kind === 'holiday' ? (A.KIND_LABELS[st.kind] || 'Holiday')
+    const exLabel = x => x.kind === 'holiday' ? (A.KIND_LABELS[st.kind] || 'Holiday') + (st.kind === 'holiday-worked' ? ' (8 + 4)' : '')
       : x.kind === 'other' && A.KIND_LABELS[st.kind] && !WORKING.has(st.kind) ? A.KIND_LABELS[st.kind]
       : x.kind === 'other' && x.note ? x.note.charAt(0).toUpperCase() + x.note.slice(1)
       : A.EXTRA_KINDS[x.kind] || 'Extra';
