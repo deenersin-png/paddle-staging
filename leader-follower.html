@@ -10,6 +10,10 @@
   block, without signing in:
     leader-follower.html?route=21&block=9105
     leader-follower.html?route=21&block=9105&lfmock=leader-late
+    leader-follower.html?route=42&block=9103&lfmock=shared-line&day=weekday&at=07:20
+  Test only: at=HH:MM sets the clock (GTFS clock, 25:30 = 1:30 AM after
+  midnight) and day=weekday|saturday|sunday the timetable, for the timetable
+  and the test data; live buses stay real.
   The countdown here counts to the block's next SCHEDULED departure and never
   moves with live data. Mock scenarios: see assets/pa-lf-mock.js.
 -->
@@ -75,6 +79,8 @@ const $ = id => document.getElementById(id);
 const qs = new URLSearchParams(location.search);
 const route = (qs.get('route') || '').trim(), block = (qs.get('block') || '').trim();
 const mock = mockFromUrl();
+const atMin = (() => { const m = /^(\d{1,2}):(\d{2})$/.exec(qs.get('at') || ''); return m ? +m[1] * 60 + +m[2] : null; })();
+const dayParam = ['weekday', 'saturday', 'sunday'].includes(qs.get('day')) ? qs.get('day') : null;
 for (const [k, v] of Object.entries(SCENARIOS)) $('f-mock').add(new Option(k + ' — ' + v, k));
 $('f-route').value = route; $('f-block').value = block; $('f-mock').value = mock || '';
 $('pick').addEventListener('submit', e => {
@@ -82,6 +88,7 @@ $('pick').addEventListener('submit', e => {
   const p = new URLSearchParams();
   p.set('route', $('f-route').value.trim()); p.set('block', $('f-block').value.trim());
   if ($('f-mock').value) p.set('lfmock', $('f-mock').value);
+  for (const k of ['day', 'at']) if (qs.get(k)) p.set(k, qs.get(k));
   location.search = p.toString();
 });
 
@@ -93,21 +100,21 @@ function day() {
     const overrides = await S.loadCalendarOverrides().catch(() => ({}));
     const early = new Date().getHours() < S.SERVICE_DAY_START_HR;
     const iso = early ? S.addDays(S.todayIso(), -1) : S.todayIso();
-    const dayType = S.dayTypeFor(iso, overrides);
+    const dayType = dayParam || S.dayTypeFor(iso, overrides);
     const trips = await S.routeTrips(S.gtfsRoutesOfLabel(route), dayType);
     return { iso, dayType, trips, mine: trips.filter(t => t.block === block) };
   })();
   dayP.catch(() => { dayP = null; });
   return dayP;
 }
-const nowMinFor = iso => S.nowMinutes() + S.daysBetween(iso, S.todayIso()) * 1440;
+const nowMinFor = iso => atMin != null ? atMin : S.nowMinutes() + S.daysBetween(iso, S.todayIso()) * 1440;
 
 async function getContext() {
   const d = await day();
   if (!d.mine.length) return { message: 'Block ' + block + ' has no ' + d.dayType + ' trips on route ' + route + '.' };
   const nowMin = nowMinFor(d.iso);
   const myTrip = S.relevantTrip(d.mine, nowMin);
-  return { block, routes: S.routesOfLabel(route), trips: d.trips, myTrip, pullIns: null, knownBus: L.knownBus };
+  return { block, routes: S.routesOfLabel(route), trips: d.trips, myTrip, pullIns: null, knownBus: L.knownBus, nowMin };
 }
 
 // Countdown: the block's next scheduled departure. Schedule only.

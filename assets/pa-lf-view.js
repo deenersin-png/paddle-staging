@@ -46,7 +46,9 @@ export function loadLeaflet() {
 const ROLE = {
   leader:   { title: 'Leader',   sub: 'ahead',  mark: 'L' },
   you:      { title: 'You',      sub: '',       mark: 'Y' },
-  follower: { title: 'Follower', sub: 'behind', mark: 'F' }
+  follower: { title: 'Follower', sub: 'behind', mark: 'F' },
+  nextLeader:   { title: 'Next leader',   mark: 'NL' },
+  nextFollower: { title: 'Next follower', mark: 'NF' }
 };
 
 function cardHtml(c, role, m) {
@@ -57,7 +59,7 @@ function cardHtml(c, role, m) {
       + '<div class="lf-loc">' + (role === 'leader' ? 'No bus ahead of you on this trip.' : 'No bus behind you on this trip.') + '</div></div>';
   }
   const badge = '<span class="lf-badge k-' + c.status.kind + '">' + esc(c.status.kind === 'none' ? 'No live data' : c.status.text) + '</span>';
-  const id = '<div class="lf-id">Block <b>' + esc(c.block || '—') + '</b> · Bus <b>' + esc(c.vehicleId || '—') + '</b></div>';
+  const id = '<div class="lf-id">Block <b>' + esc(c.block || '—') + '</b> · Bus <b>' + esc(c.vehicleId || '—') + '</b></div>' + patHtml(c);
   let loc;
   if (c.live) {
     loc = esc(c.location || 'position known');
@@ -83,15 +85,58 @@ function cardHtml(c, role, m) {
     + id + '<div class="lf-loc">' + loc + '</div>' + gap + '</div>';
 }
 
-function fmtMin(min) {
-  min = ((min % 1440) + 1440) % 1440;
-  let h = Math.floor(min / 60); const mm = String(min % 60).padStart(2, '0');
-  const ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
-  return h + ':' + mm + ' ' + ap;
+const fmtMin = LF.clockText;
+
+/** "[Short turn] 61st St & Pine St Loop → 38th Parallel Pl & Dock St" on a line with mixed trips. */
+function patHtml(c) {
+  const p = c && c.pattern;
+  if (!p) return '';
+  return '<div class="lf-pat"><span class="lf-tag t-' + p.kind + '">' + esc(p.text) + '</span> '
+    + esc(p.from) + ' → ' + esc(p.to) + '</div>';
+}
+
+/**
+ * The bus that will lead (follow) me next on a shared line, shown before it
+ * happens: a short turn pulling out ahead of (behind) me, or my leader
+ * (follower) ending its trip.
+ */
+function nextHtml(n, m, nowMin) {
+  if (!n) return '';
+  const lead = n.role === 'leader';
+  const c = n.card;
+  const who = lead ? 'leader' : 'follower';
+  // Past tense only while my trip is near (the view can show a later trip).
+  const tr = m.you && m.you.trip;
+  const past = nowMin != null && n.whenMin != null && n.whenMin < nowMin && !!tr && nowMin >= tr.s - 90 && nowMin <= tr.e;
+  const at = esc(n.at), when = n.whenMin != null ? ' at ' + esc(fmtMin(n.whenMin)) : '';
+  let what;
+  if (n.reason === 'joins') {
+    what = (past ? 'Pulled out of ' : 'Pulls out of ') + at + when + (lead ? ', ahead of you' : ', behind you')
+      + (n.youAtMin != null ? ' — you ' + (lead ? 'get there' : 'pass there') + ' about ' + esc(fmtMin(n.youAtMin)) : '') + '.';
+  } else {
+    const ended = 'Block ' + esc(n.endedBlock || '—') + (n.endedPattern ? ' (' + esc(n.endedPattern.text.toLowerCase()) + ')' : '');
+    what = ended + ', your ' + who + ' now, ' + (past ? 'ended' : 'ends') + ' its trip at ' + at + when + '. '
+      + (c ? 'From there your ' + who + ' is block ' + esc(c.block) + '.' : 'From there no bus is ' + (lead ? 'ahead of' : 'behind') + ' you.');
+  }
+  const head = '<div class="lf-top"><span class="lf-role"><span class="lf-dot">' + (lead ? 'L' : 'F') + '</span>Next ' + who + '</span>'
+    + (c ? '<span class="lf-badge k-' + c.status.kind + '">' + esc(c.status.kind === 'none' ? 'No live data' : c.status.text) + '</span>' : '') + '</div>';
+  let body = '';
+  if (c) {
+    body += '<div class="lf-id">Block <b>' + esc(c.block || '—') + '</b> · Bus <b>' + esc(c.vehicleId || '—') + '</b></div>' + patHtml(c);
+    if (c.live) {
+      let loc = esc(c.location || 'position known');
+      if (!c.sameDirection && c.direction) loc = 'finishing a ' + esc(c.direction) + ' trip · ' + loc;
+      body += '<div class="lf-loc">' + loc + '</div>';
+    }
+  }
+  body += '<div class="lf-loc">' + what + '</div>';
+  if (c && n.gapMin != null) body += '<div class="lf-gap">Then about ' + n.gapMin + ' min ' + (lead ? 'ahead of' : 'behind') + ' you (timetable)</div>';
+  return '<div class="lf-card lf-next lf-next-' + n.role + '">' + head + body + '</div>';
 }
 
 function othersHtml(buses, m) {
-  const shown = new Set([m.leader, m.you, m.follower].filter(Boolean).map(c => c.block));
+  const nx = m.next || {};
+  const shown = new Set([m.leader, m.you, m.follower, nx.leader && nx.leader.card, nx.follower && nx.follower.card].filter(Boolean).map(c => c.block));
   const rest = (buses || []).filter(b => b.block && !shown.has(b.block));
   if (!rest.length) return '';
   const rows = rest.map(b => {
@@ -138,7 +183,10 @@ export function mountLF(root, { getContext, mock = null } = {}) {
   }
 
   async function drawMap(m) {
-    const pts = [['leader', m.leader], ['you', m.you], ['follower', m.follower]].filter(([, c]) => c && c.lat != null);
+    const nx = m.next || {};
+    const pts = [['leader', m.leader], ['you', m.you], ['follower', m.follower],
+                 ['nextLeader', nx.leader && nx.leader.card], ['nextFollower', nx.follower && nx.follower.card]]
+      .filter(([, c]) => c && c.lat != null);
     const note = q('mapnote');
     let Lf;
     try { Lf = await loadLeaflet(); } catch (_) { note.hidden = false; note.textContent = 'Map unavailable (no connection to the map library).'; return; }
@@ -175,7 +223,11 @@ export function mountLF(root, { getContext, mock = null } = {}) {
     if (!m) return;
     q('summary').textContent = m.summary;
     q('summary').className = 'lf-summary' + (m.bunching.leader || m.bunching.follower ? ' lf-sum-bunch' : '');
-    q('cards').innerHTML = cardHtml(m.leader, 'leader', m) + cardHtml(m.you, 'you', m) + cardHtml(m.follower, 'follower', m);
+    const nowMin = st.ctx && st.ctx.nowMin != null ? st.ctx.nowMin : null;
+    const nx = m.next || {};
+    q('cards').innerHTML = cardHtml(m.leader, 'leader', m) + nextHtml(nx.leader, m, nowMin)
+      + cardHtml(m.you, 'you', m)
+      + cardHtml(m.follower, 'follower', m) + nextHtml(nx.follower, m, nowMin);
     q('others').innerHTML = othersHtml(st.buses, m);
     renderFresh();
     drawMap(m);
@@ -199,7 +251,8 @@ export function mountLF(root, { getContext, mock = null } = {}) {
       if (st.dead || token !== st.token) return;
       st.buses = r.buses; st.ok = r.ok; st.fetchedAt = r.fetchedAt;
       st.model = LF.buildLF({ myBlock: ctx.block, buses: r.buses, shapes, trips: ctx.trips || [], myTrip: ctx.myTrip,
-                              pullIns: ctx.pullIns || null, knownBus: mock ? null : ctx.knownBus || null, outage: !r.ok });
+                              pullIns: ctx.pullIns || null, knownBus: mock ? null : ctx.knownBus || null, outage: !r.ok,
+                              nowMin: ctx.nowMin != null ? ctx.nowMin : null });
       if (!shapes) st.model.summary += ' (Route line not available — order is from the timetable.)';
       render();
     } catch (e) {

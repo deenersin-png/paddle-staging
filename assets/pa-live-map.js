@@ -122,7 +122,7 @@ export function createLiveMap() {
     if (my !== seq || !el.isConnected) return;
     map.invalidateSize();
     const ds = dirOf(shapes, dir);
-    const line = ds ? ds.main : null;
+    const line = ds ? ds.mostUsed || ds.main : null;
 
     // Route line, only when the direction changes.
     const key = route + '|' + dir;

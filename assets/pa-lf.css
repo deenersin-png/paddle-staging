@@ -52,3 +52,13 @@
 .lf-open{display:block;width:100%;text-align:left;font-family:var(--mono,'IBM Plex Mono',monospace);font-size:12px;font-weight:600;letter-spacing:.04em;padding:9px 12px;margin:0 0 8px;border:1px solid var(--amber);border-radius:4px;background:var(--amber-dim);color:var(--amber);cursor:pointer}
 .lf-back{font-family:var(--mono,'IBM Plex Mono',monospace);font-size:12px;font-weight:600;letter-spacing:.04em;padding:6px 0;margin:0 0 8px;border:0;background:none;color:var(--amber);cursor:pointer}
 .prc-stack.lf-stack > .prc-top{border-radius:6px;border-bottom:1px solid var(--line2)}
+/* Shared lines (short turn / full length) and the next leader / follower. */
+.lf-pat{font-family:var(--mono,'IBM Plex Mono',monospace);font-size:11px;margin-top:4px;color:var(--mid);display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+.lf-tag{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:1px 6px;border-radius:3px;border:1px solid currentColor;white-space:nowrap}
+.lf-tag.t-full{color:var(--blue);background:var(--blue-dim)}
+.lf-tag.t-short{color:var(--amber);background:var(--amber-dim)}
+.lf-tag.t-branch{color:var(--violet);background:var(--violet-dim)}
+.lf-card.lf-next{border-style:dashed;margin-left:14px;background:transparent}
+.lf-next .lf-dot{background:transparent;color:var(--bright);border:1.5px dashed var(--bright)}
+.lf-next .lf-loc + .lf-loc{color:var(--text)}
+.lf-mk-nextLeader b,.lf-mk-nextFollower b{border-style:dashed;font-size:9px}

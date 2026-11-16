@@ -9,7 +9,7 @@
 // headway-based gaps come out the way they would on the road.
 // ==========================================================================
 
-import { dirOf, followerForTrip } from './pa-lf.js';
+import { dirOf, followerForTrip, corridorFor, profileOf, timeOn } from './pa-lf.js';
 import { leaderForTrip } from './pa-live-cards.js';
 
 export const SCENARIOS = {
@@ -19,7 +19,8 @@ export const SCENARIOS = {
   'no-live':        'Only your bus reports — leader and follower have no live data',
   'not-in-service': 'Your bus is not out yet — order from the timetable',
   'outage':         'TransitView not answering at all',
-  'stale':          'Live data once, then the feed stops (turns gray after 60 s)'
+  'stale':          'Live data once, then the feed stops (turns gray after 60 s)',
+  'shared-line':    'Only your bus reports, on its trip where the clock says (short turns / full length from the timetable)'
 };
 
 const DEFAULT_HEADWAY = 10;
@@ -46,8 +47,9 @@ function pointAt(line, d) {
  * @param o.shapes  prepShapes() of the route
  * @param o.myBlock, o.myTrip (GTFS clock), o.trips (route's scheduled trips), o.pullIns
  * @param o.call    0 for the first request of the page, 1, 2, … after
+ * @param o.nowMin  now on the GTFS clock (shared-line: where my bus is)
  */
-export function mockTransitView(scenario, { shapes, myBlock, myTrip, trips = [], pullIns = null, call = 0 }) {
+export function mockTransitView(scenario, { shapes, myBlock, myTrip, trips = [], pullIns = null, call = 0, nowMin = null }) {
   if (scenario === 'outage' || (scenario === 'stale' && call > 0)) throw new Error('mock: TransitView not answering');
   const sc = scenario === 'stale' ? 'leader-late' : scenario;
   const dirShape = myTrip ? dirOf(shapes, myTrip.dir) : null;
@@ -88,6 +90,15 @@ export function mockTransitView(scenario, { shapes, myBlock, myTrip, trips = [],
   } else if (sc === 'bunching') {
     const fLate = 4 - hF + 1;                       // 1 min behind me
     bus.push(row(myBlock, myTrip, myD, 4), row(leaderBlock, lt, ahead(1, 4), 1), row(followerBlock, ft, behind(fLate, 4), fLate));
+  } else if (sc === 'shared-line') {
+    // My bus where its timetable puts it now (just out of its first stop if
+    // the trip hasn't started), on the line all patterns share.
+    const cor = corridorFor(dirShape, trips, route, dirShape.dir);
+    const pr = cor && profileOf(cor, myTrip);
+    let d = pr ? pr.a + 0.3 : myD;
+    if (pr && nowMin != null && nowMin < myTrip.s) d = pr.a;                    // waiting at the first stop
+    else if (pr && nowMin != null) for (let x = pr.a + 0.3; x < pr.b - 0.3; x += 0.05) { d = x; if (timeOn(pr, x) >= nowMin) break; }
+    bus.push(row(myBlock, myTrip, d, 0));
   } else if (sc === 'no-live') {
     bus.push(row(myBlock, myTrip, myD, 1));
   } else if (sc === 'not-in-service') {

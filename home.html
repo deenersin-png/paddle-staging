@@ -1039,7 +1039,8 @@ async function lfContext() {
   const shift = (my && my.dayShift) || 0;
   const myTrip = my && (all.find(t => t.tripId === my.tripId) || { ...my, s: my.s - shift, e: my.e - shift });
   const table = await allBlockPaddles(c).catch(() => null);
-  return { block: p.block, routes: p.routes, trips: all, myTrip, pullIns: S.pullInMap(table), knownBus: L.knownBus };
+  // nowMin on the GTFS clock (my trip's), for the shared-line order (short turns).
+  return { block: p.block, routes: p.routes, trips: all, myTrip, pullIns: S.pullInMap(table), knownBus: L.knownBus, nowMin: c.nowMin - shift };
 }
 
 // ---- leader (informational) ----------------------------------------------

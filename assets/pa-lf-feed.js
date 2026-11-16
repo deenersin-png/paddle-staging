@@ -57,7 +57,7 @@ export function createFeed({ mock = null } = {}) {
     async read(ctx, shapes) {
       let raw = null, ok = false;
       if (mock) {
-        try { raw = mockTransitView(mock, { shapes, myBlock: ctx.block, myTrip: ctx.myTrip, trips: ctx.trips, pullIns: ctx.pullIns, call }).bus; ok = true; }
+        try { raw = mockTransitView(mock, { shapes, myBlock: ctx.block, myTrip: ctx.myTrip, trips: ctx.trips, pullIns: ctx.pullIns, call, nowMin: ctx.nowMin }).bus; ok = true; }
         catch (_) { ok = false; }
       } else {
         try { const r = await L.fetchRoutesChecked(ctx.routes); raw = r.buses; ok = r.ok; }
