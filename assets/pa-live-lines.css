@@ -28,11 +28,11 @@
 .bl-row1{display:inline-flex;align-items:center;gap:4px;height:24px}
 .bl-pill .at-nth{padding:4px 7px}
 .bl-pill.bl-gray .at-nth{border-style:dashed}
-.bl-bus,.bl-due{display:inline-flex;align-items:center;gap:3px;font-family:var(--mono);font-size:11px;font-weight:700;color:var(--text);background:var(--card);border:1px solid var(--border-light);border-radius:4px;padding:3px 5px;line-height:1.2}
-.bl-bus b{font-weight:700}
-.bl-bus .bus-ico{width:12px;height:12px;flex-shrink:0}
-.bl-bus.none{color:var(--text-faint);font-weight:600}
-.bl-due{color:#6a3fc1;border-color:#6a3fc1;height:17px;padding:0 5px}
+.bl-blk,.bl-due{display:inline-flex;align-items:center;gap:3px;font-family:var(--mono);font-size:11px;font-weight:700;border-radius:4px;padding:3px 5px;line-height:1.2}
+/* Block number: the app's block-tag teal (pa-tags.css). */
+.bl-blk{background:var(--pa-blk-bg,#00798c);border:1px solid var(--pa-blk-bg,#00798c);color:#fff}
+.bl-blk.none{opacity:.6}
+.bl-due{color:#6a3fc1;background:var(--card);border:1px solid #6a3fc1;height:17px;padding:0 5px}
 .bl-due:has(.late){color:#c8102e;border-color:#c8102e}
 /* The bottom bar's fourth button: two vertical lines. */
 .page-dot.both-dot{flex:0 0 46px}
@@ -45,6 +45,5 @@
   .bl-mid{flex-basis:70px;width:70px}
   .bl-row1{gap:3px}
   .bl-pill .at-nth{padding:3px 5px}
-  .bl-bus .bus-ico{display:none}
-  .bl-bus,.bl-due{font-size:10px;padding:3px 3px}
+  .bl-blk,.bl-due{font-size:10px;padding:3px 3px}
 }

@@ -3,8 +3,8 @@
 // other, one per direction, with every bus tag of the EB / WB pages placed
 // along its line (same tags, same colours: green / red / yellow by leader-
 // follower order, gray for a bus that should be out but isn't on the feed,
-// purple on layover with the countdown to its next trip), each with its bus
-// number. Between the two lines: the route's major stops at their height,
+// purple on layover with the countdown to its next trip), each with its block
+// number; tap a tag for run, bus and where it is. Between the two lines: the route's major stops at their height,
 // so a bus's place on the street can be read off the line.
 //
 // Both lines share ONE ruler, so the same street sits at the same height in
@@ -17,7 +17,7 @@
 // spaced, and no stops are shown.
 //
 //   bothLinesHtml({ shapes, cols: [left, right], nowMin })
-//   col: { dir, label, up, items: [{ cls, nth, bus, tip, dueMs, dueTxt,
+//   col: { dir, label, up, items: [{ cls, nth, blk, tip, dueMs, dueTxt,
 //          lat, lng, s, e, layStop, layover }] }   (items in the cards' order)
 // ==========================================================================
 
@@ -28,8 +28,6 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&a
 const normName = s => String(s || '').toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]/g, '');
 const DOT = { green: '#1f8a4c', red: '#c8102e', yellow: '#f2b705', lay: '#6a3fc1', gray: '#8a909f' };
 const clamp01 = x => Math.max(0, Math.min(1, x));
-// The app's own bus (the picture next to the menu button) - the one bus icon.
-const BUS_IMG = '<img class="bus-ico" src="' + new URL('./icon-192.png', import.meta.url).href + '" alt="" width="12" height="12">';
 
 const PILL_H = 24;   // px, one row of a tag
 const LAY_H = 44;    // px, a layover tag (second row: countdown)
@@ -183,8 +181,9 @@ function columnHtml(col, ruler, shapes, nowMin, H, side, stops) {
     svg += '<line class="bl-stem" stroke="' + c + '" x1="' + x + '" y1="' + yDot.toFixed(1) + '" x2="' + edge + '" y2="' + yTag.toFixed(1) + '"/>';
     svg += '<circle class="bl-dot" fill="' + c + '" cx="' + x + '" cy="' + yDot.toFixed(1) + '" r="5"/>';
     const tag = '<span class="at-nth ' + esc(it.cls) + '">#' + esc(it.nth || '?') + '</span>';
-    const bus = '<span class="bl-bus' + (it.bus ? '' : ' none') + '">' + BUS_IMG + '<b>' + esc(it.bus || '—') + '</b></span>';
-    const row = '<span class="bl-row1">' + (side === 'left' ? bus + tag : tag + bus) + '</span>';
+    // The block number, always shown (bus, run and place: tap the tag).
+    const blk = '<span class="bl-blk' + (it.blk ? '' : ' none') + '">' + esc(it.blk || '—') + '</span>';
+    const row = '<span class="bl-row1">' + (side === 'left' ? blk + tag : tag + blk) + '</span>';
     const due = it.layover ? '<span class="bl-due">⚓ <span data-due-ms="' + esc(it.dueMs) + '">' + esc(it.dueTxt) + '</span></span>' : '';
     pills += '<button type="button" class="bl-pill bl-' + esc(it.cls) + '" style="top:' + tops[i].toFixed(1) + 'px" data-tip="' + esc(it.tip) + '">' + row + due + '</button>';
   });

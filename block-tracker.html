@@ -3556,10 +3556,9 @@ function buildBothPage(anim) {
       dir: d, label: dirShort(d), up: i === upIdx,
       count: items.filter(x => !x.layover).length,
       items: items.map(it => {
-        const vRaw = it.vid && it.vid !== '0' ? it.vid : '';
         return {
           cls: it.layover ? 'lay' : (it.tagCls || 'green'), nth: it.nth, layover: !!it.layover,
-          bus: vRaw || knownVehicleFor(it.blk) || '', tip: bothTip(it),
+          blk: it.blk, tip: bothTip(it),
           dueMs: it.layover ? serviceMinToMs(it.s) : '', dueTxt: it.layover ? dueText(serviceMinToMs(it.s)) : '',
           lat: it.lat, lng: it.lng, s: it.s, e: it.e,
           layStop: it.layover ? layoverStop(it.blk, it.s) : '',
