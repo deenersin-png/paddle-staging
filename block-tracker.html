@@ -3484,7 +3484,14 @@ function liveDirItems(dir) {
     order.splice(i < 0 ? order.length : i, 0, g);
   });
   layover.sort((a, b) => a.s - b.s || a.nth - b.nth);
-  return order.concat(layover).filter(x => x.mine);
+  const all = order.concat(layover);
+  // Both view tag number: 1, 2, 3… per direction in trip sheet order (the
+  // earliest trip is 1). Counted from the trip sheet number (nth) on every
+  // redraw, so a bus that finishes its trip drops out and the rest move up -
+  // always from 1, no gaps. Counted before the Run / Block / Bus search.
+  all.slice().sort((a, b) => (a.nth || 1e9) - (b.nth || 1e9) || a.s - b.s)
+     .forEach((x, i) => { x.seq = i + 1; });
+  return all.filter(x => x.mine);
 }
 
 function buildLiveDirPage(dir, anim) {
@@ -3557,7 +3564,7 @@ function buildBothPage(anim) {
       count: items.filter(x => !x.layover).length,
       items: items.map(it => {
         return {
-          cls: it.layover ? 'lay' : (it.tagCls || 'green'), nth: it.nth, layover: !!it.layover,
+          cls: it.layover ? 'lay' : (it.tagCls || 'green'), nth: it.nth, seq: it.seq, layover: !!it.layover,
           blk: it.blk, tip: bothTip(it),
           dueMs: it.layover ? serviceMinToMs(it.s) : '', dueTxt: it.layover ? dueText(serviceMinToMs(it.s)) : '',
           lat: it.lat, lng: it.lng, s: it.s, e: it.e,

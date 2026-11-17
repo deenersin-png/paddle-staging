@@ -4,7 +4,9 @@
 // along its line (same tags, same colours: green / red / yellow by leader-
 // follower order, gray for a bus that should be out but isn't on the feed,
 // purple on layover with the countdown to its next trip), each with its block
-// number; tap a tag for run, bus and where it is. Between the two lines: the route's major stops at their height,
+// number; the tag's # is 1, 2, 3… in trip sheet order (seq: earliest trip = 1,
+// renumbered as buses finish), not the trip sheet number. Tap a tag for run,
+// bus and where it is. Between the two lines: the route's major stops at their height,
 // so a bus's place on the street can be read off the line.
 //
 // Both lines share ONE ruler, so the same street sits at the same height in
@@ -17,7 +19,7 @@
 // spaced, and no stops are shown.
 //
 //   bothLinesHtml({ shapes, cols: [left, right], nowMin })
-//   col: { dir, label, up, items: [{ cls, nth, blk, tip, dueMs, dueTxt,
+//   col: { dir, label, up, items: [{ cls, nth, seq, blk, tip, dueMs, dueTxt,
 //          lat, lng, s, e, layStop, layover }] }   (items in the cards' order)
 // ==========================================================================
 
@@ -180,7 +182,8 @@ function columnHtml(col, ruler, shapes, nowMin, H, side, stops) {
     const c = DOT[it.cls] || DOT.green, yDot = want[i], yTag = tops[i] + PILL_H / 2;
     svg += '<line class="bl-stem" stroke="' + c + '" x1="' + x + '" y1="' + yDot.toFixed(1) + '" x2="' + edge + '" y2="' + yTag.toFixed(1) + '"/>';
     svg += '<circle class="bl-dot" fill="' + c + '" cx="' + x + '" cy="' + yDot.toFixed(1) + '" r="5"/>';
-    const tag = '<span class="at-nth ' + esc(it.cls) + '">#' + esc(it.nth || '?') + '</span>';
+    // 1, 2, 3… in trip sheet order per direction (seq), not the trip sheet number.
+    const tag = '<span class="at-nth ' + esc(it.cls) + '">#' + esc(it.seq || it.nth || '?') + '</span>';
     // The block number, always shown (bus, run and place: tap the tag).
     const blk = '<span class="bl-blk' + (it.blk ? '' : ' none') + '">' + esc(it.blk || '—') + '</span>';
     const row = '<span class="bl-row1">' + (side === 'left' ? blk + tag : tag + blk) + '</span>';
