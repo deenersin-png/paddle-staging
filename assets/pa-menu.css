@@ -56,6 +56,21 @@
 .pam-acct-btn svg { width: 24px; height: 24px; flex: 0 0 24px; }
 .pam-foot { padding: 6px 16px 22px; font-size: 12px; color: #56627a; }
 
+/* Share app / Show QR code / Install app (assets/pa-share.js), above Account. */
+.pam-share { margin-top: auto; border-top: 1px solid #d5dce8; padding: 6px 0 2px; }
+.pam-share + .pam-acct { margin-top: 0; }
+.pam-act {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 12px 16px; min-height: 48px; font: inherit; font-size: 18px; font-weight: 500;
+  color: #08122b; background: none; border: 0; border-left: 4px solid transparent;
+  text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.pam-act[hidden] { display: none; }
+.pam-act:active { background: #e6ecf6; }
+.pam-act svg { width: 22px; height: 22px; flex: 0 0 22px; color: #0b4ea2; }
+.pam-act[data-pa-share="install"] { color: #c8102e; font-weight: 600; }
+.pam-act[data-pa-share="install"] svg { color: #c8102e; }
+
 body.pam-lock { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) { .pam-drawer, .pam-scrim { transition: none; } }
 

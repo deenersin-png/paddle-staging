@@ -6,14 +6,25 @@
   if (window.__paMenu) return;
   window.__paMenu = true;
 
+  // The browser's "install this app" prompt can come early; keep it for the
+  // Install app button (assets/pa-share.js) instead of losing it.
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    window.__paInstall = e;
+    window.dispatchEvent(new CustomEvent('pa:installable'));
+  });
+
   // Every page with the menu also gets the red ✕ clear button in its search
-  // boxes (assets/pa-clear.js), loaded from the same folder as this file.
+  // boxes (assets/pa-clear.js) and Share / QR code / Install app
+  // (assets/pa-share.js), loaded from the same folder as this file.
   (function () {
     var me = document.currentScript && document.currentScript.src;
-    var s = document.createElement('script');
-    s.src = me ? me.replace(/pa-menu\.js(\?.*)?$/, 'pa-clear.js') : 'assets/pa-clear.js';
-    s.defer = true;
-    document.head.appendChild(s);
+    ['pa-clear.js', 'pa-share.js'].forEach(function (f) {
+      var s = document.createElement('script');
+      s.src = me ? me.replace(/pa-menu\.js(\?.*)?$/, f) : 'assets/' + f;
+      s.defer = true;
+      document.head.appendChild(s);
+    });
   })();
 
   // Pages inside the app, then the Google Site menu.
@@ -100,6 +111,21 @@
     SITE.forEach(function (it) {
       html += '<a href="' + esc(it[1]) + '" target="_blank" rel="noopener">' + esc(it[0]) + '<span class="ext" aria-hidden="true">&#8599;</span></a>';
     });
+    // Share the app (assets/pa-share.js). Install app shows only where the
+    // browser offers it and the app is not installed yet.
+    var SV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
+    html += '<div class="pam-share">' +
+      '<button type="button" class="pam-act" data-pa-share="share">' + SV +
+        '<path d="M12 3v12M7.5 7.5 12 3l4.5 4.5"/><path d="M8 11H6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-2"/></svg>' +
+        '<span>Share app</span></button>' +
+      '<button type="button" class="pam-act" data-pa-share="qr">' + SV +
+        '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>' +
+        '<path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"/></svg>' +
+        '<span>Show QR code</span></button>' +
+      '<button type="button" class="pam-act" data-pa-share="install" hidden>' + SV +
+        '<path d="M12 3v12M7.5 10.5 12 15l4.5-4.5"/><path d="M5 19h14"/></svg>' +
+        '<span>Install app</span></button>' +
+      '</div>';
     // Account / Sign in sits at the bottom, apart from the pages above.
     html += '<div class="pam-acct"><button type="button" class="pam-acct-btn" data-pam="acct">' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">' +
@@ -186,7 +212,7 @@
     }
     btn.addEventListener('click', function () { set(true); });
     root.addEventListener('click', function (e) {
-      if (e.target.closest('[data-pam="close"]')) set(false);
+      if (e.target.closest('[data-pam="close"]') || e.target.closest('[data-pa-share]')) set(false);
       if (e.target.closest('[data-pam="acct"]')) {
         set(false);
         window.dispatchEvent(new CustomEvent('pa:open-account'));

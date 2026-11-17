@@ -32,10 +32,13 @@ ul{margin:0 0 18px 22px}
 li{font-size:17px;line-height:1.6;margin-bottom:4px}
 .note{border-left:4px solid #c8102e;background:#fff;padding:12px 14px;border-radius:0 6px 6px 0;margin:18px 0}
 a{color:#0b4ea2;font-weight:600}
+.share-h{font-size:21px;line-height:1.25;color:var(--bright,#08122b);margin:26px 0 8px}
+.pas-inline .pas-install{margin-top:0}
 .btn-paddle{display:inline-block;font-family:var(--mono);font-size:12px;font-weight:600;padding:3px 8px;border-radius:4px;background:#0b4ea2;color:#fff}
 </style>
 <link rel="stylesheet" href="assets/pa-theme.css">
 <link rel="stylesheet" href="assets/pa-menu.css">
+<link rel="stylesheet" href="assets/pa-share.css">
 <script src="assets/pa-menu.js" defer></script>
 </head>
 <body>
@@ -74,6 +77,14 @@ a{color:#0b4ea2;font-weight:600}
 
   <p>Questions? Contact Deen at <a href="mailto:dersin@septa.org">dersin@septa.org</a>.</p>
   <p>Works on your phone. No download, no cost.</p>
+
+  <h2 class="share-h">Share it with a coworker</h2>
+  <p>Send the link, or let them scan the QR code with their phone camera. The QR code screen also shows how to add the app to the home screen.</p>
+  <div class="pas-inline">
+    <button type="button" class="pas-btn" data-pa-share="share">Share app</button>
+    <button type="button" class="pas-btn pas-btn-2" data-pa-share="qr">Show QR code</button>
+    <button type="button" class="pas-btn pas-install" data-pa-share="install" hidden>Install App</button>
+  </div>
 </main>
 
 <script type="module" src="assets/pa-account-ui.js"></script>

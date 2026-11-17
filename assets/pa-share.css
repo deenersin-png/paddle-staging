@@ -1,0 +1,111 @@
+/* Share / QR code popup / install help (assets/pa-share.js).
+   Like pa-account.css this lands on pages with different design systems, so
+   every class is .pas-* and font, size and colour are stated on each part. */
+
+.pas-overlay {
+  position: fixed; inset: 0; z-index: 10001;
+  background: rgba(8,18,43,0.62);
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  animation: pas-fade .14s ease-out;
+}
+.pas-overlay[hidden] { display: none; }
+@keyframes pas-fade { from { opacity: 0 } to { opacity: 1 } }
+body.pas-lock { overflow: hidden; }
+
+.pas-card {
+  width: 100%; max-width: 400px; max-height: 100%; overflow-y: auto;
+  -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+  background: #fff; color: #08122b; border-radius: 14px;
+  box-shadow: 0 24px 64px rgba(8,18,43,0.45);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  font-size: 16px; line-height: 1.4; text-align: left;
+}
+.pas-card *, .pas-card *::before, .pas-card *::after { box-sizing: border-box; }
+
+.pas-head {
+  position: sticky; top: 0; z-index: 1;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 10px 8px 10px 18px; background: #0b4ea2; color: #fff;
+  border-bottom: 3px solid #c8102e; border-radius: 14px 14px 0 0;
+}
+.pas-title { margin: 0; font: 700 20px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; color: #fff; letter-spacing: 0; text-transform: none; }
+.pas-x {
+  width: 44px; height: 44px; flex: 0 0 44px; margin: 0; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: 0; border-radius: 8px; color: #fff;
+  font: 400 30px/1 Arial, sans-serif; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.pas-x:hover, .pas-x:active { background: rgba(255,255,255,0.18); }
+
+.pas-body { padding: 16px 18px 18px; }
+.pas-lead { margin: 0 0 12px; font-size: 16px; color: #2a3550; text-align: center; }
+
+.pas-qr {
+  width: min(100%, 300px); aspect-ratio: 1 / 1; margin: 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  background: #fff; border: 1px solid #d5dce8; border-radius: 10px; overflow: hidden;
+}
+.pas-qr svg { display: block; width: 100%; height: 100%; }
+.pas-qr-wait { padding: 16px; font-size: 14px; color: #56627a; text-align: center; }
+
+.pas-url { margin: 10px 0 14px; text-align: center; }
+.pas-url-txt {
+  display: inline-block; max-width: 100%; padding: 4px 8px; border-radius: 6px; background: #f2f5fa;
+  font: 500 14px/1.35 ui-monospace, "IBM Plex Mono", Menlo, Consolas, monospace; color: #0b4ea2;
+  word-break: break-all; -webkit-user-select: all; user-select: all;
+}
+
+.pas-row { display: flex; gap: 10px; }
+.pas-row .pas-btn { flex: 1 1 0; }
+.pas-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 48px; margin: 0; padding: 0 14px; border-radius: 10px;
+  border: 2px solid #0b4ea2; background: #0b4ea2; color: #fff;
+  font: 700 16px/1.1 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  letter-spacing: 0; text-transform: none; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.pas-btn svg { width: 20px; height: 20px; flex: 0 0 20px; }
+.pas-btn:active { filter: brightness(0.9); }
+.pas-btn-2 { background: #fff; color: #0b4ea2; }
+.pas-btn[hidden] { display: none; }
+.pas-install { width: 100%; margin-top: 10px; background: #c8102e; border-color: #c8102e; }
+.pas-done { width: 100%; margin-top: 16px; }
+.pas-btn:focus-visible, .pas-x:focus-visible, .pas-more summary:focus-visible { outline: 3px solid #ffb400; outline-offset: 2px; }
+
+.pas-help { margin-top: 16px; border-top: 1px solid #d5dce8; padding-top: 4px; }
+.pas-h { margin: 12px 0 8px; font: 700 17px/1.25 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; color: #08122b; }
+.pas-os { margin: 8px 0; padding: 10px 12px; border-radius: 10px; background: #f2f5fa; }
+.pas-os.here { background: #e6ecf6; border-left: 4px solid #c8102e; }
+.pas-os h4 { margin: 0 0 6px; font: 700 15px/1.25 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; color: #0b4ea2; }
+.pas-here {
+  margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: #0b4ea2; color: #fff;
+  font-size: 11px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; vertical-align: 1px;
+}
+.pas-steps { margin: 0; padding: 0 0 0 22px; }
+.pas-steps li { margin: 3px 0; padding: 0; font-size: 15px; line-height: 1.45; color: #17213a; list-style: decimal; }
+.pas-steps b { color: #08122b; }
+.pas-ico { display: inline-flex; vertical-align: -4px; color: #0b4ea2; }
+.pas-ico svg { width: 18px; height: 18px; }
+.pas-more { margin: 4px 0 0; }
+.pas-more summary { padding: 10px 2px; min-height: 44px; font-size: 15px; font-weight: 600; color: #0b4ea2; cursor: pointer; }
+.pas-note, .pas-warn, .pas-ok { margin: 8px 0; font-size: 15px; color: #2a3550; }
+.pas-warn { padding: 8px 10px; border-radius: 8px; background: #fff4d6; color: #5a4300; }
+.pas-ok { padding: 8px 10px; border-radius: 8px; background: #e3f5e8; color: #135c2b; font-weight: 600; }
+
+.pas-toast {
+  position: fixed; left: 50%; bottom: max(20px, env(safe-area-inset-bottom)); z-index: 10002;
+  transform: translate(-50%, 20px); opacity: 0; pointer-events: none;
+  max-width: calc(100vw - 32px); padding: 12px 18px; border-radius: 10px;
+  background: #06295a; color: #fff; box-shadow: 0 8px 24px rgba(8,18,43,0.35);
+  font: 600 15px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  transition: opacity .18s ease, transform .18s ease;
+}
+.pas-toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+/* Buttons a page puts in its own content (About page). */
+.pas-inline { display: flex; flex-wrap: wrap; gap: 10px; margin: 6px 0 18px; }
+.pas-inline .pas-btn { flex: 1 1 140px; }
+
+@media (prefers-reduced-motion: reduce) { .pas-overlay { animation: none; } .pas-toast { transition: none; } }
