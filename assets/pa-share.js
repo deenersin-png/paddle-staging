@@ -8,7 +8,7 @@
 //    a short line and the link. No share sheet -> the link is copied and a
 //    "Link copied" note shows.
 //  - QR code: a popup with a big QR code of the link (drawn here by
-//    assets/pa-qr.js, no outside service), the link itself, and how to add
+//    assets/pa-qr.js, no outside service), Share / Copy link, and how to add
 //    the app to the home screen on this kind of phone.
 //  - Install app: only where the browser offers its install prompt (Chrome,
 //    Edge, Samsung Internet), never once the app is installed.
@@ -19,10 +19,12 @@
   var me = document.currentScript && document.currentScript.src;
   function asset(name) { return me ? me.replace(/pa-share\.js(\?.*)?$/, name) : 'assets/' + name; }
 
-  // The app's public link = the site folder (this file lives in its assets/).
-  // On the live site that is https://deenersin-png.github.io/septa-scheduler/,
-  // on the test site the paddle-staging one.
-  var LINK = me ? new URL('../', me).href : new URL('./', document.baseURI).href;
+  // The link people get from Share, Copy link and the QR code: always the
+  // live site, tagged so visits from shared links show up in the stats. It
+  // is long, so the popup does not show it (only if copying fails).
+  var LINK = 'https://deenersin-png.github.io/septa-scheduler/?utm_source=app&utm_medium=app&utm_campaign=app';
+  // The site folder this page is served from (for sw.js).
+  var SITE = me ? new URL('../', me).href : new URL('./', document.baseURI).href;
   var TITLE = 'Paddle App';
   var TEXT = 'Free app for SEPTA bus operators: your run, paddles, live buses, detours.';
 
@@ -36,7 +38,7 @@
   // Same worker every page registers (assets/pa-account-ui.js); registering
   // twice is a no-op. It is what makes the app installable.
   if ('serviceWorker' in navigator) {
-    try { navigator.serviceWorker.register(new URL('sw.js', LINK).href).catch(function () {}); } catch (_) {}
+    try { navigator.serviceWorker.register(new URL('sw.js', SITE).href).catch(function () {}); } catch (_) {}
   }
 
   // ---- install state ------------------------------------------------------
@@ -102,6 +104,7 @@
       if (ok) return done();
       // Nothing worked: show the link so it can be copied by hand.
       openQR();
+      overlay.querySelector('.pas-url').hidden = false;
       toast('Press and hold the link to copy it');
     }
     if (navigator.clipboard && window.isSecureContext) {
@@ -195,7 +198,7 @@
         '<div class="pas-body">' +
           '<p class="pas-lead" id="pas-lead">Point a phone camera at the code to open the app.</p>' +
           '<div class="pas-qr" data-pas="qr"></div>' +
-          '<p class="pas-url"><span class="pas-url-txt">' + esc(LINK) + '</span></p>' +
+          '<p class="pas-url" hidden><span class="pas-url-txt">' + esc(LINK) + '</span></p>' +
           '<div class="pas-row">' +
             (navigator.share ? '<button type="button" class="pas-btn" data-pa-share="share">' + SHARE_ICON + '<span>Share link</span></button>' : '') +
             '<button type="button" class="pas-btn' + (navigator.share ? ' pas-btn-2' : '') + '" data-pa-share="copy">' + COPY_ICON + '<span>Copy link</span></button>' +
@@ -242,9 +245,9 @@
     if (!box.firstChild) {
       box.innerHTML = '<span class="pas-qr-wait">Loading…</span>';
       loadQR().then(function () {
-        box.innerHTML = window.PaQR.svg(LINK, { quiet: 4, label: 'QR code for ' + LINK });
+        box.innerHTML = window.PaQR.svg(LINK, { quiet: 4, label: 'QR code that opens Paddle App' });
       }, function () {
-        box.innerHTML = '<span class="pas-qr-wait">QR code could not load. Use the link below.</span>';
+        box.innerHTML = '<span class="pas-qr-wait">QR code could not load. Use Share link or Copy link.</span>';
       });
     }
     showInstall();
