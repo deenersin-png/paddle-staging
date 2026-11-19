@@ -19,11 +19,11 @@
   var me = document.currentScript && document.currentScript.src;
   function asset(name) { return me ? me.replace(/pa-share\.js(\?.*)?$/, name) : 'assets/' + name; }
 
-  // The link people get from Share, Copy link and the QR code: the short
-  // link to the live site (it forwards to .../septa-scheduler/ with the
-  // utm_source=app tags, so shared visits show up in the stats). The popup
-  // does not show it, only if copying fails.
-  var LINK = 'https://bit.ly/4jkDQr8';
+  // The link people get from Share, Copy link and the QR code: the app at
+  // paddleapp.github.io (the mirror of the live site), tagged
+  // utm_source=gg so shared visits show up in the stats. The popup does not
+  // show it, only if copying fails.
+  var LINK = 'https://paddleapp.github.io/?utm_source=gg';
   // The site folder this page is served from (for sw.js).
   var SITE = me ? new URL('../', me).href : new URL('./', document.baseURI).href;
   var TITLE = 'Paddle App';

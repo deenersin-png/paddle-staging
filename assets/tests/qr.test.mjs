@@ -86,6 +86,7 @@ function decode(mx) {
 }
 
 const samples = [
+  'https://paddleapp.github.io/?utm_source=gg',
   'https://bit.ly/4jkDQr8',
   'https://deenersin-png.github.io/septa-scheduler/?utm_source=app&utm_medium=app&utm_campaign=app',
   'https://deenersin-png.github.io/septa-scheduler/',
