@@ -29,6 +29,15 @@
   var TITLE = 'Paddle App';
   var TEXT = 'Free app for SEPTA bus operators: your run, paddles, live buses, detours.';
 
+  // Google Analytics events (the gtag every page loads). Shows in Analytics
+  // under Reports > Engagement > Events: share (method share_sheet or
+  // copy_link), qr_code_open, app_install_prompt (outcome), app_installed.
+  // "place" says where the tap was: menu, popup or page (About).
+  function track(name, params) {
+    try { if (typeof window.gtag === 'function') window.gtag('event', name, params || {}); } catch (_) {}
+  }
+  var place = 'page';
+
   if (!document.querySelector('link[href$="pa-share.css"]')) {
     var css = document.createElement('link');
     css.rel = 'stylesheet';
@@ -57,6 +66,7 @@
     try { localStorage.setItem('pa_installed', '1'); } catch (_) {}
     showInstall();
     toast('Paddle App is installed');
+    track('app_installed');
   });
 
   function installed() {
@@ -82,7 +92,9 @@
   function share() {
     var data = { title: TITLE, text: TEXT, url: LINK };
     if (navigator.share && (!navigator.canShare || navigator.canShare(data))) {
-      return navigator.share(data).catch(function (err) {
+      return navigator.share(data).then(function () {
+        track('share', { method: 'share_sheet', content_type: 'app_link', place: place });
+      }, function (err) {
         if (err && err.name === 'AbortError') return;                     // they closed the share sheet
         return copy();
       });
@@ -91,7 +103,10 @@
   }
 
   function copy() {
-    function done() { toast('Link copied'); }
+    function done() {
+      toast('Link copied');
+      track('share', { method: 'copy_link', content_type: 'app_link', place: place });
+    }
     function old() {
       var ta = document.createElement('textarea');
       ta.value = LINK;
@@ -121,6 +136,7 @@
     prompt = window.__paInstall = null;                                    // a prompt can be used once
     p.prompt();
     return (p.userChoice || Promise.resolve({})).then(function (c) {
+      track('app_install_prompt', { outcome: (c && c.outcome) || 'unknown', place: place });
       if (c && c.outcome === 'accepted') toast('Installing Paddle App…');
       showInstall();
     }, showInstall);
@@ -285,9 +301,10 @@
     e.preventDefault();
     var what = el.getAttribute('data-pa-share');
     if (!overlay || overlay.hidden) opener = el;
+    place = el.closest('.pam-drawer') ? 'menu' : el.closest('.pas-overlay') ? 'popup' : 'page';
     if (what === 'share') share();
     else if (what === 'copy') copy();
-    else if (what === 'qr') openQR();
+    else if (what === 'qr') { openQR(); track('qr_code_open', { place: place }); }
     else if (what === 'install') install();
   });
   // The display mode changes when the page is opened as the installed app.
