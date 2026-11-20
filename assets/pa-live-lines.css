@@ -8,7 +8,7 @@
 .bl-lbl{font-size:14px;font-weight:800;color:var(--blue);letter-spacing:.04em;white-space:nowrap}
 .bl-ends .bl-lbl:first-child{text-align:right;padding-right:10px}
 .bl-ends .bl-lbl:last-child{text-align:left;padding-left:10px}
-.bl-end{font-size:11px;font-weight:700;color:var(--text-dim);text-align:center;line-height:1.2;overflow-wrap:anywhere}
+.bl-end{font-size:12px;font-weight:700;color:var(--text-dim);text-align:center;line-height:1.2;overflow-wrap:anywhere}
 .bl-cols{display:flex;justify-content:center}
 .bl-col{position:relative;flex:1 1 0;min-width:0;display:flex}
 .bl-left{justify-content:flex-end}
@@ -20,7 +20,7 @@
 .bl-dot{stroke:#fff;stroke-width:1.5}
 /* Major stops, between the two lines, at their height on the route. */
 .bl-mid{position:relative;flex:0 0 84px;width:84px}
-.bl-stop{position:absolute;left:0;right:0;transform:translateY(-50%);font-size:10px;font-weight:700;line-height:1.15;color:var(--text-dim);text-align:center;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.bl-stop{position:absolute;left:0;right:0;transform:translateY(-50%);font-size:11px;font-weight:700;line-height:1.15;color:var(--text-dim);text-align:center;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .bl-tags{position:relative;flex:1 1 auto;min-width:0}
 .bl-pill{position:absolute;display:flex;flex-direction:column;gap:3px;padding:0;margin:0;border:0;background:none;font:inherit;cursor:pointer;touch-action:manipulation;white-space:nowrap;max-width:100%}
 .bl-left .bl-pill{right:0;align-items:flex-end}
@@ -28,7 +28,7 @@
 .bl-row1{display:inline-flex;align-items:center;gap:4px;height:24px}
 .bl-pill .at-nth{padding:4px 7px}
 .bl-pill.bl-gray .at-nth{border-style:dashed}
-.bl-blk,.bl-due{display:inline-flex;align-items:center;gap:3px;font-family:var(--mono);font-size:11px;font-weight:700;border-radius:4px;padding:3px 5px;line-height:1.2}
+.bl-blk,.bl-due{display:inline-flex;align-items:center;gap:3px;font-family:var(--mono);font-size:12px;font-weight:700;border-radius:4px;padding:3px 5px;line-height:1.2}
 /* Block number: the app's block-tag teal (pa-tags.css). */
 .bl-blk{background:var(--pa-blk-bg,#00798c);border:1px solid var(--pa-blk-bg,#00798c);color:#fff}
 .bl-blk.none{opacity:.6}
@@ -45,5 +45,5 @@
   .bl-mid{flex-basis:70px;width:70px}
   .bl-row1{gap:3px}
   .bl-pill .at-nth{padding:3px 5px}
-  .bl-blk,.bl-due{font-size:10px;padding:3px 3px}
+  .bl-blk,.bl-due{font-size:11px;padding:3px 3px}
 }

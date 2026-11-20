@@ -275,3 +275,8 @@ header, .header { top: 60px !important; }
 .day-btn.active.weekday { background: #0b4ea2 !important; border-color: #0b4ea2 !important; }
 .day-btn.active.saturday { background: #c8102e !important; border-color: #c8102e !important; }
 .day-btn.active.sunday, .day-btn.active.weekday, .day-btn.active.saturday { color: #ffffff !important; }
+
+/* No zoom on tap (2026-11-20): a double tap no longer zooms the page (and a
+   tap no longer waits for a second one); the viewport's maximum-scale=1 stops
+   iPhone zooming into a text box when it is tapped. */
+html{touch-action:manipulation;-webkit-text-size-adjust:100%;text-size-adjust:100%}

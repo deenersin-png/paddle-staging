@@ -1101,6 +1101,21 @@ header { flex-wrap: wrap !important; }
   box-shadow: 0 4px 14px rgba(8,18,43,.35); pointer-events: none;
 }
 #vtip[hidden] { display: none; }
+/* Readable sizes (2026-11-20): the card's small text grows with the card's
+   width (cqi = 1% of the card), within a min and max, so it is bigger where
+   there is room and nothing wraps on a narrow phone. */
+.stat-label { font-size: clamp(11px, 3cqi, 13px); color: var(--mid); }
+.stat-val { font-size: clamp(17px, 5cqi, 20px); }
+.run-routes { font-size: clamp(11px, 3.4cqi, 14px); }
+.btn-paddle { font-size: clamp(11px, 3cqi, 13px); font-weight: 700; }
+.swing-section { font-size: clamp(12px, 3.4cqi, 14px); }
+.seg-route { font-size: clamp(14px, 4cqi, 16px); font-weight: 700; }
+.seg-sched { font-size: clamp(12px, 3.5cqi, 14px); font-weight: 600; }
+.seg-times { font-size: clamp(12px, 3.6cqi, 15px); font-weight: 600; color: var(--text); }
+.seg-time-tag { font-size: clamp(10px, 3cqi, 12px); }
+.seg-arrow { font-size: clamp(10px, 3cqi, 12px); }
+.seg-block-label { font-size: clamp(10px, 2.8cqi, 12px); }
+.card .pa-run-d { font-size: clamp(10px, 3cqi, 12px); }
 </style>
 <script src="assets/pa-picks.js"></script>
 <script src="assets/pa-menu.js" defer></script>

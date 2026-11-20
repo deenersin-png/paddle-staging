@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <meta name="theme-color" content="#0b4ea2">
@@ -2887,7 +2887,7 @@ const ALL_TRIPS_PAGE = /[?&]view=all(&|$)/.test(location.search);
 // Opening it jumps to now, not to where the browser last left the page.
 if (ALL_TRIPS_PAGE && 'scrollRestoration' in history) history.scrollRestoration = 'manual';
 const VIEW_MODES = ['dir', 'both', 'detours'];
-function savedMode() { if (ALL_TRIPS_PAGE) return 'all'; try { const m = localStorage.getItem('bt_view'); return VIEW_MODES.includes(m) ? m : 'dir'; } catch(e) { return 'dir'; } }
+function savedMode() { if (ALL_TRIPS_PAGE) return 'all'; try { const m = localStorage.getItem('bt_view'); return VIEW_MODES.includes(m) ? m : 'both'; } catch(e) { return 'both'; } }
 function saveMode(m) { if (ALL_TRIPS_PAGE) return; try { localStorage.setItem('bt_view', m); } catch(e) {} }
 const view = { mode: savedMode(), dir: '', follow: false, run: '', blk: '', tsMiss: '', tsPrevRoute: null, tsDay: '', tsDayLoading: false, atDir: '', scrollNow: ALL_TRIPS_PAGE };  // blk / tsMiss / tsPrevRoute: Trip Sheets search (see tripSheetSearch)  // run: All Trips shows only this run (depot|runno); atDir: All Trips shows only this direction ('' = Both)
 let lastCards = [];     // annotated cards of the last render (the route's, or a search's)
