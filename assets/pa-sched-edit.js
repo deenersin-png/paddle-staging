@@ -29,6 +29,7 @@ const cfg = {
   getOverrides: () => ({}),
   onSaved: () => {},
   dayNotes: null,          // (r, run) => [nodes]: vacation / holiday / alternate schedule notes
+  loadUserAlt: null,       // async () => fills what userAlt reads (the vacation calendar waits for it)
   openBulkPage: null       // holddown / slate: their week-by-week page
 };
 export function configure(c) { Object.assign(cfg, c); }
@@ -575,6 +576,7 @@ export async function openVacation() {
   const today = S.todayIso();
   let years = [];
   try { await S.loadSeasons(); years = window.PaPicks && window.PaPicks.loadYears ? await window.PaPicks.loadYears() : []; } catch (_) {}
+  try { if (cfg.loadUserAlt) await cfg.loadUserAlt(); } catch (_) {}
   if (current == null) return;
   const P = window.PaPicks;
   const calYear = y => ({ start: y + '-01-01', last: y + '-12-31', label: String(y), calendar: true });

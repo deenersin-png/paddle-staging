@@ -204,7 +204,7 @@ export function mount(root, opts = {}) {
       if (hours.unknownRun) rc.appendChild(el('span', 'tag amber', 'not in paddle'));
       if (r.vacationWeek && r.source === 'assignment') rc.appendChild(el('span', 'tag amber', 'in vacation week'));
       if (opts.dayInfo && hours.working) {
-        const inf = opts.dayInfo(r.date, run && run.pieces ? run.pieces.map(p => p.routeLabel) : null);
+        const inf = opts.dayInfo(r.date, run && run.pieces ? run.pieces.concat(run.shortRun && run.shortRun.pieces || []).map(p => p.routeLabel) : null);
         if (inf && inf.alt) rc.appendChild(el('span', 'tag red', 'alt schedule · check'));
       }
       const rowSeason = S.seasonFor(st.seasons, r.date);

@@ -99,6 +99,15 @@ function css() {
   .pa-cal-sun:disabled{opacity:.25;cursor:default}
   .pa-cal-row.on .pa-cal-sun{background:var(--pa-amber);border-color:var(--pa-amber);color:var(--pa-ink)}
   .pa-cal-row.on .pa-cal-d{color:var(--pa-amber)}
+  .pa-cal-d.hol,.pa-cal-sun.hol{background:#e3f4e9;color:#12753a;font-weight:700;border-radius:6px;box-shadow:inset 0 -3px 0 #12753a}
+  .pa-cal-d.alt,.pa-cal-sun.alt{background:#fde8eb;color:#c8102e;font-weight:700;border-radius:6px;box-shadow:inset 0 -3px 0 #c8102e}
+  .pa-cal-d.hol.alt,.pa-cal-sun.hol.alt{background:linear-gradient(135deg,#e3f4e9 50%,#fde8eb 50%);box-shadow:inset 0 -3px 0 #c8102e}
+  .pa-cal-legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin-top:8px;font-family:var(--pa-sans);font-size:13px;color:var(--pa-mid)}
+  .pa-cal-legend span{display:inline-flex;align-items:center;gap:5px}
+  .pa-cal-legend span::before{content:"";width:12px;height:12px;border-radius:3px}
+  .pa-cal-legend span.hol::before{background:#e3f4e9;box-shadow:inset 0 -3px 0 #12753a}
+  .pa-cal-legend span.alt::before{background:#fde8eb;box-shadow:inset 0 -3px 0 #c8102e}
+  .pa-cal-legend a{margin-left:auto;color:var(--pa-blue,#0b4ea2);font-weight:600}
   .pa-su-nav{display:flex;gap:8px;margin-top:18px}
   .pa-su-nav .pa-submit{margin-top:0}
   .pa-su-nav .pa-ghost{width:auto;flex:0 0 auto;padding-left:18px;padding-right:18px}
@@ -678,8 +687,31 @@ const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'Ju
  *                  vacation is picked for the whole year, not for one pick)
  * @returns { redraw }
  */
-export function weekCalendar(node, { today, selected, onToggle, from, to, start, marks }) {
+// Official SEPTA holidays (the same data as the Holidays page, PaHoliday):
+// a day on the Sunday (or Saturday) schedule is marked for everyone. An
+// alternate schedule is marked only by a caller that knows the user's runs
+// (dayMark), because it only matters when the user's own route runs it.
+let holData = null, holLoading = null;
+let userAltFn = null;
+/** My Run tells every calendar which days the user's own run is on an alternate schedule. */
+export function setUserAlt(fn) { userAltFn = fn; }
+function officialMark(iso) {
+  const H = window.PaHoliday;
+  if (!H || !holData) return null;
+  const i = H.info(iso, [], holData);
+  return i.changed ? { cls: 'hol', title: (i.name || 'Holiday') + ': SEPTA runs the ' + i.dayLabel + ' schedule' } : null;
+}
+/** Marks for a day: { cls: 'hol' | 'alt' | 'hol alt', title } or null. */
+export function holidayMark(iso, userAlt) {
+  const m = officialMark(iso);
+  const a = userAlt ? userAlt(iso) : null;
+  if (!a) return m;
+  return { cls: (m ? 'hol ' : '') + 'alt', title: (m ? m.title + '. ' : '') + a };
+}
+
+export function weekCalendar(node, { today, selected, onToggle, from, to, start, marks, dayMark }) {
   css();
+  const markOf = iso => (dayMark ? dayMark(iso) : holidayMark(iso, userAltFn));
   const first = iso => iso.slice(0, 8) + '01';
   const monthOf = iso => iso.slice(0, 7);
   const shift = (iso, months) => {
@@ -728,7 +760,9 @@ export function weekCalendar(node, { today, selected, onToggle, from, to, start,
         const num = String(+date.slice(8, 10));
         const outside = monthOf(date) !== month;
         if (i === 0) {
-          const b = el('button', 'pa-cal-sun' + (outside ? ' out' : '') + (date === today ? ' today' : ''), num);
+          const hm = markOf(date);
+          const b = el('button', 'pa-cal-sun' + (outside ? ' out' : '') + (date === today ? ' today' : '') + (hm ? ' ' + hm.cls : ''), num);
+          if (hm) b.title = hm.title;
           b.type = 'button';
           b.disabled = ws < S.weekStartOf(lo) || ws > hi;
           b.setAttribute('aria-pressed', on ? 'true' : 'false');
@@ -736,15 +770,33 @@ export function weekCalendar(node, { today, selected, onToggle, from, to, start,
           b.addEventListener('click', () => onToggle(ws));
           row.appendChild(b);
         } else {
-          row.appendChild(el('div', 'pa-cal-d' + (outside ? ' out' : '') + (date === today ? ' today' : ''), num));
+          const hm = markOf(date);
+          const c = el('div', 'pa-cal-d' + (outside ? ' out' : '') + (date === today ? ' today' : '') + (hm ? ' ' + hm.cls : ''), num);
+          if (hm) { c.title = hm.title; c.setAttribute('aria-label', num + ', ' + hm.title); }
+          row.appendChild(c);
         }
       }
       cal.appendChild(row);
+    }
+    // Legend, only when the month has a marked day.
+    const days = [...cal.querySelectorAll('.hol,.alt')].filter(n => !n.classList.contains('out'));
+    if (days.length) {
+      const lg = el('div', 'pa-cal-legend');
+      if (days.some(n => n.classList.contains('hol'))) lg.appendChild(el('span', 'hol', 'SEPTA holiday · Sunday schedule'));
+      if (days.some(n => n.classList.contains('alt'))) lg.appendChild(el('span', 'alt', 'Alternate schedule on your route'));
+      const a = el('a', null, 'All holidays'); a.href = 'holidays.html';
+      lg.appendChild(a);
+      cal.appendChild(lg);
     }
     node.appendChild(cal);
   }
 
   draw();
+  // The holiday data comes from SEPTA's calendar; draw again once it is here.
+  if (!holData && window.PaHoliday) {
+    if (!holLoading) holLoading = window.PaHoliday.load().then(d => { holData = d; return d; }).catch(() => null);
+    holLoading.then(d => { if (d && node.isConnected) draw(); });
+  }
   return { redraw: draw };
 }
 

@@ -399,6 +399,38 @@ const week = HV.mount($('sch-week'), {
   hint: scheduleGuide()
 });
 
+// The routes a day's run (and its short run) drives, as the Holidays page names them.
+const runRoutes = run => run && run.pieces ? run.pieces.concat(run.shortRun && run.shortRun.pieces || []).map(p => p.routeLabel) : [];
+
+// Official SEPTA holidays (the Holidays page's data) on the user's calendars:
+// a Sunday-schedule holiday is everyone's; an ALTERNATE schedule is only the
+// user's when the run they work that day is on one of its routes - for
+// everybody else the day is a regular one. userAlt: iso -> note text or ''.
+const userAlt = new Map();
+let userAltBusy = null;
+function loadUserAlt() {
+  if (userAltBusy) return userAltBusy;
+  userAltBusy = (async () => {
+    const H = window.PaHoliday;
+    if (!H || !ctx.profile) return;
+    if (!ctx.hol) ctx.hol = await H.load();
+    const from = S.addDays(S.todayIso(), -400), to = S.addDays(S.todayIso(), 800);
+    const dates = Object.keys(ctx.hol.days || {}).filter(iso => ctx.hol.days[iso].alt && iso >= from && iso <= to);
+    await Promise.all(dates.map(async iso => {
+      const r = A.resolve(iso, ctx.overrides);
+      const run = r.off || r.unregistered ? null : await runFor(r, iso).catch(() => null);
+      const inf = run ? H.info(iso, runRoutes(run), ctx.hol) : null;
+      userAlt.set(iso, inf && inf.alt
+        ? 'SEPTA runs an alternate ' + inf.dayLabel.toLowerCase() + ' schedule on your route' + (inf.altRoutes.length === 1 ? ' ' : 's ') + inf.altRoutes.join(', ')
+        : '');
+    }));
+  })().catch(() => {});
+  return userAltBusy;
+}
+// A schedule change (run swapped, day off...) can change whose route is alternate.
+function resetUserAlt() { userAlt.clear(); userAltBusy = null; }
+SU.setUserAlt(iso => userAlt.get(iso) || null);
+
 // Notes above a day's fields: vacation week, holiday, alternate schedule.
 function dayNotes(r) {
   const out = [];
@@ -406,18 +438,25 @@ function dayNotes(r) {
   if (r.holidayDate || (inf && inf.changed)) {
     out.push(SE.note((inf && inf.name ? inf.name + ': ' : 'Holiday: ') + (inf ? inf.dayLabel : 'Sunday') + ' schedule. Check the run and the holiday pay.'));
   }
-  if (inf && inf.alt) {
-    const n = inf.altRoutes.length;
-    out.push(SE.note((inf.name ? inf.name + ': ' : '') + 'SEPTA runs an alternate ' + inf.dayLabel.toLowerCase() + ' schedule on '
-      + (n > 6 ? n + ' routes' : 'route' + (n === 1 ? ' ' : 's ') + inf.altRoutes.join(', '))
-      + '. There is no paddle for it, so check the run and the hours.', 'alt'));
+  if (inf && inf.alt && !r.off && !r.unregistered) {
+    // Only when this day's run is on one of the alternate routes; filled in
+    // once the run's routes are known.
+    const slot = document.createElement('div');
+    out.push(slot);
+    runFor(r, r.date).catch(() => null).then(run => {
+      const mine = run ? holidayInfo(r.date, runRoutes(run)) : null;
+      if (!mine || !mine.alt || !slot.isConnected) { slot.remove(); return; }
+      slot.replaceWith(SE.note((mine.name ? mine.name + ': ' : '') + 'SEPTA runs an alternate ' + mine.dayLabel.toLowerCase()
+        + ' schedule on your route' + (mine.altRoutes.length === 1 ? ' ' : 's ') + mine.altRoutes.join(', ')
+        + '. There is no paddle for it, so check the run and the hours.', 'alt'));
+    });
   }
   return out;
 }
 SE.configure({
   getProfile: () => ctx.profile, getOverrides: () => ctx.overrides,
-  onSaved: () => { refreshToday(); redrawScheduleViews(); },
-  dayNotes, openBulkPage: () => setView('bulk')
+  onSaved: () => { resetUserAlt(); refreshToday(); redrawScheduleViews(); },
+  dayNotes, loadUserAlt, openBulkPage: () => setView('bulk')
 });
 if (window.PaHoliday) window.PaHoliday.load().then(d => { ctx.hol = d; if (ctx.view === 'schedule') week.render(); }).catch(() => {});
 
@@ -1353,7 +1392,10 @@ function renderSchedule() {
   if (!ctx.profile) return;
   const form = $('sch-form'); form.textContent = '';
   if (ctx.profile.driverType === 'regular') renderRegularForm(form); else renderWeekForm(form);
-  SU.renderVacationCard($('sch-vacation'), { onChange: () => renderSchedule() });
+  const vacCard = () => SU.renderVacationCard($('sch-vacation'), { onChange: () => { resetUserAlt(); renderSchedule(); } });
+  vacCard();
+  // Alternate-schedule days on the user's own routes, once the runs are looked up.
+  if (!userAltBusy) loadUserAlt().then(() => { if (ctx.view === 'bulk' && [...userAlt.values()].some(Boolean)) vacCard(); });
   renderUpcoming();
 }
 
@@ -1771,7 +1813,7 @@ async function renderUpcoming() {
 // ---- edit sheet (shared module) ------------------------------------------
 
 function openEdit(r) {
-  E.configure({ profile: ctx.profile, onSaved: () => { refreshToday(); redrawScheduleViews(); }, dayNotes });
+  E.configure({ profile: ctx.profile, onSaved: () => { resetUserAlt(); refreshToday(); redrawScheduleViews(); }, dayNotes });
   E.openEdit(r);
 }
 
