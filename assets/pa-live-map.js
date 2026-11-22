@@ -16,7 +16,7 @@ import { loadLeaflet, TILES, TILES_ATTR } from './pa-lf-view.js';
 import { loadShapes } from './pa-lf-feed.js';
 import { dirOf } from './pa-lf.js';
 
-const DOT = { green: '#1f8a4c', red: '#c8102e', yellow: '#f2b705', lay: '#6a3fc1', gray: '#8a909f' };
+const DOT = { green: '#1f8a4c', red: '#c8102e', yellow: '#f2b705', lay: '#6a3fc1', from: '#1565c0', gray: '#8a909f' };
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const normName = s => String(s || '').toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]/g, '');
 // The app's own bus (the picture next to the menu button).
@@ -57,7 +57,7 @@ function markerOf(it, line, shapes) {
   let ll = null, est = false;
   const lat = parseFloat(it.lat), lng = parseFloat(it.lng);
   if (isFinite(lat) && isFinite(lng) && lat && lng) ll = [lat, lng];
-  else if (it.cls === 'lay') { ll = stopNamed(shapes, it.layStop) || (line && line.pts[0]); est = true; }
+  else if (it.cls === 'lay' || it.cls === 'from') { ll = stopNamed(shapes, it.layStop) || (line && line.pts[0]); est = true; }
   else if (it.cls === 'gray' && line && it.s != null && it.e != null && it.e > it.s) {
     // Not on the feed: where the timetable says it should be.
     const f = Math.max(0, Math.min(1, (it.nowMin - it.s) / (it.e - it.s)));
@@ -149,7 +149,8 @@ export function createLiveMap() {
     layout();
     const nGray = items.filter(x => x.cls === 'gray').length;
     noteEl.textContent = (nGray ? 'Gray = not on the live feed, shown where the timetable puts it. ' : '') +
-      'Purple = layover at the terminal.' + (missing ? ' ' + missing + ' bus' + (missing > 1 ? 'es' : '') + ' without a position not shown.' : '');
+      'Purple = layover at the terminal.' +
+      (items.some(x => x.cls === 'from') ? ' Blue = done on another route, waiting at its first stop here.' : '') + (missing ? ' ' + missing + ' bus' + (missing > 1 ? 'es' : '') + ' without a position not shown.' : '');
   }
 
   return {

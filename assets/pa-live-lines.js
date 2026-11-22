@@ -28,7 +28,7 @@ export { loadShapes } from './pa-lf-feed.js';
 
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const normName = s => String(s || '').toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]/g, '');
-const DOT = { green: '#1f8a4c', red: '#c8102e', yellow: '#f2b705', lay: '#6a3fc1', gray: '#8a909f' };
+const DOT = { green: '#1f8a4c', red: '#c8102e', yellow: '#f2b705', lay: '#6a3fc1', from: '#1565c0', gray: '#8a909f' };
 const clamp01 = x => Math.max(0, Math.min(1, x));
 
 const PILL_H = 24;   // px, one row of a tag
@@ -187,7 +187,9 @@ function columnHtml(col, ruler, shapes, nowMin, H, side, stops) {
     // The block number, always shown (bus, run and place: tap the tag).
     const blk = '<span class="bl-blk' + (it.blk ? '' : ' none') + '">' + esc(it.blk || '—') + '</span>';
     const row = '<span class="bl-row1">' + (side === 'left' ? blk + tag : tag + blk) + '</span>';
-    const due = it.layover ? '<span class="bl-due">⚓ <span data-due-ms="' + esc(it.dueMs) + '">' + esc(it.dueTxt) + '</span></span>' : '';
+    // Came over from another route: its departure time here, no countdown.
+    const due = it.depTxt ? '<span class="bl-due">' + esc(it.depTxt) + '</span>'
+      : it.layover ? '<span class="bl-due">⚓ <span data-due-ms="' + esc(it.dueMs) + '">' + esc(it.dueTxt) + '</span></span>' : '';
     pills += '<button type="button" class="bl-pill bl-' + esc(it.cls) + '" style="top:' + tops[i].toFixed(1) + 'px" data-tip="' + esc(it.tip) + '">' + row + due + '</button>';
   });
   svg += '</svg>';

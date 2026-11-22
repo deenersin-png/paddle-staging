@@ -34,6 +34,7 @@
 .bl-blk.none{opacity:.6}
 .bl-due{color:#6a3fc1;background:var(--card);border:1px solid #6a3fc1;height:17px;padding:0 5px}
 .bl-due:has(.late){color:#c8102e;border-color:#c8102e}
+.bl-from .bl-due{color:#1565c0;border-color:#1565c0}
 /* The bottom bar's fourth button: two vertical lines. */
 .page-dot.both-dot{flex:0 0 46px}
 .page-dot.both-dot svg{width:18px;height:18px;display:block}

@@ -25,9 +25,12 @@
 .at-nth.yellow{background:#f2b705;border-color:#f2b705;color:#1a1300}
 .at-nth.gray{background:#8a909f;border-color:#8a909f}
 .at-nth.lay{background:#6a3fc1;border-color:#6a3fc1}
+/* In from another route (done on 21, next trip on 38): blue. */
+.at-nth.from{background:#1565c0;border-color:#1565c0}
 .at-next{margin-left:auto;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex-shrink:0;font-family:var(--mono);font-size:13px;font-weight:700}
 .at-due{font-variant-numeric:tabular-nums;color:#6a3fc1}
 .at-due.late{color:#c8102e}
+.at-dep{color:#1565c0}
 .at-arrow{color:var(--mid)}
 /* Arrows drawn like the layover anchor: same blue, same weight. */
 .at-ico{color:#1565c0;font-weight:800;font-size:15px;line-height:1}
@@ -43,6 +46,7 @@
 .at-list .prc.at-done{opacity:.45;filter:grayscale(1)}
 .at-loc{display:flex;align-items:center;gap:8px;padding:6px 12px;border-top:1px solid var(--line);background:var(--ink3);font-size:13px;font-weight:600;color:var(--bright);min-width:0}
 .at-loc .at-loc-txt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.at-loc.from{background:rgba(21,101,192,0.08);color:#1565c0}
 .at-loc .late-tag{font-size:11px;padding:2px 6px;flex-shrink:0}
 .at-trips{display:flex;align-items:center;gap:8px;padding:7px 12px;border-top:1px solid var(--line);font-family:var(--mono);font-size:13px;font-weight:700;color:var(--bright);flex-wrap:wrap}
 .at-dir{padding:2px 7px;border-radius:3px;background:rgba(77,159,255,.12);color:var(--blue);white-space:nowrap}
