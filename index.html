@@ -1508,7 +1508,10 @@ function initializeDistricts() {
     const shared = OLDER_PICKS && !ONE_PICK ? null : districtByLabel(sharedDepot());
     const saved = localStorage.getItem(DEPOT_KEY + STATE.currentSeason);
     const validSaved = STATE.manifest.districts.find(d => d.name === saved);
-    select.value = shared ? shared.name : validSaved ? saved : STATE.manifest.districts[0].name;
+    // Alternates: its own last depot wins (survives a refresh); the app-wide
+    // depot is only the first-visit default.
+    select.value = ALT_MODE && validSaved ? saved
+      : shared ? shared.name : validSaved ? saved : STATE.manifest.districts[0].name;
     changeDistrict();
   }
 }
@@ -1523,7 +1526,7 @@ function districtByLabel(label) {
   return STATE.manifest.districts.find(d => (d.label || d.name) === label) || null;
 }
 function followSharedDepot() {
-  if (OLDER_PICKS) return;
+  if (NOT_REGULAR) return;
   const d = districtByLabel(sharedDepot());
   const select = document.getElementById('district-select');
   if (d && select.value !== d.name) { select.value = d.name; changeDistrict(); }
