@@ -149,6 +149,7 @@
    * opts.curDay  the day the page shows ('Weekday'...), so a button to the
    *              right one only shows when it is not on it
    * opts.liveHref  where "Open Live" goes
+   * opts.altHref   the depot's alternate paddles in the app (Alternates page), if any
    * opts.next    special days after it (tomorrow's) - one line each under the banner
    * opts.listHref  the Holidays page ("All holidays" link)
    */
@@ -167,8 +168,10 @@
     if (i.alt) {
       body += (i.changed ? ' On ' + esc(routesText(i)) + ' it is an <b>alternate timetable</b>.'
         : 'SEPTA runs an <b>alternate ' + esc(i.dayLabel) + ' schedule</b> ' + when + ' on ' + esc(routesText(i)) + '.');
-      body += ' <b>Its paddles are not available</b>, so the info here is limited: run times, reports and pull-outs are from the regular '
-        + esc(i.dayLabel) + ' paddles and may not match.';
+      body += o.altHref
+        ? ' Its runs are on the <b>Alternates</b> page; the runs here are the regular ' + esc(i.dayLabel) + ' paddles and may not match.'
+        : ' <b>Its paddles are not available</b>, so the info here is limited: run times, reports and pull-outs are from the regular '
+          + esc(i.dayLabel) + ' paddles and may not match.';
       body += o.page === 'live'
         ? (tm ? '' : ' The trips and buses here are SEPTA\'s live data for today.')
         : (tm ? ' On the day, Live and Trip Sheets show its real trips from SEPTA\'s live data.'
@@ -176,6 +179,7 @@
     }
     if (o.page === 'paddles') {
       if (o.curDay && o.curDay !== i.dayLabel) btn += '<button type="button" class="pa-hol-btn" data-pa-hol-day="' + esc(i.dayLabel) + '">Show ' + esc(i.dayLabel) + ' runs</button>';
+      if (i.alt && o.altHref) btn += '<a class="pa-hol-btn" href="' + esc(o.altHref) + '">Alternate paddles</a>';
       if (i.alt && !tm) btn += '<a class="pa-hol-btn" href="' + esc(o.liveHref || 'block-tracker.html') + '">Open Live</a>';
     }
     if (o.listHref) btn += '<a class="pa-hol-btn pa-hol-btn2" href="' + esc(o.listHref) + '">All holidays</a>';

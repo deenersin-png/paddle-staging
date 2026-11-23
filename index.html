@@ -1485,6 +1485,7 @@ async function changeSeason() {
     }
     if (!response.ok) throw new Error('Manifest not found');
     STATE.manifest = await response.json();
+    if (!NOT_REGULAR) loadAltLabels(season);
     initializeDistricts();
   } catch (e) {
     document.getElementById('grid').innerHTML = `<div class="error">Error loading districts: ${e.message}</div>`;
@@ -1678,6 +1679,20 @@ function sheetNotices() {
   const t = PaHoliday.todayIso();
   return (OT_DATA.notices || []).filter(n => n.iso === t);
 }
+// Depots that have alternate paddles in the app (the Alternates page's manifest),
+// by label. Their "Use Alternate Paddles" button and the alternate schedule
+// banner open index.html?alt=1 instead of SEPTA's picking page.
+let ALT_LABELS = new Set();
+function loadAltLabels(season) {
+  fetch('data/' + season.manifest.replace(/^manifest[-_]/, 'manifest-alternate-'))
+    .then(r => r.ok ? r.json() : { districts: [] })
+    .then(m => { ALT_LABELS = new Set((m.districts || []).map(d => d.label || d.name)); renderHoliday(); renderOvertime(); })
+    .catch(() => {});
+}
+function depotHasAlternates() {
+  const d = STATE.manifest && (STATE.manifest.districts || []).find(x => x.name === STATE.currentDistrict);
+  return !!d && ALT_LABELS.has(d.label || d.name);
+}
 function renderHoliday() {
   const el = document.getElementById('pa-holiday');
   if (!el) return;
@@ -1687,7 +1702,8 @@ function renderHoliday() {
     const today = PaHoliday.todayIso();
     const ti = PaHoliday.info(today, routes, HOLIDAY_DATA);
     const tmr = PaHoliday.info(PaHoliday.addDays(today, 1), routes, HOLIDAY_DATA);
-    const opts = { page: 'paddles', curDay: STATE.currentDay, liveHref: 'block-tracker.html', listHref: 'holidays.html' };
+    const opts = { page: 'paddles', curDay: STATE.currentDay, liveHref: 'block-tracker.html', listHref: 'holidays.html',
+                   altHref: depotHasAlternates() ? 'index.html?alt=1' : '' };
     // A date on the sheet's H-K columns has its own button under the day
     // tags (renderOvertime) - no second banner for it here.
     if (PaHoliday.isSpecial(ti) && !sheetNotices().length) html = PaHoliday.noticeHtml(ti, Object.assign(opts, { next: [tmr] }));
@@ -1734,7 +1750,11 @@ function renderOvertime() {
       return '<button type="button" class="pa-ot-btn pa-ot-sun" data-pa-hol-day="Sunday"><b>' + esc(name + ' · ' + n.title) + '</b>'
         + '<small>' + esc('Today, ' + when(n.iso) + ': SEPTA runs the Sunday schedule' + tap) + '</small></button>';
     }
-    // The alternate paddles are not in the app: they are on SEPTA's picking page.
+    // Depots with alternates in the app: the Alternates page. Others: SEPTA's picking page.
+    if (depotHasAlternates()) {
+      return '<a class="pa-ot-btn pa-ot-alt" href="index.html?alt=1"><b>' + esc(name + ' · ' + n.title) + '</b>'
+        + '<small>Today, ' + esc(when(n.iso)) + ' · Tap for the alternate paddles</small></a>';
+    }
     return '<a class="pa-ot-btn pa-ot-alt" href="https://www4.septa.org/picking/" target="_blank" rel="noopener"><b>' + esc(name + ' · ' + n.title) + '</b>'
       + '<small>Not available on Paddle App · Tap to check on SEPTA\'s page</small></a>';
   }).join('');
