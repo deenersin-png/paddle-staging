@@ -1,0 +1,40 @@
+{
+  "note": "Alternate schedule paddles (SEPTA alternate runcuts), shown on index.html?alt=1 only. Same labels as manifest-fall-2026.json so the app-wide depot carries over.",
+  "districts": [
+    {
+      "name": "callowhillb-alt-fall-2026",
+      "label": "Callowhill Bus",
+      "days": ["Alternate"]
+    },
+    {
+      "name": "frankford-rail-alt-fall-2026",
+      "label": "Frankford Rail",
+      "days": ["Alternate"]
+    },
+    {
+      "name": "midvale-alt-fall-2026",
+      "label": "Midvale",
+      "days": ["Alternate"]
+    },
+    {
+      "name": "allegheny-alt-fall-2026",
+      "label": "Allegheny",
+      "days": ["Alternate"]
+    },
+    {
+      "name": "southern-alt-fall-2026",
+      "label": "Southern",
+      "days": ["Alternate"]
+    },
+    {
+      "name": "comly-alt-fall-2026",
+      "label": "Comly",
+      "days": ["Alternate"]
+    },
+    {
+      "name": "frankfordb-alt-fall-2026",
+      "label": "Frankford Bus",
+      "days": ["Alternate"]
+    }
+  ]
+}

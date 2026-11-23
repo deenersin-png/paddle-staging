@@ -1003,6 +1003,11 @@ body.older-pick .hd-season-select {
   border-radius: 6px; padding: 4px 6px !important; font-weight: 700;
 }
 body.older-pick .hd-dot { display: none; }
+/* Alternates (index.html?alt=1): SEPTA's alternate schedule paddles, orange so
+   nobody takes them for the regular ones. */
+body.alt-pick .older-banner { background: #ff8a00; color: #2b1400; border-bottom-color: #06295a; }
+body.alt-pick header { background: #fff0dc !important; border-bottom: 3px solid #ff8a00 !important; }
+body.alt-pick .hd-dot { display: none; }
 
 /* Day buttons in capitals: SUNDAY (86) / WEEKDAY (184) / SATURDAY (118). */
 .day-btn { text-transform: uppercase; letter-spacing: .03em; }
@@ -1223,6 +1228,14 @@ let SEASONS = [];          // newest first, filled in by initSeasons()
 const PICK_PARAM = (new URLSearchParams(location.search).get('pick') || '').toLowerCase();
 const OLDER_PICKS = !!PICK_PARAM;
 const ONE_PICK = PICK_PARAM && PICK_PARAM !== 'older' ? PICK_PARAM : '';
+// ALTERNATES (index.html?alt=1, menu: "Alternates"): the current pick's
+// alternate schedule paddles, read from data/manifest-alternate-<pick>.json
+// (one "Alternate" day per depot, same depot labels as the regular manifest).
+// Works like Paddles, but: orange banner, its own saved depot, never changes
+// the app-wide depot (bt_depot), no holiday / overtime notices.
+const ALT_MODE = !OLDER_PICKS && new URLSearchParams(location.search).get('alt') === '1';
+const NOT_REGULAR = OLDER_PICKS || ALT_MODE;
+const DEPOT_KEY = ALT_MODE ? 'paddleAltDepot_' : 'paddleDepot_';
 let CURRENT_SEASON = null;
 let PAGE_SEASONS = [];
 
@@ -1419,6 +1432,14 @@ async function initSeasons() {
     document.getElementById('older-banner').hidden = false;
     document.getElementById('older-banner-cur').textContent = ' ' + CURRENT_SEASON.label;
   }
+  if (ALT_MODE) {
+    document.body.classList.add('alt-pick');
+    document.getElementById('older-banner').hidden = false;
+    document.querySelector('.older-banner-txt').innerHTML = '<b>ALTERNATE PADDLES</b> &mdash; '
+      + PaTags.esc(CURRENT_SEASON.label) + ' alternate schedule runs, only for the days SEPTA runs the alternate schedule.';
+    document.querySelector('.older-banner-back').textContent = 'Back to regular paddles';
+    document.title = 'Alternate Paddles';
+  }
 
   // The older page keeps its own choice, so the rest of the app (My Run,
   // Trip Sheets, account sync - all read paddleSeason) stays on the current pick.
@@ -1433,7 +1454,7 @@ async function changeSeason() {
   const select = document.getElementById('season-select');
   const season = PAGE_SEASONS.find(s => s.id === select.value) || PAGE_SEASONS[0];
   STATE.currentSeason = season.id;
-  if (!ONE_PICK) try {
+  if (!ONE_PICK && !ALT_MODE) try {
     const key = OLDER_PICKS ? 'paddleOldSeason' : 'paddleSeason';
     if (localStorage.getItem(key) !== season.id) localStorage.setItem(key, season.id);
   } catch (_) {}
@@ -1441,6 +1462,7 @@ async function changeSeason() {
   // A pick after the current one is an upcoming pick, not an older one.
   const upcoming = OLDER_PICKS && season.startDate > CURRENT_SEASON.startDate;
   if (OLDER_PICKS) document.documentElement.dataset.paPickOld = upcoming ? 'new' : '1';
+  if (ALT_MODE) document.documentElement.dataset.paPickOld = 'alt';
   const bn = document.getElementById('older-banner-pick');
   if (bn) bn.textContent = season.label;
   const bk = document.getElementById('older-banner-kind');
@@ -1448,7 +1470,13 @@ async function changeSeason() {
   window.dispatchEvent(new CustomEvent('pa:pick'));
 
   try {
-    const response = await fetch('data/' + season.manifest);
+    const manifestFile = ALT_MODE ? season.manifest.replace(/^manifest[-_]/, 'manifest-alternate-') : season.manifest;
+    const response = await fetch('data/' + manifestFile);
+    if (response.status === 404 && ALT_MODE) {
+      document.getElementById('district-select').innerHTML = '<option>No alternate paddles</option>';
+      document.getElementById('grid').innerHTML = `<div class="error">No alternate paddles for ${PaTags.esc(season.label)} in the app.</div>`;
+      return;
+    }
     if (response.status === 404) {
       // An upcoming pick before SEPTA's paddles for it are in the app.
       document.getElementById('district-select').innerHTML = '<option>No paddles yet</option>';
@@ -1477,7 +1505,7 @@ function initializeDistricts() {
     // Sheets) wins; older picks keep their own per-pick choice.
     // An upcoming pick opens on the app-wide depot too, without changing it.
     const shared = OLDER_PICKS && !ONE_PICK ? null : districtByLabel(sharedDepot());
-    const saved = localStorage.getItem('paddleDepot_' + STATE.currentSeason);
+    const saved = localStorage.getItem(DEPOT_KEY + STATE.currentSeason);
     const validSaved = STATE.manifest.districts.find(d => d.name === saved);
     select.value = shared ? shared.name : validSaved ? saved : STATE.manifest.districts[0].name;
     changeDistrict();
@@ -1517,10 +1545,10 @@ async function changeDistrict() {
   if (!STATE.currentDistrict) return;
   // Write only real changes: every write counts as "changed on this device
   // just now" for the account sync (pa-store.js), and must not on page load.
-  if (localStorage.getItem('paddleDepot_' + STATE.currentSeason) !== STATE.currentDistrict) {
-    localStorage.setItem('paddleDepot_' + STATE.currentSeason, STATE.currentDistrict);
+  if (localStorage.getItem(DEPOT_KEY + STATE.currentSeason) !== STATE.currentDistrict) {
+    localStorage.setItem(DEPOT_KEY + STATE.currentSeason, STATE.currentDistrict);
   }
-  if (!OLDER_PICKS) {
+  if (!NOT_REGULAR) {
     const d = STATE.manifest.districts.find(x => x.name === STATE.currentDistrict);
     const label = d && (d.label || d.name);
     if (label && sharedDepot() !== label) { try { localStorage.setItem('bt_depot', label); } catch (_) {} }
@@ -1646,7 +1674,7 @@ function startDay() {
 function chooseDay(day) { DAY_CHOSEN = true; changeDay(day); }
 // Today's notices from the overtime sheet's Dates tab (columns H-K).
 function sheetNotices() {
-  if (!OT_DATA || OLDER_PICKS) return [];
+  if (!OT_DATA || NOT_REGULAR) return [];
   const t = PaHoliday.todayIso();
   return (OT_DATA.notices || []).filter(n => n.iso === t);
 }
@@ -1654,7 +1682,7 @@ function renderHoliday() {
   const el = document.getElementById('pa-holiday');
   if (!el) return;
   let html = '';
-  if (HOLIDAY_DATA && !OLDER_PICKS && STATE.runs.length) {
+  if (HOLIDAY_DATA && !NOT_REGULAR && STATE.runs.length) {
     const routes = [...new Set(STATE.runs.flatMap(getRunRoutes))];
     const today = PaHoliday.todayIso();
     const ti = PaHoliday.info(today, routes, HOLIDAY_DATA);
@@ -1688,7 +1716,7 @@ function renderDayTags() {
 // time is checked every minute.
 var OT_DATA = null;   // var: renderHoliday may read it before this line runs
 function loadOvertime(force) {
-  if (OLDER_PICKS || !window.PaOvertime) return;
+  if (NOT_REGULAR || !window.PaOvertime) return;
   PaOvertime.load({ force }).then(d => { OT_DATA = d; applyTodayLabel(); renderOvertime(); renderHoliday(); }).catch(() => {});
 }
 function renderOvertime() {
@@ -1710,7 +1738,7 @@ function renderOvertime() {
     return '<a class="pa-ot-btn pa-ot-alt" href="https://www4.septa.org/picking/" target="_blank" rel="noopener"><b>' + esc(name + ' · ' + n.title) + '</b>'
       + '<small>Not available on Paddle App · Tap to check on SEPTA\'s page</small></a>';
   }).join('');
-  const d = OT_DATA && !OLDER_PICKS && STATE.manifest && (STATE.manifest.districts || []).find(x => x.name === STATE.currentDistrict);
+  const d = OT_DATA && !NOT_REGULAR && STATE.manifest && (STATE.manifest.districts || []).find(x => x.name === STATE.currentDistrict);
   if (d) {
     const label = d.label || d.name, prev = PaOvertime.preview();
     const mine = OT_DATA.entries.filter(e => PaOvertime.depotMatches(e.depot, label) && (prev || PaOvertime.published(e.holiday)));

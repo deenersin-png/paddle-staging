@@ -33,6 +33,7 @@
     ['Pull Outs & Pull Ins', 'pullouts.html'],
     ['Relief Runs', 'holdowner-fall-2026.html'],
     ['Detours',    'detours.html'],
+    ['Alternates', 'index.html?alt=1'],
     ['Older Picks', 'index.html?pick=older'],
     ['Holidays',   'holidays.html'],
     ['About',      'about.html']
@@ -87,6 +88,7 @@
   if (page === 'block-tracker.html' && /view=all/.test(location.search)) here = 'block-tracker.html?view=all';
   var pickQ = page === 'index.html' && (location.search.match(/[?&]pick=([^&#]+)/) || [])[1];
   if (pickQ) here = 'index.html?pick=' + decodeURIComponent(pickQ).toLowerCase();
+  else if (page === 'index.html' && /[?&]alt=1(&|#|$)/.test(location.search)) here = 'index.html?alt=1';
 
   // pa-account-ui.js sets <html data-pa-acct="in|out"> once it knows; before
   // that, go by the "was signed in last visit" flag.
@@ -165,12 +167,12 @@
     function showPick() {
       var d = document.documentElement.dataset;
       // data-pa-pick-old="1" = an older pick, "new" = an upcoming one.
-      var old = d.paPickOld === '1' || d.paPickOld === 'new';
+      var old = d.paPickOld === '1' || d.paPickOld === 'new' || d.paPickOld === 'alt';
       pick.textContent = d.paPick || CURRENT_PICK;
       if (old) {
         var tag = document.createElement('span');
         tag.className = 'pam-bar-old';
-        tag.textContent = d.paPickOld === 'new' ? ' · UPCOMING PICK' : ' · OLDER PICK';
+        tag.textContent = d.paPickOld === 'new' ? ' · UPCOMING PICK' : d.paPickOld === 'alt' ? ' · ALTERNATES' : ' · OLDER PICK';
         pick.appendChild(tag);
       }
       pick.classList.toggle('old', old);
