@@ -6,6 +6,11 @@
       "days": ["Weekday", "Saturday", "Sunday"]
     },
     {
+      "name": "callowhill-rail-fall-2026",
+      "label": "Callowhill Rail",
+      "days": ["Weekday", "Saturday", "Sunday"]
+    },
+    {
       "name": "victory-fall-2026",
       "label": "Victory Bus",
       "days": ["Weekday", "Saturday", "Sunday"]

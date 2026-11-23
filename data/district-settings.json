@@ -4,6 +4,7 @@
   "districts": {
     "allegheny":      { "allowsShortRuns": true },
     "callowhillb":    { "allowsShortRuns": true },
+    "callowhill-rail": { "allowsShortRuns": true },
     "comly":          { "allowsShortRuns": true },
     "elmwood":        { "allowsShortRuns": true },
     "frankford-rail": { "allowsShortRuns": true },
