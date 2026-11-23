@@ -159,6 +159,8 @@
     const when = tm ? 'tomorrow' : 'today';
     const next = (o.next || []).filter(isSpecial).slice(0, 2);
     if (!isSpecial(i)) return '';
+    // Alternate paddles exist for an alternate WEEKDAY only (SEPTA's alternate runcuts).
+    const altHref = o.altHref && i.alt && !i.changed && i.dayLabel === 'Weekday' ? o.altHref : '';
     const title = esc((tm ? 'TOMORROW · ' : '') + (i.name ? i.name.toUpperCase() + ' · ' : '') + fmt(i.iso));
     let body = '', btn = '';
     if (i.changed) {
@@ -168,7 +170,7 @@
     if (i.alt) {
       body += (i.changed ? ' On ' + esc(routesText(i)) + ' it is an <b>alternate timetable</b>.'
         : 'SEPTA runs an <b>alternate ' + esc(i.dayLabel) + ' schedule</b> ' + when + ' on ' + esc(routesText(i)) + '.');
-      body += o.altHref
+      body += altHref
         ? ' Its runs are on the <b>Alternates</b> page; the runs here are the regular ' + esc(i.dayLabel) + ' paddles and may not match.'
         : ' <b>Its paddles are not available</b>, so the info here is limited: run times, reports and pull-outs are from the regular '
           + esc(i.dayLabel) + ' paddles and may not match.';
@@ -179,7 +181,7 @@
     }
     if (o.page === 'paddles') {
       if (o.curDay && o.curDay !== i.dayLabel) btn += '<button type="button" class="pa-hol-btn" data-pa-hol-day="' + esc(i.dayLabel) + '">Show ' + esc(i.dayLabel) + ' runs</button>';
-      if (i.alt && o.altHref) btn += '<a class="pa-hol-btn" href="' + esc(o.altHref) + '">Alternate paddles</a>';
+      if (i.alt && altHref) btn += '<a class="pa-hol-btn" href="' + esc(altHref) + '">Alternate paddles</a>';
       if (i.alt && !tm) btn += '<a class="pa-hol-btn" href="' + esc(o.liveHref || 'block-tracker.html') + '">Open Live</a>';
     }
     if (o.listHref) btn += '<a class="pa-hol-btn pa-hol-btn2" href="' + esc(o.listHref) + '">All holidays</a>';

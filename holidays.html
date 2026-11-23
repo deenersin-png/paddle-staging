@@ -86,6 +86,7 @@ details.past .day{opacity:.6}
 <script src="assets/pa-menu.js" defer></script>
 <script src="assets/pa-tags.js"></script>
 <script src="assets/pa-holiday.js"></script>
+<script src="assets/pa-picks.js"></script>
 </head>
 <body>
 
@@ -102,8 +103,8 @@ details.past .day{opacity:.6}
   <div class="kinds">
     <div class="kind sun"><b class="k">SUNDAY SCHEDULE</b>
       SEPTA runs the Sunday timetable. The Sunday paddles are complete: use them for the day.</div>
-    <div class="kind alt"><b class="k">ALTERNATE SCHEDULE &middot; NO PADDLES</b>
-      A special timetable with no paddles. Run times, reports and pull-outs in the app come from the regular paddles and may not match. Live and Trip Sheets show the day's real trips.</div>
+    <div class="kind alt"><b class="k">ALTERNATE SCHEDULE</b>
+      A special timetable. On an alternate weekday most depots have <b>alternate paddles</b>, on the <a href="index.html?alt=1">Alternates</a> page. Depots without them: run times, reports and pull-outs in the app come from the regular paddles and may not match. Live and Trip Sheets show the day's real trips.</div>
   </div>
 
   <div id="list"><p class="msg">Loading SEPTA's calendar&hellip;</p></div>
@@ -139,6 +140,25 @@ details.past .day{opacity:.6}
   // An alternate that covers only a few routes on a day that otherwise runs
   // another schedule (Thanksgiving: Sunday, + L1/B1 on their own timetable).
   const partAlt = i => i.alt && i.changed;
+  // Alternate paddles in the app (index.html?alt=1): SEPTA's alternate
+  // runcuts are for an alternate WEEKDAY only. i.altDepots = { have, none }
+  // (depot labels of that date's pick), filled in before rendering.
+  const fullAltWeekday = i => i.alt && !partAlt(i) && i.dayLabel === 'Weekday';
+  const hasAltPaddles = i => fullAltWeekday(i) && i.altDepots && i.altDepots.have.length > 0;
+  const manifests = {};
+  const getJson = f => manifests[f] || (manifests[f] = fetch('data/' + f).then(r => r.ok ? r.json() : { districts: [] }).catch(() => ({ districts: [] })));
+  function addAltDepots(list) {
+    if (!window.PaPicks) return Promise.resolve();
+    return PaPicks.load().catch(() => PaPicks.cached ? PaPicks.cached() : null).then(picks => Promise.all(list.filter(fullAltWeekday).map(i => {
+      const pick = picks && PaPicks.forDate(picks, H.dateOf(i.iso));
+      if (!pick || !pick.manifest) return null;
+      return Promise.all([getJson(pick.manifest), getJson(pick.manifest.replace(/^manifest[-_]/, 'manifest-alternate-'))]).then(([reg, alt]) => {
+        const lab = m => (m.districts || []).map(d => d.label || d.name);
+        const have = lab(alt), all = lab(reg);
+        i.altDepots = { have, none: all.filter(l => !have.includes(l)) };
+      });
+    }))).catch(() => {});
+  }
 
   function card(i, today) {
     const n = daysBetween(today, i.iso), d = H.dateOf(i.iso);
@@ -154,8 +174,16 @@ details.past .day{opacity:.6}
         badges += '<span class="badge alt">' + esc(r.join(', ')) + ': ALTERNATE &middot; NO PADDLES</span>';
         lines.push('<li class="warn"><b>' + esc(r.join(' and ')) + '</b> run their own special timetable: no paddles, so their run times may not match. Live shows the real trips.</li>');
       } else {
-        badges += '<span class="badge alt">ALTERNATE ' + esc(i.dayLabel.toUpperCase()) + ' &middot; NO PADDLES</span>';
-        lines.push('<li class="warn"><b>No paddles:</b> run times, reports and pull-outs come from the regular ' + esc(i.dayLabel) + ' paddles and may not match.</li>');
+        if (hasAltPaddles(i)) {
+          const a = i.altDepots;
+          badges += '<span class="badge alt">ALTERNATE ' + esc(i.dayLabel.toUpperCase()) + ' &middot; ALTERNATE PADDLES</span>';
+          lines.push('<li><b>Alternate paddles</b> on the Alternates page: ' + esc(a.have.join(', ')) + '.</li>');
+          if (a.none.length) lines.push('<li class="warn"><b>No alternate paddles</b> for ' + esc(a.none.join(', ')) + ': run times, reports and pull-outs come from the regular '
+            + esc(i.dayLabel) + ' paddles and may not match.</li>');
+        } else {
+          badges += '<span class="badge alt">ALTERNATE ' + esc(i.dayLabel.toUpperCase()) + ' &middot; NO PADDLES</span>';
+          lines.push('<li class="warn"><b>No paddles:</b> run times, reports and pull-outs come from the regular ' + esc(i.dayLabel) + ' paddles and may not match.</li>');
+        }
         lines.push('<li>Live and Trip Sheets show the day\'s real trips.</li>');
         lines.push('<li>' + r.length + ' route' + (r.length === 1 ? '' : 's') + ' on it; the others run their normal ' + esc(i.dayLabel) + ' schedule.</li>');
       }
@@ -163,8 +191,10 @@ details.past .day{opacity:.6}
     const routes = i.alt && !partAlt(i)
       ? '<details class="routes"><summary>Routes on the alternate schedule (' + i.altRoutes.length + ')</summary><div class="chips">'
         + i.altRoutes.map(r => '<span class="chip">' + esc(r) + '</span>').join('') + '</div></details>' : '';
+    const altBtn = hasAltPaddles(i) ? '<a class="act alt" href="index.html?alt=1">Alternate paddles</a>' : '';
     const acts = n === 0
-      ? '<div class="acts"><a class="act" href="index.html">Open Paddles</a>' + (i.alt ? '<a class="act alt" href="block-tracker.html">Open Live</a>' : '') + '</div>' : '';
+      ? '<div class="acts"><a class="act" href="index.html">Open Paddles</a>' + altBtn + (i.alt ? '<a class="act alt" href="block-tracker.html">Open Live</a>' : '') + '</div>'
+      : altBtn ? '<div class="acts">' + altBtn + '</div>' : '';
     return '<div class="day ' + kind + (n === 0 ? ' is-today' : '') + '" id="d-' + i.iso + '">'
       + '<div class="date" aria-label="' + esc(longDate(i.iso)) + '"><div class="dw">' + DOW[d.getDay()] + '</div><div class="dn">' + d.getDate() + '</div><div class="mo">' + MON[d.getMonth()] + '</div></div>'
       + '<div class="body"><div class="top"><span class="name">' + esc(title(i)) + '</span>' + whenTag(n) + '</div>'
@@ -184,17 +214,20 @@ details.past .day{opacity:.6}
   function nextBox(i, today) {
     const n = daysBetween(today, i.iso);
     const cnt = n === 0 ? 'TODAY' : n === 1 ? '1<small>DAY</small>' : n + '<small>DAYS</small>';
-    const what = i.alt && !partAlt(i) ? 'Alternate ' + i.dayLabel + ' schedule, no paddles'
+    const what = hasAltPaddles(i) ? 'Alternate ' + i.dayLabel + ' schedule, alternate paddles for ' + i.altDepots.have.length + ' depots'
+      : i.alt && !partAlt(i) ? 'Alternate ' + i.dayLabel + ' schedule, no paddles'
       : i.dayLabel + ' schedule' + (i.alt ? ' (' + i.altRoutes.join(', ') + ' alternate)' : '');
     return '<a class="next" href="#d-' + i.iso + '" style="text-decoration:none"><div class="cnt">' + cnt + '</div>'
       + '<div class="what"><b>' + (n > 1 ? 'Next: ' : '') + esc(title(i)) + ' &middot; ' + esc(longDate(i.iso).slice(0, -5)) + '</b>' + esc(what) + '</div></a>';
   }
 
   H.load().then(data => {
-    const today = H.todayIso();
     const dates = Object.keys(data.days || {}).sort();
     const isos = dates.length ? dates : Object.keys(data.ov || {}).sort();
     const all = isos.map(iso => H.info(iso, null, data)).filter(H.isSpecial);
+    return addAltDepots(all).then(() => [data, dates, all]);
+  }).then(([data, dates, all]) => {
+    const today = H.todayIso();
     const past = all.filter(i => i.iso < today), coming = all.filter(i => i.iso >= today);
     const el = document.getElementById('list');
     if (!all.length) { el.innerHTML = '<p class="msg">No holiday or alternate schedule in SEPTA\'s current calendar.</p>'; return; }
