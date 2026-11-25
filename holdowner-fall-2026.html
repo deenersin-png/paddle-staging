@@ -100,7 +100,8 @@
   .dist-seg{display:inline-flex;border:1px solid var(--w10);border-radius:8px;overflow:hidden;}
   .dist-seg button{background:var(--w05);border:0;padding:9px 16px;font-size:14px;font-weight:700;color:var(--w55);cursor:pointer;font-family:var(--sans);}
   .dist-seg button+button{border-left:1px solid var(--w10);}
-  .dist-seg button.active{background:var(--accent);color:#0a0f1a;}
+  .dist-seg button.active{background:#0b4ea2;color:#fff;}
+  #headerSub{display:block !important;margin-top:3px;font-size:14px;font-weight:700;color:#cfe0ff !important;letter-spacing:.3px;}
   .dist-new{background:#c8102e;color:#fff;font-size:11px;font-weight:800;letter-spacing:.5px;padding:3px 9px;border-radius:10px;cursor:pointer;font-family:var(--mono);}
   .dist-notice{display:flex;align-items:flex-start;gap:12px;justify-content:space-between;background:rgba(11,78,162,0.08);border:1px solid rgba(11,78,162,0.3);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:14px;color:#17213a;}
   .dist-notice button{flex-shrink:0;background:#0b4ea2;color:#fff;border:0;border-radius:6px;padding:6px 12px;font-weight:700;font-size:13px;cursor:pointer;font-family:var(--sans);}
@@ -216,6 +217,9 @@ const SHEET_CSV = "https://docs.google.com/spreadsheets/d/"+SHEET_ID+"/gviz/tq?t
 const ROUTE_COLORS = {
   "21-42":"#e63946","43":"#457b9d","52":"#2a9d8f","65":"#e9c46a",
   "44":"#f4a261","30":"#264653","38":"#6a4c93","31":"#1d3557",
+  // Allegheny
+  "6":"#e76f51","9":"#219ebc","27":"#7b2cbf","33":"#588157","48":"#bc6c25",
+  "49":"#d62828","54":"#3a86ff","60":"#ff006e","HRS":"#6c757d",
   "40":"#a8dadc","46":"#06d6a0","L1 OWL":"#9b5de5","WCS":"#f15bb5",
 };
 // Sunday-first, matching holdowner.csv's own column order (relief_run,sunday,
@@ -235,6 +239,8 @@ let openRelief = null;
 function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
 function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
 let district = lsGet("reliefDistrict"); if(!DISTRICTS[district]) district="callowhill";
+// Menu / Paddles banner links: ?district=allegheny opens (and remembers) that district.
+{ const q=(location.search.match(/[?&]district=([a-z]+)/i)||[])[1]; if(q&&DISTRICTS[q.toLowerCase()]){ district=q.toLowerCase(); lsSet("reliefDistrict",district); lsSet("reliefNewBadge","off"); } }
 const dName = ()=>DISTRICTS[district].name;
 let loadToken = 0, loadFailed = false;
 

@@ -32,6 +32,7 @@
     ['Trip Sheets', 'block-tracker.html?view=all'],
     ['Pull Outs & Pull Ins', 'pullouts.html'],
     ['Relief Runs', 'holdowner-fall-2026.html'],
+    ['Allegheny Relief Runs', 'holdowner-fall-2026.html?district=allegheny', 'new'],
     ['Detours',    'detours.html'],
     ['Alternates', 'index.html?alt=1'],
     ['Older Picks', 'index.html?pick=older'],
@@ -108,7 +109,7 @@
       '';
     APP.forEach(function (it) {
       if (it[1] === 'index.html?pick=older') html += '<div id="pam-upcoming" style="display:contents"></div>';
-      html += '<a href="' + esc(it[1]) + '"' + (it[1] === here ? ' class="on" aria-current="page"' : '') + '>' + esc(it[0]) + '</a>';
+      html += '<a href="' + esc(it[1]) + '"' + (it[1] === here ? ' class="on" aria-current="page"' : '') + '>' + esc(it[0]) + (it[2] ? '<span class="pam-new">' + esc(it[2]) + '</span>' : '') + '</a>';
     });
     SITE.forEach(function (it) {
       html += '<a href="' + esc(it[1]) + '" target="_blank" rel="noopener">' + esc(it[0]) + '<span class="ext" aria-hidden="true">&#8599;</span></a>';

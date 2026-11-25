@@ -1058,6 +1058,7 @@ header { flex-wrap: wrap !important; }
   padding: 8px 12px; border: 0; border-radius: 8px; background: #ffc72c; color: #08122b !important; text-decoration: none !important; cursor: pointer;
   box-shadow: 0 2px 6px rgba(8,18,43,.25); font-family: 'IBM Plex Sans Condensed', system-ui, sans-serif; text-align: center; line-height: 1.2; }
 .pa-ot-btn.pa-ot-sun { background: #12753a; color: #fff !important; box-shadow: inset 0 0 0 2px rgba(255,255,255,.55), 0 2px 6px rgba(8,18,43,.25); }
+.pa-ot-btn.pa-ot-new { background: #0b4ea2; color: #fff !important; box-shadow: inset 0 0 0 2px rgba(255,255,255,.55), 0 2px 6px rgba(8,18,43,.25); }
 .pa-ot-btn.pa-ot-alt { background: #b4510d; color: #fff !important; box-shadow: inset 0 0 0 2px rgba(255,255,255,.55), 0 2px 6px rgba(8,18,43,.25); }
 .pa-ot-btn b { font-size: 16px; font-weight: 800; letter-spacing: .02em; text-transform: uppercase; }
 .pa-ot-btn small { font-size: 12px; font-weight: 600; opacity: .92; margin-top: 2px; }
@@ -1761,6 +1762,12 @@ function renderOvertime() {
     return '<a class="pa-ot-btn pa-ot-alt" href="https://www4.septa.org/picking/" target="_blank" rel="noopener"><b>' + esc(name + ' · ' + n.title) + '</b>'
       + '<small>Not available on Paddle App · Tap to check on SEPTA\'s page</small></a>';
   }).join('');
+  // Allegheny only, through Thu 2026-12-03: Allegheny relief runs are new.
+  const cur = !NOT_REGULAR && STATE.manifest && (STATE.manifest.districts || []).find(x => x.name === STATE.currentDistrict);
+  if (cur && (cur.label || cur.name) === 'Allegheny' && PaHoliday.todayIso() <= '2026-12-03') {
+    html += '<a class="pa-ot-btn pa-ot-new" href="holdowner-fall-2026.html?district=allegheny"><b>New: Allegheny Relief Runs</b>'
+      + '<small>Now on Paddle App · Tap to open the relief runs</small></a>';
+  }
   const d = OT_DATA && !NOT_REGULAR && STATE.manifest && (STATE.manifest.districts || []).find(x => x.name === STATE.currentDistrict);
   if (d) {
     const label = d.label || d.name, prev = PaOvertime.preview();
