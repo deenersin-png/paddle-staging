@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#0b4ea2">
 <meta name="apple-mobile-web-app-title" content="Paddle">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
-<title>Callowhill Bus Relief Runs</title>
+<title>Relief Runs</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -95,6 +95,17 @@
   .empty-sub{font-size:14px;margin-top:8px;max-width:280px;margin-left:auto;margin-right:auto;}
   .loading{text-align:center;padding:60px 20px;color:var(--w40);}
   .loading-spinner{width:40px;height:40px;border:3px solid var(--w10);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 16px;}
+.dist-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;}
+  .dist-label{font-size:13px;color:var(--w50);font-weight:600;text-transform:uppercase;letter-spacing:1px;}
+  .dist-seg{display:inline-flex;border:1px solid var(--w10);border-radius:8px;overflow:hidden;}
+  .dist-seg button{background:var(--w05);border:0;padding:9px 16px;font-size:14px;font-weight:700;color:var(--w55);cursor:pointer;font-family:var(--sans);}
+  .dist-seg button+button{border-left:1px solid var(--w10);}
+  .dist-seg button.active{background:var(--accent);color:#0a0f1a;}
+  .dist-new{background:#c8102e;color:#fff;font-size:11px;font-weight:800;letter-spacing:.5px;padding:3px 9px;border-radius:10px;cursor:pointer;font-family:var(--mono);}
+  .dist-notice{display:flex;align-items:flex-start;gap:12px;justify-content:space-between;background:rgba(11,78,162,0.08);border:1px solid rgba(11,78,162,0.3);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:14px;color:#17213a;}
+  .dist-notice button{flex-shrink:0;background:#0b4ea2;color:#fff;border:0;border-radius:6px;padding:6px 12px;font-weight:700;font-size:13px;cursor:pointer;font-family:var(--sans);}
+  .load-error{text-align:center;padding:50px 20px;color:#c8102e;font-weight:700;font-size:16px;}
+  .load-error span{display:block;color:var(--w50);font-weight:500;font-size:14px;margin-top:8px;}
   @keyframes spin{to{transform:rotate(360deg);}}
   @media(max-width:800px){
     .controls{padding:12px 16px 0;}
@@ -133,13 +144,26 @@
 <div class="header">
   <div class="header-inner">
     <div>
-      <div class="header-title">Callowhill Bus Relief Runs</div>
+      <div class="header-title" id="headerTitle">Callowhill Bus Relief Runs</div>
+      <div class="header-sub" id="headerSub">Holdowner runs: Callowhill</div>
     </div>
     <div class="header-count"><span id="count">0</span> <span id="countNoun">reliefs</span></div>
   </div>
 </div>
 
 <div class="controls">
+  <div class="dist-bar">
+    <span class="dist-label">District</span>
+    <div class="dist-seg" id="distSeg" role="group" aria-label="District">
+      <button type="button" data-d="callowhill">Callowhill</button>
+      <button type="button" data-d="allegheny">Allegheny</button>
+    </div>
+    <span class="dist-new" id="distNew" style="display:none" title="Tap to hide">New</span>
+  </div>
+  <div class="dist-notice" id="distNotice" style="display:none">
+    <span><b>New:</b> Allegheny relief runs are now available. Tap <b>Allegheny</b> above to switch districts; the page remembers your choice, including in the holdowner view.</span>
+    <button type="button" id="distNoticeClose">Got it</button>
+  </div>
   <div class="filter-label">Exclude Routes (tap to exclude)</div>
   <div class="route-filters" id="routeFilters"></div>
   <div class="hours-section">
@@ -172,13 +196,17 @@ const REPO   = "deenersin-png/septa-scheduler";
 const BRANCH = "main";
 const BASE   = "https://raw.githubusercontent.com/" + REPO + "/" + BRANCH + "/data/callowhillb-fall-2026/";
 
-const CSV_URLS = {
-  weekday:   BASE + "weekday.csv",
-  saturday:  BASE + "saturday.csv",
-  sunday:    BASE + "sunday.csv",
-  holdowner: BASE + "holdowner.csv",
-  pdfs:      BASE + "pdfs.csv",
+// Districts on this page. Same CSV names / parsing for each; only the folder
+// changes. Vac/Sick runs come from a Callowhill-only Google Sheet.
+const DISTRICTS = {
+  callowhill: {name:"Callowhill", base:BASE,                        vacSick:true},
+  allegheny:  {name:"Allegheny",  base:"data/allegheny-fall-2026/", vacSick:false},
 };
+function csvUrls(d){
+  const b=DISTRICTS[d].base;
+  return {weekday:b+"weekday.csv", saturday:b+"saturday.csv", sunday:b+"sunday.csv",
+          holdowner:b+"holdowner.csv", pdfs:b+"pdfs.csv"};
+}
 
 // Vac/Sick runs — live Google Sheet (Callowhill). A2 (online) = master switch.
 const SHEET_ID  = "1XY9tVEzQGxCO010RNkCFARXEt_5nqxUm_etTlh7cjZA";
@@ -206,6 +234,9 @@ let openRelief = null;
 // be the reason the whole picker fails to render.
 function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
 function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+let district = lsGet("reliefDistrict"); if(!DISTRICTS[district]) district="callowhill";
+const dName = ()=>DISTRICTS[district].name;
+let loadToken = 0, loadFailed = false;
 
 // Vac/Sick state
 let vacSick       = [];        // parsed packages from the sheet
@@ -384,17 +415,25 @@ async function fetchCSV(url){
 }
 
 async function loadData(){
+  const token=++loadToken, d=district, urls=csvUrls(d);
+  // reset everything that belongs to the previous district
+  runsByDay={Weekday:{},Saturday:{},Sunday:{}}; holdowner=[]; vacSick=[]; vacSickOnline=false; vacSickPick="";
+  pdfLinks={Weekday:{},Saturday:{},Sunday:{}}; excludedRoutes=new Set(); openRelief=null; loadFailed=false;
+  applyDistrictUI();
+  document.getElementById("listPanel").innerHTML='<div class="loading" id="loadingMsg"><div class="loading-spinner"></div>Loading '+dName()+' schedule data...</div>';
   const [wdText,satText,sunText,hoText,pdfText,vsText] = await Promise.all([
-    fetchCSV(CSV_URLS.weekday), fetchCSV(CSV_URLS.saturday),
-    fetchCSV(CSV_URLS.sunday),  fetchCSV(CSV_URLS.holdowner),
-    fetchCSV(CSV_URLS.pdfs),    fetchCSV(SHEET_CSV),
+    fetchCSV(urls.weekday), fetchCSV(urls.saturday),
+    fetchCSV(urls.sunday),  fetchCSV(urls.holdowner),
+    fetchCSV(urls.pdfs),    DISTRICTS[d].vacSick ? fetchCSV(SHEET_CSV) : Promise.resolve(null),
   ]);
+  if(token!==loadToken) return;   // user switched district meanwhile
   if(wdText){  parseScheduleCSV(wdText).forEach(r=>{runsByDay.Weekday[r.runno]=r;}); }
   if(satText){ parseScheduleCSV(satText).forEach(r=>{runsByDay.Saturday[r.runno]=r;}); }
   if(sunText){ parseScheduleCSV(sunText).forEach(r=>{runsByDay.Sunday[r.runno]=r;}); }
   if(hoText)  holdowner=parseHoldownerCSV(hoText);
   if(pdfText) parsePdfsCSV(pdfText);
   if(vsText){ const vs=parseVacSickCSV(vsText); vacSickOnline=vs.online; vacSickPick=vs.pick; vacSick=vs.pkgs; }
+  loadFailed = !hoText || holdowner.length===0;
 
   const rs=new Set();
   Object.values(runsByDay).forEach(day=>Object.values(day).forEach(r=>r.routes.forEach(rt=>rs.add(rt.r))));
@@ -403,10 +442,26 @@ async function loadData(){
   buildRouteFilters();
   applyVacSickUI();
   render();
-  // render() rewrites #listPanel, which removes the spinner along with it, so
-  // this element is legitimately gone by now -- don't throw trying to hide it.
-  document.getElementById("loadingMsg")?.style.setProperty("display","none");
 }
+
+// ── District switcher, "New" badge, one-time notice ───────────
+function applyDistrictUI(){
+  const n=dName();
+  document.getElementById("headerTitle").textContent=n+" Bus Relief Runs";
+  document.getElementById("headerSub").textContent="Holdowner runs: "+n;
+  document.title=n+" Relief Runs";
+  document.querySelectorAll("#distSeg button").forEach(b=>b.classList.toggle("active",b.dataset.d===district));
+  document.getElementById("distNew").style.display = lsGet("reliefNewBadge")==="off" ? "none" : "";
+  document.getElementById("distNotice").style.display = lsGet("reliefNoticeDismissed")==="1" ? "none" : "";
+}
+function hideNewBadge(){ lsSet("reliefNewBadge","off"); applyDistrictUI(); }
+document.querySelectorAll("#distSeg button").forEach(b=>b.addEventListener("click",()=>{
+  if(b.dataset.d===district) return;
+  district=b.dataset.d; lsSet("reliefDistrict",district); lsSet("reliefNewBadge","off");
+  allRoutes=[]; loadData();
+}));
+document.getElementById("distNew").addEventListener("click",hideNewBadge);
+document.getElementById("distNoticeClose").addEventListener("click",()=>{ lsSet("reliefNoticeDismissed","1"); hideNewBadge(); });
 
 // Show/hide the two buttons based on the A2 master switch AND the K2 pick
 // target; force reliefs-only when unavailable. The vac/sick runs belong to one
@@ -420,12 +475,16 @@ function applyVacSickUI(){
     console.info("Vac/Sick runs are on, but K2 targets "+JSON.stringify(vacSickPick)+
                  " and this page is "+JSON.stringify(thisPage)+" — hidden here.");
   }
-  const available = vacSickOnline && pageMatch && vacSick.length>0;
+  const available = DISTRICTS[district].vacSick && vacSickOnline && pageMatch && vacSick.length>0;
   if(available){
     box.style.display="flex";
   }else{
     box.style.display="none";
-    if(viewMode!=="reliefs"){ viewMode="reliefs"; lsSet("vacSickViewMode","reliefs"); }
+    if(viewMode!=="reliefs"){
+      viewMode="reliefs";
+      // Browsing Allegheny must not wipe a saved Callowhill vac/sick choice.
+      if(district==="callowhill") lsSet("vacSickViewMode","reliefs");
+    }
   }
   document.getElementById("vsAddBtn").classList.toggle("active", viewMode==="add");
   document.getElementById("vsOnlyBtn").classList.toggle("active", viewMode==="vsonly");
@@ -553,13 +612,18 @@ function render(){
   else if(sortBy==="pay-low") pkgs.sort((a,b)=>a.totalPay-b.totalPay);
   else pkgs.sort((a,b)=>a.reliefRun.localeCompare(b.reliefRun,undefined,{numeric:true}));
 
+  if(loadFailed){
+    document.getElementById("count").textContent=0;
+    document.getElementById("listPanel").innerHTML='<div class="load-error">Could not load '+dName()+' relief runs.<span>The '+dName()+' relief file is missing or failed to load. Check your connection and try again, or switch district.</span></div>';
+    return;
+  }
   document.getElementById("count").textContent=pkgs.length;
   document.getElementById("countNoun").textContent =
-    viewMode==="vsonly" ? "vac/sick runs" : (viewMode==="add" ? "runs" : "reliefs");
+    (viewMode==="vsonly" ? "vac/sick runs" : (viewMode==="add" ? "runs" : "reliefs"))+" · "+dName();
   const list=document.getElementById("listPanel");
 
   if(pkgs.length===0){
-    const what = viewMode==="reliefs" ? "reliefs" : "vac/sick runs";
+    const what = dName()+" "+(viewMode==="reliefs" ? "reliefs" : "vac/sick runs");
     list.innerHTML='<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-title">No '+what+' found</div><div class="empty-sub">Try adjusting your filters</div></div>';
     return;
   }
