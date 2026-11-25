@@ -9,6 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="Paddle">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <title>Relief Runs</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -98,10 +99,7 @@
 .rr-head{padding:7px 16px !important;}
   .rr-head .header-count{font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;color:#fff;letter-spacing:.03em;}
   .rr-head .header-count span{color:#fff;}
-  .dist-tabs{margin:0 0 4px;}
-  .dist-tabs .pa-day{min-height:40px;font-size:15px;}
-  #distNotice{margin-bottom:6px;}
-  .dist-tabs + .pa-note, .dist-tabs{margin-top:0;}
+  .dist-tabs{margin:0;}
   .controls .filter-label{margin-top:14px;}
   .load-error{text-align:center;padding:50px 20px;color:#c8102e;font-weight:700;font-size:16px;}
   .load-error span{display:block;color:var(--w50);font-weight:500;font-size:14px;margin-top:8px;}
@@ -152,7 +150,7 @@
     <button type="button" class="pa-day pa-day-weekday" role="tab" data-d="allegheny">Allegheny<span class="pa-today" id="distNew" style="display:none">NEW</span></button>
   </div>
   <div class="pa-note" id="distNotice" style="display:none">
-    <span class="pa-note-txt"><b>New: Allegheny relief runs</b><small>Tap Allegheny above to switch. The page remembers your choice.</small></span>
+    <span class="pa-note-txt"><b>New: Allegheny relief runs</b></span>
     <button type="button" class="pa-note-x" id="distNoticeClose" aria-label="Dismiss">&times;</button>
   </div>
   <div class="filter-label">Exclude Routes (tap to exclude)</div>
