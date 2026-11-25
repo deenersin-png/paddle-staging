@@ -8,6 +8,7 @@
    Run tag      .pa-run                 Trip Sheets run button: "RUN#: 308 WEEKDAY"
    Type buttons .pa-types / .pa-type    search result type: Run, Block, Bus
    Current route .pa-rt-cur.live / .sched  in a scorecard's route list
+   Announcement .pa-note                one banner format for every depot's news
    ========================================================================== */
 
 :root{
@@ -31,6 +32,16 @@
 .pa-today{font-size:9px;font-weight:700;letter-spacing:.05em;padding:1px 4px;border-radius:3px;background:rgba(11,78,162,.12)}
 .pa-day.on .pa-today{background:rgba(255,255,255,.25)}
 @media (max-width:360px){.pa-day{font-size:12px;gap:3px}.pa-today{display:none}}
+
+/* ---- Announcement banner (day-tag look: white, red underline) ----------- */
+.pa-note{display:flex;align-items:center;gap:10px;width:100%;margin-top:8px;padding:7px 12px;min-height:44px;
+  background:#fff;border:0;border-bottom:3px solid #c8102e;border-radius:8px;box-shadow:0 2px 6px rgba(8,18,43,.25);
+  color:#0b4ea2 !important;text-decoration:none;font-family:'IBM Plex Sans Condensed',system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
+a.pa-note:active{filter:brightness(.95)}
+.pa-note-txt{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;align-items:center;text-align:center}
+.pa-note-txt b{font-size:15px;font-weight:800;letter-spacing:.02em;text-transform:uppercase}
+.pa-note-txt small{font-size:12px;font-weight:600;color:#56627a;margin-top:1px}
+.pa-note-x{flex-shrink:0;background:none;border:0;color:#c8102e;font-size:22px;line-height:1;padding:2px 4px;cursor:pointer}
 
 /* ---- Block tag: route / block, one width everywhere ---------------------
    Monospace; the route part is 3 characters wide (right-aligned) so every

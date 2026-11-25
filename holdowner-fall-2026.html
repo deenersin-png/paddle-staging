@@ -95,16 +95,14 @@
   .empty-sub{font-size:14px;margin-top:8px;max-width:280px;margin-left:auto;margin-right:auto;}
   .loading{text-align:center;padding:60px 20px;color:var(--w40);}
   .loading-spinner{width:40px;height:40px;border:3px solid var(--w10);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 16px;}
-.dist-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;}
-  .dist-label{font-size:13px;color:var(--w50);font-weight:600;text-transform:uppercase;letter-spacing:1px;}
-  .dist-seg{display:inline-flex;border:1px solid var(--w10);border-radius:8px;overflow:hidden;}
-  .dist-seg button{background:var(--w05);border:0;padding:9px 16px;font-size:14px;font-weight:700;color:var(--w55);cursor:pointer;font-family:var(--sans);}
-  .dist-seg button+button{border-left:1px solid var(--w10);}
-  .dist-seg button.active{background:#0b4ea2;color:#fff;}
-  #headerSub{display:block !important;margin-top:3px;font-size:14px;font-weight:700;color:#cfe0ff !important;letter-spacing:.3px;}
-  .dist-new{background:#c8102e;color:#fff;font-size:11px;font-weight:800;letter-spacing:.5px;padding:3px 9px;border-radius:10px;cursor:pointer;font-family:var(--mono);}
-  .dist-notice{display:flex;align-items:flex-start;gap:12px;justify-content:space-between;background:rgba(11,78,162,0.08);border:1px solid rgba(11,78,162,0.3);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:14px;color:#17213a;}
-  .dist-notice button{flex-shrink:0;background:#0b4ea2;color:#fff;border:0;border-radius:6px;padding:6px 12px;font-weight:700;font-size:13px;cursor:pointer;font-family:var(--sans);}
+.rr-head{padding:7px 16px !important;}
+  .rr-head .header-count{font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;color:#fff;letter-spacing:.03em;}
+  .rr-head .header-count span{color:#fff;}
+  .dist-tabs{margin:0 0 4px;}
+  .dist-tabs .pa-day{min-height:40px;font-size:15px;}
+  #distNotice{margin-bottom:6px;}
+  .dist-tabs + .pa-note, .dist-tabs{margin-top:0;}
+  .controls .filter-label{margin-top:14px;}
   .load-error{text-align:center;padding:50px 20px;color:#c8102e;font-weight:700;font-size:16px;}
   .load-error span{display:block;color:var(--w50);font-weight:500;font-size:14px;margin-top:8px;}
   @keyframes spin{to{transform:rotate(360deg);}}
@@ -142,28 +140,20 @@
 </head>
 <body>
 
-<div class="header">
+<div class="header rr-head">
   <div class="header-inner">
-    <div>
-      <div class="header-title" id="headerTitle">Callowhill Bus Relief Runs</div>
-      <div class="header-sub" id="headerSub">Holdowner runs: Callowhill</div>
-    </div>
     <div class="header-count"><span id="count">0</span> <span id="countNoun">reliefs</span></div>
   </div>
 </div>
 
 <div class="controls">
-  <div class="dist-bar">
-    <span class="dist-label">District</span>
-    <div class="dist-seg" id="distSeg" role="group" aria-label="District">
-      <button type="button" data-d="callowhill">Callowhill</button>
-      <button type="button" data-d="allegheny">Allegheny</button>
-    </div>
-    <span class="dist-new" id="distNew" style="display:none" title="Tap to hide">New</span>
+  <div class="pa-days dist-tabs" id="distSeg" role="tablist" aria-label="District">
+    <button type="button" class="pa-day pa-day-weekday" role="tab" data-d="callowhill">Callowhill</button>
+    <button type="button" class="pa-day pa-day-weekday" role="tab" data-d="allegheny">Allegheny<span class="pa-today" id="distNew" style="display:none">NEW</span></button>
   </div>
-  <div class="dist-notice" id="distNotice" style="display:none">
-    <span><b>New:</b> Allegheny relief runs are now available. Tap <b>Allegheny</b> above to switch districts; the page remembers your choice, including in the holdowner view.</span>
-    <button type="button" id="distNoticeClose">Got it</button>
+  <div class="pa-note" id="distNotice" style="display:none">
+    <span class="pa-note-txt"><b>New: Allegheny relief runs</b><small>Tap Allegheny above to switch. The page remembers your choice.</small></span>
+    <button type="button" class="pa-note-x" id="distNoticeClose" aria-label="Dismiss">&times;</button>
   </div>
   <div class="filter-label">Exclude Routes (tap to exclude)</div>
   <div class="route-filters" id="routeFilters"></div>
@@ -453,12 +443,10 @@ async function loadData(){
 // ── District switcher, "New" badge, one-time notice ───────────
 function applyDistrictUI(){
   const n=dName();
-  document.getElementById("headerTitle").textContent=n+" Bus Relief Runs";
-  document.getElementById("headerSub").textContent="Holdowner runs: "+n;
   document.title=n+" Relief Runs";
-  document.querySelectorAll("#distSeg button").forEach(b=>b.classList.toggle("active",b.dataset.d===district));
+  document.querySelectorAll("#distSeg button").forEach(b=>{ const on=b.dataset.d===district; b.classList.toggle("on",on); b.setAttribute("aria-selected",on); });
   document.getElementById("distNew").style.display = lsGet("reliefNewBadge")==="off" ? "none" : "";
-  document.getElementById("distNotice").style.display = lsGet("reliefNoticeDismissed")==="1" ? "none" : "";
+  document.getElementById("distNotice").style.display = lsGet("reliefNoticeDismissed")==="1" ? "none" : "flex";
 }
 function hideNewBadge(){ lsSet("reliefNewBadge","off"); applyDistrictUI(); }
 document.querySelectorAll("#distSeg button").forEach(b=>b.addEventListener("click",()=>{
@@ -466,7 +454,6 @@ document.querySelectorAll("#distSeg button").forEach(b=>b.addEventListener("clic
   district=b.dataset.d; lsSet("reliefDistrict",district); lsSet("reliefNewBadge","off");
   allRoutes=[]; loadData();
 }));
-document.getElementById("distNew").addEventListener("click",hideNewBadge);
 document.getElementById("distNoticeClose").addEventListener("click",()=>{ lsSet("reliefNoticeDismissed","1"); hideNewBadge(); });
 
 // Show/hide the two buttons based on the A2 master switch AND the K2 pick
