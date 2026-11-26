@@ -132,6 +132,32 @@
 
 .day-header-left .pa-run{padding:2px 7px}.day-header-left .pa-run .pa-run-n{font-size:15px}
 .swing-detail-row .pa-blk{flex-shrink:0}
+/* Day view, readable (user 2026-11-26): bigger text, Start/Finish/Duration
+   line, each piece's pull out / pull in on the block tag's line. */
+.day-row{background:#fff;border:1px solid #d5ddec;border-left-width:4px;padding:12px 14px}
+.dr .day-label,.day-off-label{font-size:16px;font-weight:800}
+.day-off-text{font-size:15px;font-weight:700;color:#56627a;font-style:normal}
+.day-pay{font-size:16px;font-weight:800;color:#0b4ea2}
+.dr-times{font-size:15px;color:#17213a;gap:6px 16px;margin-top:8px}
+.dr-times b{font-weight:800;color:#0b4ea2}
+.dr-piece{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:flex-start;gap:4px 10px;margin-top:10px}
+.dr-pp{font-size:15px;font-weight:700;color:#17213a}
+.dr-dur{color:#56627a}
+.dr-swing{font-size:15px;font-weight:800;margin-top:9px}
+.dr-times span,.dr-pp{white-space:nowrap}
+.dr-pp{overflow:visible}
+/* Phones: the Start/Finish/Duration line and each tag + times line stay on
+   one line - full row width, less padding, a touch smaller. */
+@media(max-width:520px){
+  .main{padding:0 10px 40px}
+  .pkg-detail-inner{padding:8px}
+  .day-row{padding:10px}
+  .dr-main{display:contents}
+  .dr-top{grid-column:2}
+  .dr-times{grid-column:1/-1;font-size:13.5px;gap:4px 7px;justify-content:flex-start}
+  .dr-pp{font-size:14px}
+  .dr-piece{gap:4px 8px}
+}
 /* Scorecards: bigger, bolder, darker (user 2026-11-26: hard to read). */
 .pkg-card{background:#fff;border:2px solid #c9d3e6;padding:16px 18px}
 .pkg-header{margin-bottom:10px}
@@ -405,7 +431,7 @@ function parseVacSickCSV(text){
     DAYS.forEach((d,idx)=>{ if(perDay[idx]) days[d]=perDay[idx]; });
     // Card name = column B (V-1, W/O, Sick...). B repeats, so the card's
     // internal key stays unique (vs1, vs2...).
-    pkgs.push({key:"vs"+(pkgs.length+1), reliefRun:v[1]||"Run", days, isVacSick:true,
+    pkgs.push({key:"vs"+(pkgs.length+1), reliefRun:v[1]||"", days, isVacSick:true,
                altRun:v[VS_COL_ALT]||""});
   }
   return {online, pick, pkgs};
@@ -550,6 +576,14 @@ function blockTagOf(day, rt){
   return PaTags.blockTag(null, rt.b, {label:rt.r, day:DAY_TO_TYPE[day], at:s, s, e});
 }
 
+// Start -> finish as HH:MM (past midnight wraps).
+function spanHM(a,b){
+  const s=clockMin(a), e=clockMin(b);
+  if(s==null||e==null) return '';
+  const m=(e-s+1440)%1440;
+  return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
+}
+
 function routeTag(route,small){
   const bg=ROUTE_COLORS[route]||"#555";
   return '<span class="route-tag'+(small?' small':'')+'" style="background:'+bg+'">'+route+'</span>';
@@ -607,7 +641,7 @@ function buildDetailHTML(pkg){
       '<span class="day-label dk-'+dayType.toLowerCase()+'">'+d.day+'</span>'+
       '<div class="dr-main">'+
         '<div class="dr-top">'+linkHTML+'<span class="day-pay">'+d.info.pay+' hrs</span></div>'+
-        '<div class="dr-times"><span>'+d.info.start+' → '+d.info.finish+'</span><span>'+d.info.worktime+'</span></div>'+
+        '<div class="dr-times"><span><b>Start:</b> '+d.info.start+'</span><span><b>Finish:</b> '+d.info.finish+'</span><span><b>Duration:</b> '+spanHM(d.info.start,d.info.finish)+'</span></div>'+
       '</div>'+
       '<div class="dr-pieces">'+ps.map(pieceHTML).join('')+'</div>'+
     '</div>';
@@ -660,7 +694,7 @@ function render(){
     return '<div class="pkg-wrap" id="wrap-'+sid+'">'+
       '<div class="pkg-card'+(isOpen?' open':'')+'" data-relief="'+key+'">'+
         '<div class="pkg-header">'+
-          '<span class="pkg-name">'+p.reliefRun+'</span>'+
+          '<span class="pkg-name">'+(p.isVacSick?p.reliefRun:'RR: '+p.reliefRun)+'</span>'+
           '<div class="pkg-right">'+
             '<span class="pkg-pay">'+p.totalPay.toFixed(1)+' hrs/wk</span>'+
             '<span class="pkg-chevron'+(isOpen?' open':'')+'">&#9660;</span>'+
