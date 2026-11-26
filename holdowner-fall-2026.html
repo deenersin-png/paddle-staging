@@ -132,6 +132,16 @@
 
 .day-header-left .pa-run{padding:2px 7px}.day-header-left .pa-run .pa-run-n{font-size:15px}
 .swing-detail-row .pa-blk{flex-shrink:0}
+/* Scorecards: bigger, bolder, darker (user 2026-11-26: hard to read). */
+.pkg-card{background:#fff;border:2px solid #c9d3e6;padding:16px 18px}
+.pkg-header{margin-bottom:10px}
+.pkg-name{font-size:26px;font-weight:800;color:#0b4ea2}
+.pkg-pay{font-size:17px;font-weight:800;padding:5px 14px;background:#0b4ea2;color:#fff}
+.pkg-chevron{font-size:16px;color:#0b4ea2}
+.pkg-routes{gap:6px;margin-bottom:10px}
+.pkg-routes .route-tag{font-size:15px;padding:4px 12px}
+.pkg-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:16px;font-weight:700;color:#17213a}
+.pkg-alt .pa-run{padding:3px 9px}.pkg-alt .pa-run .pa-run-n{font-size:15px}
 </style>
 <script src="assets/pa-menu.js" defer></script>
 <script src="assets/pa-tags.js"></script>
@@ -241,6 +251,19 @@ let viewMode      = lsGet("vacSickViewMode") || "reliefs"; // "reliefs" | "add" 
 // pdfLinks[dayType][runno] = moblink URL
 // e.g. pdfLinks["Weekday"]["51"] = "https://...#page=1"
 let pdfLinks = {Weekday:{}, Saturday:{}, Sunday:{}};
+// Callowhill alternate paddle pages: altLinks[runno] = moblink
+const ALT_PDFS = "data/callowhillb-alt-fall-2026/pdfs.csv";
+let altLinks = {};
+function parseAltPdfs(text){
+  const lines=text.split(/\r?\n|\r/).filter(l=>l.trim());
+  if(lines.length<2) return;
+  const hdr=parseCSVRow(lines[0]).map(h=>cleanStr(h).toLowerCase());
+  const ri=hdr.indexOf("runno"), li=hdr.indexOf("moblink");
+  for(let i=1;i<lines.length;i++){
+    const v=parseCSVRow(lines[i]).map(cleanStr);
+    if(v[ri]&&v[li]) altLinks[v[ri]]=v[li];
+  }
+}
 
 // ── CSV helpers ───────────────────────────────────────────────
 function cleanStr(s){ return (s||"").replace(/\r/g,"").trim(); }
@@ -343,6 +366,7 @@ function parseHoldownerCSV(text){
 // it is not a unique id, so cards are numbered sequentially and the label is
 // shown as the badge instead.
 const VS_COL_PICK = 10;   // K -- filename of the pick these runs belong to
+const VS_COL_ALT  = 11;   // L -- the Callowhill ALTERNATE run for this row
 
 // A2 master switch. Keep identical to tools/ingest.py's VS_ON/VS_OFF — the app
 // and this picker read the same cell, and must never disagree about it.
@@ -379,7 +403,10 @@ function parseVacSickCSV(text){
     const days={Mon:"OFF",Tue:"OFF",Wed:"OFF",Thu:"OFF",Fri:"OFF",Sat:"OFF",Sun:"OFF"};
     if(wk){ days.Mon=days.Tue=days.Wed=days.Thu=days.Fri=wk; }   // weekday-only shortcut
     DAYS.forEach((d,idx)=>{ if(perDay[idx]) days[d]=perDay[idx]; });
-    pkgs.push({reliefRun:"Vac/Sick "+(pkgs.length+1), vsType:v[1]||"", days, isVacSick:true});
+    // Card name = column B (V-1, W/O, Sick...). B repeats, so the card's
+    // internal key stays unique (vs1, vs2...).
+    pkgs.push({key:"vs"+(pkgs.length+1), reliefRun:v[1]||"Run", days, isVacSick:true,
+               altRun:v[VS_COL_ALT]||""});
   }
   return {online, pick, pkgs};
 }
@@ -415,10 +442,11 @@ async function loadData(){
   pdfLinks={Weekday:{},Saturday:{},Sunday:{}}; excludedRoutes=new Set(); openRelief=null; loadFailed=false;
   applyDistrictUI();
   document.getElementById("listPanel").innerHTML='<div class="loading" id="loadingMsg"><div class="loading-spinner"></div>Loading '+dName()+' schedule data...</div>';
-  const [wdText,satText,sunText,hoText,pdfText,vsText] = await Promise.all([
+  const [wdText,satText,sunText,hoText,pdfText,vsText,altText] = await Promise.all([
     fetchCSV(urls.weekday), fetchCSV(urls.saturday),
     fetchCSV(urls.sunday),  fetchCSV(urls.holdowner),
     fetchCSV(urls.pdfs),    DISTRICTS[d].vacSick ? fetchCSV(SHEET_CSV) : Promise.resolve(null),
+    DISTRICTS[d].vacSick ? fetchCSV(ALT_PDFS)  : Promise.resolve(null),
   ]);
   if(token!==loadToken) return;   // user switched district meanwhile
   if(wdText){  parseScheduleCSV(wdText).forEach(r=>{runsByDay.Weekday[r.runno]=r;}); }
@@ -426,6 +454,7 @@ async function loadData(){
   if(sunText){ parseScheduleCSV(sunText).forEach(r=>{runsByDay.Sunday[r.runno]=r;}); }
   if(hoText)  holdowner=parseHoldownerCSV(hoText);
   if(pdfText) parsePdfsCSV(pdfText);
+  altLinks={}; if(altText) parseAltPdfs(altText);
   if(vsText){ const vs=parseVacSickCSV(vsText); vacSickOnline=vs.online; vacSickPick=vs.pick; vacSick=vs.pkgs; }
   loadFailed = !hoText || holdowner.length===0;
 
@@ -601,7 +630,9 @@ function render(){
   if(minHrs>40) pkgs=pkgs.filter(p=>p.totalPay>=minHrs);
   if(sortBy==="pay-high") pkgs.sort((a,b)=>b.totalPay-a.totalPay);
   else if(sortBy==="pay-low") pkgs.sort((a,b)=>a.totalPay-b.totalPay);
-  else pkgs.sort((a,b)=>a.reliefRun.localeCompare(b.reliefRun,undefined,{numeric:true}));
+  else pkgs.sort((a,b)=>(a.isVacSick?1:0)-(b.isVacSick?1:0) ||
+    (a.isVacSick ? Number(a.key.slice(2))-Number(b.key.slice(2))
+                 : a.reliefRun.localeCompare(b.reliefRun,undefined,{numeric:true})));
 
   if(loadFailed){
     document.getElementById("count").textContent=0;
@@ -621,21 +652,22 @@ function render(){
 
   list.innerHTML=pkgs.map(p=>{
     const offDayText=p.offDays.length>0?'Off: '+p.offDays.join(', '):'No days off';
-    const isOpen=openRelief===p.reliefRun;
-    const sid=safeId(p.reliefRun);
-    const vsTag=p.isVacSick?'<span class="vs-badge">'+(p.vsType||'VAC/SICK')+'</span>':'';
+    const key=p.key||p.reliefRun;
+    const isOpen=openRelief===key;
+    const sid=safeId(key);
+    // Column L: the Callowhill alternate run, opens its alternate paddle page.
+    const altBtn=p.altRun?'<span class="pkg-alt">'+PaTags.runTag(p.altRun,"Alternate",altLinks[p.altRun]||null)+'</span>':'';
     return '<div class="pkg-wrap" id="wrap-'+sid+'">'+
-      '<div class="pkg-card'+(isOpen?' open':'')+'" data-relief="'+p.reliefRun+'">'+
+      '<div class="pkg-card'+(isOpen?' open':'')+'" data-relief="'+key+'">'+
         '<div class="pkg-header">'+
           '<span class="pkg-name">'+p.reliefRun+'</span>'+
           '<div class="pkg-right">'+
-            vsTag+
             '<span class="pkg-pay">'+p.totalPay.toFixed(1)+' hrs/wk</span>'+
             '<span class="pkg-chevron'+(isOpen?' open':'')+'">&#9660;</span>'+
           '</div>'+
         '</div>'+
-        '<div class="pkg-routes">'+p.routes.map(r=>routeTag(r,true)).join('')+'</div>'+
-        '<div class="pkg-meta">'+offDayText+'</div>'+
+        '<div class="pkg-routes">'+p.routes.map(r=>routeTag(r)).join('')+'</div>'+
+        '<div class="pkg-meta">'+altBtn+'<span>'+offDayText+'</span></div>'+
       '</div>'+
       '<div class="pkg-detail'+(isOpen?' open':'')+'" id="detail-'+sid+'">'+
         (isOpen?'<div class="pkg-detail-inner">'+buildDetailHTML(p)+'</div>':'')+
@@ -644,6 +676,8 @@ function render(){
   }).join('');
 
   PaTags.resolveBlockTags(list);
+  // The alternate run button opens its paddle, not the card.
+  list.querySelectorAll('.pkg-alt').forEach(a=>a.addEventListener('click',e=>e.stopPropagation()));
   list.querySelectorAll('.pkg-card').forEach(card=>{
     card.addEventListener('click',()=>{
       const relief=card.dataset.relief;
