@@ -145,6 +145,10 @@
 .dr-dur{color:#56627a}
 .dr-swing{font-size:15px;font-weight:800;margin-top:9px}
 .dr-times span,.dr-pp{white-space:nowrap}
+/* Start / Finish / Duration from the day's left edge, like the pieces. */
+.dr-main{display:contents}
+.dr-top{grid-column:2}
+.dr-times{grid-column:1/-1;justify-content:flex-start}
 .dr-pp{overflow:visible}
 /* Phones: the Start/Finish/Duration line and each tag + times line stay on
    one line - full row width, less padding, a touch smaller. */
@@ -152,9 +156,7 @@
   .main{padding:0 10px 40px}
   .pkg-detail-inner{padding:8px}
   .day-row{padding:10px}
-  .dr-main{display:contents}
-  .dr-top{grid-column:2}
-  .dr-times{grid-column:1/-1;font-size:13.5px;gap:4px 7px;justify-content:flex-start}
+  .dr-times{font-size:13.5px;gap:4px 7px}
   .dr-pp{font-size:14px}
   .dr-piece{gap:4px 8px}
 }
